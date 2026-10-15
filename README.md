@@ -60,6 +60,8 @@ the report distinguishes mocks, local real Git and remote Docker/CUDA evidence.
 [Queue recovery](docs/queue.md), [datasets](docs/datasets.md),
 [telemetry](docs/telemetry.md), [provenance](docs/provenance.md), and
 [scientific design](docs/scientific-design.md) describe the contracts.
+The [dataset and augmentation survey](docs/dataset-research.md) records primary
+sources and current discussion preferences without fixing a final protocol.
 
 Only ResNet-50 is implemented. Synthetic examples use random initialization and
 tiny images to verify operation. The direct trainer supports cached ImageNet weights;

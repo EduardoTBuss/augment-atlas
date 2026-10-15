@@ -7,7 +7,7 @@ import threading
 import unittest
 
 from augment_atlas.queue import GitQueue, InvalidTransition, QueueConflict, QueueError, StaleAttempt, parse_record, render_record
-from augment_atlas.schema import prepare_job
+from augment_atlas.schema import new_record, prepare_job
 
 
 def spec(**changes):
@@ -17,6 +17,22 @@ def spec(**changes):
               "code_commit": "a" * 40, "compatibility": {"dataset": "synthetic", "min_gpu_memory_mb": 64}}
     result.update(changes)
     return result
+
+
+class RenderTests(unittest.TestCase):
+    def test_runtime_epochs_and_legacy_total_epochs_render_supplied_total(self):
+        for metadata, expected in (({"epochs": 5}, "3/5"), ({"total_epochs": 7}, "3/7"), ({}, "3/?")):
+            with self.subTest(metadata=metadata):
+                record = new_record(spec())
+                record.update(state="running", version=1, seq=1, attempt_id="attempt-fixture",
+                              token="token-fixture", owner={"server": "synthetic-host"})
+                record["history"] = [{"seq": 1, "state": "running", "attempt_id": "attempt-fixture",
+                                      "epoch": 3, "at": "2026-10-15T20:00:00+00:00", **metadata}]
+                before = copy.deepcopy(record)
+                markdown = render_record(record)
+                self.assertIn(f"Epoch: {expected} |", markdown)
+                self.assertEqual(before, record)
+                self.assertEqual(record, parse_record(markdown))
 
 
 class QueueTests(unittest.TestCase):

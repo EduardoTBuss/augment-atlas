@@ -1,107 +1,134 @@
-# Technical acceptance — local gates passed, remote training pending
+# Technical acceptance — bounded remote smoke passed
 
-Date: 2026-10-15. Scope: initial smoke prototype; no scientific performance
-conclusion. **The complete requested remote acceptance has not been achieved.**
+Date: 2026-10-15. Five real training jobs completed on `x299`. Scope: initial
+smoke prototype; no scientific performance, long-term host stability or crash
+root-cause conclusion.
 
-Local command: `PYTHONPATH=src python -m unittest discover -s tests -v`.
-Observed: 56 tests, exit 0, 54 passed and 2 skipped on Windows (Linux flock and
-symlink privilege). Both skipped checks were subsequently executed successfully
-on Linux, as described below.
-No PyTorch installation or training was performed on the notebook. Coverage:
+## Local and component evidence
 
-| Evidence | Result |
+Command: `PYTHONPATH=src python -m unittest discover -s tests -v`.
+Final result: **57 tests, exit 0, 55 passed and 2 skipped on Windows**, in
+39.104 seconds. Both platform-specific checks had also passed on Linux/x299:
+second-process GPU UUID `flock` exclusion and physical symlink alias rejection.
+No PyTorch installation or training was performed on the notebook.
+
+Real disposable Git repositories exercise concurrency, rejected pushes, lost
+responses, stale ownership, terminal states and explicit resume. Contract/data
+tests cover six provisional policies, persisted disjoint groups, hashes and
+physical aliases. Runtime tests cover durable ordered spool, acknowledgments,
+crash windows, preflight and artifact semantics; their Docker/network boundaries
+are mocked. Separate real-host evidence follows below.
+
+A renderer regression found during execution displayed epoch totals as `?`
+because the producer uses `epochs`. The renderer now accepts that field; its
+isolated regression failed before the fix and passed after it. Independent review
+resolved earlier defects in artifact validation, CLAHE dependencies, resume crash
+windows, physical aliases, environment identity and the example dataset ID.
+Publication has a separate sanitization review.
+
+## Environment and bounded plan
+
+Training code was pinned clean at
+`e1ba2689689f2f506e6221fe281d26bab7886ba9`, separate from the mutable queue.
+The later renderer fix changes presentation only. All training used the same
+existing immutable image, with no rebuild or package installation:
+
+```text
+sha256:ac6921779501384e59a4a3043d099bc7a258332cffc444af18cef558ed65bcb9
+Python 3.12.13; torch 2.5.1+cu124; torchvision 0.20.1+cu124
+NumPy 2.1.3; Pillow 11.0.0; scikit-image 0.24.0
+```
+
+The image extends the earlier qtlbench environment; the adapted image includes
+scikit-image, which the base alone lacks. Titan X Maxwell capability 5.2 was
+observed; real CUDA Conv2d FP32 forward/backward passed before training.
+Driver 580.178.04, Docker 29.9.0 and containerd 2.4.1 were recorded. No BIOS,
+driver, thermal, OS or daemon configuration was changed.
+
+The pre-run private manifest selected 64px, batch 2, random initialization,
+FP32, no autocast/TF32, deterministic algorithms, seeds 3/5 and no scientific
+HPO. Four unique jobs were planned, including two 12-epoch runs to create a
+recovery window. Before the final contention test, the unique-job budget was
+explicitly revised from four to five. The 1,200-second GPU-load ceiling and
+85 C stop threshold were retained. Two eligible GPUs performed short preflight
+probes; only one GPU trained at a time.
+
+There were **five unique jobs and seven container starts**: the recovery job
+had two explicit resumes, including one following a disclosed test-controller
+failure. Training-container creation-to-final-finish lifetimes summed to
+439.944 seconds, including stopped gaps. This is a conservative lifetime bound
+for training containers, excluding short probes, not measured active GPU time.
+Raw commands, timestamps, environment, results and hashes stay private.
+
+## Real launcher, GitHub, Docker and CUDA results
+
+| Check | Observed result |
 |---|---|
-| 12 real disposable Git tests | Concurrent clones, push rejection/lost response, stale ownership, terminal state and explicit resume passed |
-| 19 contract/data tests | Explicit smoke, six policies, persisted disjoint groups, hashes, paths/hardlink aliases passed; symlink skipped on Windows |
-| 25 host runtime tests | Spool outage/order, acknowledgments, crash windows, preflight and artifact semantics passed; Docker/network mocked; flock skipped on Windows |
+| Normal synthetic run | Real `.sh`, confirmed GitHub reservation, Docker ResNet-50 CUDA, 2 epochs, checkpoint and all 8 checksummed required artifacts validated; remote `succeeded` |
+| Same-GPU exclusion | A second real worker exited before GPU probe/reservation while the first owned the lock |
+| Coordinator loss and outage | SIGKILL coordinator; child continued and checkpoint advanced. Private SSH transport wrapper blocked GitHub; new queue query failed. Restart reattached to the same live container and attempt |
+| Interruption and resume | After readiness verification, SIGTERM saved epoch 6 and stopped child. Ordered events reconciled after restoring transport. Explicit resume completed epoch 12 in the same job/attempt/container, with one original claim |
+| Continuous reference | 12 epochs; identical saved configuration except protocol label for distinct job identity |
+| Checkpoint parity | CPU comparison passed exactly for model, best model, optimizer, scheduler, Python/NumPy/Torch/CUDA RNG, best epoch/loss, sample count and all 12 numerical epoch records; UTC excluded. Complete epoch sequence, saved configuration, code/image and same GPU identity verified |
+| Real image adapter | 24 existing INbreast images / 12 groups; train/selection/test 16/4/4 images and 8/2/2 groups, no group overlap; 2 epochs and all 8 artifacts validated |
+| Two real workers | Two `.sh` workers on the same host, eligible GPUs 0/1, raced for one job. Both exited 0; exactly one confirmed claim, attempt directory and training container; winner GPU 0, 2 epochs, remote `succeeded` |
 
-Independent review found defects in artifact validation, CLAHE dependencies,
-resume crash windows, physical image aliases, environment identity and the example
-dataset ID. These were fixed and the affected checks repeated. Smoke random
-initialization is supported by the worker; ImageNet cache deployment remains
-pending (the direct training entry accepts trusted cached weights).
+The first recovery controller sent SIGTERM during worker preflight, before
+handlers were installed, and observed exit -15. That failed trial remains in the
+manifest and logs. The controller was corrected to wait for a new telemetry
+sample after restart; the same attempt was resumed for the successful test.
+No failed trial was silently removed. The outage was controlled at this worker's
+SSH transport, not host-wide. Contention used one physical server, not two
+independent servers. Exact parity applies only to this same-GPU/image experiment.
 
-Remote trial budget: at most one Titan X loaded at a time, batch 2, 64px images,
-2 epochs per job, at most four short jobs, and 20 minutes of GPU load total.
-Stop affected work on current instability or configured temperature ceiling.
-No BIOS, driver, thermal or OS changes. Reuse a verified local image when available.
-Raw logs/environment/checkpoints remain private; only sanitized summaries belong here.
+## Telemetry, cost and final host state
 
-## Remote preflight
+Five attempts retained 25 private samples. Collector wall duration totalled
+2.403 seconds; maximum per-sample cost was 0.1053 seconds. Maximum sampled GPU
+temperature was 55 C, not a continuous temperature maximum. CPU, RAM, disk/network,
+GPU readings and explicit unavailable sensors were recorded. No energy or
+emissions result was calculated.
 
-The authorized host alias `x299` was inspected. Both Titan X GPUs were idle at
-28/30 Celsius. The earlier mammography executor/watchdog were already stopped;
-its logs recorded failure exits 137/139. No old training was cancelled or resumed
-by this implementation, and its data, results, logs and checkpoints were untouched.
-Exit 137 alone was not interpreted as OOM.
+Progress and telemetry used compressed requested intervals of 1 second.
+Actual regular gaps were about 10.9–14.0 seconds because synchronous Git shares
+the monitor loop. The recovery maximum gap was 159.7 seconds, including
+coordinator absence. Collector cost is not a causal estimate of training slowdown.
+Telemetry has its own setting but no guaranteed independent cadence during slow
+Git operations; continuous monitoring needs a separate collector.
+See [telemetry](telemetry.md).
 
-The existing environment image was resolved to its immutable ID privately. A
-non-training container import preflight failed with **Docker exit 125 / containerd
-EOF** before any CUDA operation. Further read-only diagnostics found current
-crashes in unrelated host services. During that initial inspection, no GPU workload
-was started and no driver, BIOS, thermal or OS settings were changed. Raw
-operational evidence stays private.
+At final inspection (22:38 UTC), no containers, workers or active attempt journals
+remained; GPUs were idle at 29/30 C. No new crash-report file was found during
+the acceptance window; uptime still referenced the earlier observed restart.
+Earlier mammography training was already stopped; its data, results, logs and
+checkpoints were preserved and its queue was not restarted.
 
-Therefore these remain **unverified**: real ResNet-50 CUDA forward/backward,
-Docker training, checkpoint/RNG continuation, live coordinator reattachment,
-network outage while training, real INbreast image loading, telemetry overhead
-under load, and the complete launcher-to-GitHub completion flow. Host stability
-and host-side GitHub write authentication must be restored/verified before that
-bounded trial. A compatible tag or passing mocks do not establish these results.
+The initial containerd EOF/exit-125 blocker disappeared after an externally
+observed host restart, which this session did not perform. Passing short tests
+do not identify a version incompatibility or explain earlier exits 137/139 and
+unrelated service crashes.
 
-### Follow-up environment check — 2026-10-15 21:57 UTC
+## Operation and remaining scientific work
 
-The host was observed after a restart (not performed by this project session).
-Using the **same immutable mammography environment image**, without rebuilding or
-installing packages, a minimal container started successfully and CPU imports
-reported Python 3.12.13, PyTorch 2.5.1+cu124, torchvision 0.20.1+cu124,
-NumPy 2.1.3, Pillow 11.0.0 and scikit-image 0.24.0. Image-layer inspection confirmed
-that this image extends the existing `qtlbench:ready` base. The base alone lacks
-scikit-image; the adapted environment includes it.
-
-A real CUDA **Conv2d** forward/backward then passed on GPU 0 in 1.04 seconds,
-with float32, autocast off, TF32 off and deterministic algorithms enabled.
-The Titan X reported compute capability 5.2; the PyTorch build includes sm_50.
-The GPU reached 31 C; no container remained running after the diagnostic.
-
-This supersedes the initial Docker/CUDA preflight blocker above: startup/imports
-and this small CUDA operation now pass. It is **not** ResNet-50 training, a queue
-job, a checkpoint/resume test or evidence of sustained host stability. The exact
-cause of the earlier crashes remains undetermined. Docker 29.9.0, containerd 2.4.1
-and driver 580.178.04 were unchanged between the inspected snapshots. No daemon,
-driver, OS or image changes were made by this session. Complete remote training
-acceptance and host-side Git write validation remain pending.
-
-## Additional real checks after publication
-
-Two independent local queue clients raced on the real public GitHub `queue`
-branch: exactly one confirmed reservation, zero container launches. The winning
-attempt was explicitly cancelled with an explanatory event. This proves the
-transport/reservation path in that observation, not training execution or
-connectivity between two training servers. No runnable job remains pending.
-
-The reviewed training revision `e936d282fbd6259c1082568c35b8b115f178c040` was
-cloned and pinned on x299. Only source and private settings were prepared; no
-dataset or training stack was transferred or installed. `worker.sh --help` ran.
-The real second-process GPU UUID lock test passed on Linux (0.127 seconds); the
-real symlink alias rejection test also passed (0.003 seconds). These stdlib checks
-did not initialize CUDA or start Docker containers. A first test-filter command
-matched no tests and returned 5; the corrected selectors executed both checks.
-
-Final inspected host state of the initial trial: no running Docker containers, no old mammography
-executor/watchdog, no AugmentAtlas worker or training, both GPUs idle at 29/30 C.
-Existing pilot files were preserved. No prior queue was restarted.
-
-Prepared command on x299, **for use after host stability and Git write access
-are restored**, is:
+Host Git read/write was verified with a repository-scoped deploy key stored only
+on the host, strict known-host verification and no credentials in the image.
+For the prepared `x299` settings, export the private transport wrapper for both
+seeding and running:
 
 ```bash
 cd ~/augment-atlas
+export GIT_SSH="$HOME/augment-atlas-private/git-ssh"
+export PYTHONPATH="$PWD/src"
 ./scripts/worker.sh --settings ~/augment-atlas-private/worker.json --phase smoke --once
 ```
 
-The private settings select the observed immutable environment image and the
-reviewed code revision. They are not committed. Add one explicit synthetic job
-from that same pinned checkout with the README `seed` command (using private
-state/data paths); the cancelled transport job will not train. The full startup
-command has not passed its Docker preflight in this session.
+This needs a compatible pending job seeded from the same clean pinned revision;
+it does not create a campaign. Operational intervals are hourly progress and
+30-second telemetry; compressed test settings are archived privately.
+
+ImageNet-cache mounting through the worker remains pending; these runs used
+random initialization. Group-hash holdouts are not scientific five-fold CV.
+Final releases/tasks, access, multilabel chest support, HPO protocol/budget,
+augmentation ranges and statistical endpoints need a reviewed protocol.
+See [dataset research](dataset-research.md) and [scientific design](scientific-design.md).
+The nominal 360-run campaign has not started.

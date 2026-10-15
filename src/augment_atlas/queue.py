@@ -52,7 +52,7 @@ def render_record(record):
                f"Attempt: {clean(record.get('attempt_id'))} | owner: {clean(owner)} | "
                f"last observation UTC: {clean(latest.get('observed_at_utc', latest.get('at', 'none')))} | sequence: {record['seq']}\n\n")
     if progress:
-        summary += (f"Epoch: {clean(progress['epoch'])}/{clean(progress.get('total_epochs', '?'))} | "
+        summary += (f"Epoch: {clean(progress['epoch'])}/{clean(progress.get('total_epochs', progress.get('epochs', '?')))} | "
                     f"progress observed UTC: {clean(progress.get('observed_at_utc', progress['at']))}\n\n")
     return heading + summary + "<!-- augment-atlas-record-v1 -->\n```json\n" + json.dumps(record, indent=2, sort_keys=True, ensure_ascii=True, allow_nan=False) + "\n```\n"
 

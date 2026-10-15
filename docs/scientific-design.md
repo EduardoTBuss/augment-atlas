@@ -10,17 +10,19 @@ Este documento registra recomendações; decisões científicas continuam penden
 ## Pergunta, unidades e limites da conclusão
 
 A pergunta proposta é quanto cada política de augmentation altera o desempenho de
-uma receita ResNet50 ImageNet FP32 congelada, em classificação por paciente,
-comparada aos controles. A direção atual contém INbreast, retina, derma e um quarto
-dataset a escolher. Os seis braços são `none`, `basic`, `basic_gamma_light`,
+uma receita ResNet50 ImageNet FP32 congelada, em uma tarefa de classificação definida,
+comparada aos controles. A direção atual contém INbreast, retina, dermoscopia e
+raio-X do tórax, com releases finais a escolher. Os seis braços são `none`, `basic`, `basic_gamma_light`,
 `basic_gamma_heavy`, `basic_clahe_light` e `basic_clahe_heavy`.
 
-O paciente é a unidade independente de divisão e avaliação. Imagens, exames,
+O paciente é a unidade de agrupamento das partições quando identificável. Imagens, exames,
 lesões e visitas do mesmo paciente permanecem juntos; se houver dependência maior
 (por exemplo, duplicação entre fontes), usar a unidade superior. A origem e a
-semântica de `group_key` precisam ser verificadas. Definir antes da avaliação como
-predições e rótulos de múltiplas imagens formam uma observação por paciente,
-inclusive pacientes com rótulos discordantes. Sem identificador adequado, não
+semântica de `group_key` precisam ser verificadas. Agrupar a divisão por paciente não
+transforma automaticamente o alvo em um rótulo por paciente: lesões ou estudos do
+mesmo paciente podem ter classes distintas. Definir alvo, agregação e ponderação
+antes da avaliação; preservar agrupamento também na estimação de incerteza.
+Sem identificador adequado, não
 afirmar avaliação independente por paciente.
 
 O estimando proposto por dataset e contraste é a diferença absoluta da métrica
@@ -184,6 +186,8 @@ exemplos técnicos provisórios.
 Próxima decisão do projeto: obter inventário de grupos/eventos/exposição,
 definir tarefas e endpoint, então escolher HPO separado ou interno por viabilidade
 e congelar o protocolo antes da literatura parametrizar intervenções e de qualquer
-avaliação final. Permanecem abertos quarto dataset, rótulos, autorização/acesso,
+avaliação final. A discussão agora prioriza retina, dermoscopia (ISIC com HAM
+como alternativa menor) e raio-X do tórax, além do INbreast. Permanecem abertos
+releases finais, rótulos, autorização/acesso,
 orçamento, algoritmo HPO, ranges de augmentation, agregação por paciente e
 multiplicidade. Este documento não os aprova.

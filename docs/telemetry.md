@@ -25,3 +25,12 @@ Actual intervals come from monotonic timestamps; `collection_s` measures collect
 duration. Disable optional collectors with `optional_collectors:false`. Evaluate
 collector time/interval and total private file size during each bounded smoke.
 Do not infer emissions, kWh or scientific efficiency from these observations.
+
+Collection and synchronous Git operations currently share one monitor loop.
+Separate settings do not guarantee separate scheduling: slow Git can delay
+telemetry and temperature checks, and coordinator loss stops host sampling while
+the child continues. The compressed one-second acceptance test observed regular
+gaps of about 11–14 seconds; recovery included a longer gap. Do not treat this
+monitor as continuous thermal protection. Precise cadence needs a dedicated
+collector. Collector duration does not measure causal training slowdown; see
+[acceptance](acceptance.md) for actual coverage.
