@@ -15,3 +15,9 @@ Phase: smoke; scientific status: provisional. Final campaign disabled.
 Only the coordinating session changes server state. Local tests use tiny fixtures
 and Git remotes; no local PyTorch installation. Worker models follow installed
 specialist definitions.
+
+Final status (2026-10-15): code integrated; local checks and independent local
+review passed; publication safety audit passed and repository published. Real
+GitHub exclusive reservation and Linux lock/symlink checks passed. Remote
+Docker/CUDA/training acceptance is blocked by the host preflight failure; no
+training or scientific campaign is running. See `acceptance.md` for exact scope.
