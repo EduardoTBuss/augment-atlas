@@ -1,4 +1,4 @@
-# Technical acceptance — local gates passed, remote gate blocked
+# Technical acceptance — local gates passed, remote training pending
 
 Date: 2026-10-15. Scope: initial smoke prototype; no scientific performance
 conclusion. **The complete requested remote acceptance has not been achieved.**
@@ -38,8 +38,9 @@ Exit 137 alone was not interpreted as OOM.
 The existing environment image was resolved to its immutable ID privately. A
 non-training container import preflight failed with **Docker exit 125 / containerd
 EOF** before any CUDA operation. Further read-only diagnostics found current
-crashes in unrelated host services. No new GPU workload was started; no driver,
-BIOS, thermal or OS settings were changed. Raw operational evidence stays private.
+crashes in unrelated host services. During that initial inspection, no GPU workload
+was started and no driver, BIOS, thermal or OS settings were changed. Raw
+operational evidence stays private.
 
 Therefore these remain **unverified**: real ResNet-50 CUDA forward/backward,
 Docker training, checkpoint/RNG continuation, live coordinator reattachment,
@@ -47,6 +48,29 @@ network outage while training, real INbreast image loading, telemetry overhead
 under load, and the complete launcher-to-GitHub completion flow. Host stability
 and host-side GitHub write authentication must be restored/verified before that
 bounded trial. A compatible tag or passing mocks do not establish these results.
+
+### Follow-up environment check — 2026-10-15 21:57 UTC
+
+The host was observed after a restart (not performed by this project session).
+Using the **same immutable mammography environment image**, without rebuilding or
+installing packages, a minimal container started successfully and CPU imports
+reported Python 3.12.13, PyTorch 2.5.1+cu124, torchvision 0.20.1+cu124,
+NumPy 2.1.3, Pillow 11.0.0 and scikit-image 0.24.0. Image-layer inspection confirmed
+that this image extends the existing `qtlbench:ready` base. The base alone lacks
+scikit-image; the adapted environment includes it.
+
+A real CUDA **Conv2d** forward/backward then passed on GPU 0 in 1.04 seconds,
+with float32, autocast off, TF32 off and deterministic algorithms enabled.
+The Titan X reported compute capability 5.2; the PyTorch build includes sm_50.
+The GPU reached 31 C; no container remained running after the diagnostic.
+
+This supersedes the initial Docker/CUDA preflight blocker above: startup/imports
+and this small CUDA operation now pass. It is **not** ResNet-50 training, a queue
+job, a checkpoint/resume test or evidence of sustained host stability. The exact
+cause of the earlier crashes remains undetermined. Docker 29.9.0, containerd 2.4.1
+and driver 580.178.04 were unchanged between the inspected snapshots. No daemon,
+driver, OS or image changes were made by this session. Complete remote training
+acceptance and host-side Git write validation remain pending.
 
 ## Additional real checks after publication
 
@@ -64,7 +88,7 @@ real symlink alias rejection test also passed (0.003 seconds). These stdlib chec
 did not initialize CUDA or start Docker containers. A first test-filter command
 matched no tests and returned 5; the corrected selectors executed both checks.
 
-Final inspected host state: no running Docker containers, no old mammography
+Final inspected host state of the initial trial: no running Docker containers, no old mammography
 executor/watchdog, no AugmentAtlas worker or training, both GPUs idle at 29/30 C.
 Existing pilot files were preserved. No prior queue was restarted.
 
