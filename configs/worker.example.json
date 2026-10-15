@@ -1,0 +1,22 @@
+{
+  "phase": "smoke",
+  "server": "server-a",
+  "gpu": "0",
+  "image": "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime",
+  "code": "/srv/augment-atlas-code",
+  "data": "/srv/atlas-data",
+  "runs": "/srv/atlas-runs",
+  "queue_checkout": "/srv/atlas-state/gpu0",
+  "remote": "git@github.com:OWNER/augment-atlas.git",
+  "branch": "queue",
+  "datasets": ["synthetic-tiny"],
+  "progress_seconds": 3600,
+  "telemetry_seconds": 30,
+  "monitor_seconds": 2,
+  "poll_seconds": 30,
+  "optional_collectors": true,
+  "max_temperature_c": 85,
+  "locks": "/tmp/augment-atlas-gpu-locks",
+  "cpus": 2,
+  "memory": "4g"
+}
