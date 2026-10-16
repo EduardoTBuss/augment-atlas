@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any
 
 ARMS = ("none", "basic", "basic_gamma_light", "basic_gamma_heavy",
-        "basic_clahe_light", "basic_clahe_heavy")
+        "basic_clahe_light", "basic_clahe_heavy", "gamma_light", "gamma_heavy",
+        "clahe_light", "clahe_heavy")
+CANDIDATE_BACKEND = "candidate-opencv-v2"
+LEGACY_BACKEND = "legacy-pilot-v1"
 
 
 def canonical_hash(value: Any) -> str:
@@ -58,6 +61,16 @@ def validate_config(cfg: dict) -> dict:
     if model.get("name") != "resnet50" or model.get("weights") not in ("none", "IMAGENET1K_V2"):
         raise ValueError("only ResNet-50 with none or cached IMAGENET1K_V2 weights is supported")
     _integer(model["num_classes"], "num_classes", 2)
+    backend = cfg["augmentation"].get("backend", LEGACY_BACKEND)
+    if backend not in (LEGACY_BACKEND, CANDIDATE_BACKEND):
+        raise ValueError("unknown augmentation backend")
+    candidate = backend == CANDIDATE_BACKEND
+    if candidate != (cfg["protocol_version"] == "candidate-v2"):
+        raise ValueError("candidate-v2 protocol and candidate-opencv-v2 backend must agree")
+    if candidate and model["weights"] == "IMAGENET1K_V2":
+        weight_hash = model.get("weights_sha256", "")
+        if not isinstance(weight_hash, str) or len(weight_hash) != 64 or any(char not in "0123456789abcdef" for char in weight_hash):
+            raise ValueError("candidate pretrained weights require a lowercase 64-hex weights_sha256")
     if cfg["input"].get("color") not in ("grayscale_to_rgb", "rgb"):
         raise ValueError("input.color must explicitly describe channel semantics")
     _integer(cfg["input"]["size"], "input.size", 32)
@@ -84,7 +97,10 @@ def validate_config(cfg: dict) -> dict:
         _integer(dataset.get("synthetic_groups", 12), "synthetic_groups", 6)
     _integer(split["split_seed"], "split_seed")
     _integer(split["fold"], "fold")
-    if split.get("version") != "group-hash-v1":
+    if split.get("version") == "stratified-group-outer-v1":
+        if not isinstance(dataset.get("split_file"), str) or not dataset["split_file"].strip():
+            raise ValueError("stratified-group-outer-v1 requires an explicit persisted split_file")
+    elif split.get("version") != "group-hash-v1":
         raise ValueError("unknown split algorithm version")
     recipe = cfg["recipe"]
     if recipe.get("frozen") is not True or not recipe.get("id") or not recipe.get("version"):
@@ -101,7 +117,7 @@ def validate_config(cfg: dict) -> dict:
     if aug.get("arm") not in ARMS:
         raise ValueError("unknown augmentation arm")
     ops = aug.get("ops")
-    expected = [] if aug["arm"] == "none" else ["basic"]
+    expected = ["basic"] if aug["arm"] == "basic" or aug["arm"].startswith("basic_") else []
     if "gamma" in aug["arm"]:
         expected.append("gamma")
     if "clahe" in aug["arm"]:
@@ -125,11 +141,23 @@ def validate_config(cfg: dict) -> dict:
                     raise ValueError("gamma.range requires two bounds")
                 _number(op["range"][0], "gamma minimum", 0.001)
                 _number(op["range"][1], "gamma maximum", op["range"][0])
+                if candidate:
+                    expected_range = [0.8, 1.2] if aug["arm"].endswith("light") else [0.67, 1.5]
+                    if op["range"] != expected_range or op["p"] != 0.3:
+                        raise ValueError("candidate-v2 gamma must retain its versioned provisional range and p=0.3")
             else:
-                _number(op["clip_limit"], "CLAHE clip_limit", 1e-12, 1)
-                _number(op["window_fraction"], "CLAHE window_fraction", 1e-12, 1)
-                if cfg["input"]["color"] != "grayscale_to_rgb":
-                    raise ValueError("v1 CLAHE is explicitly grayscale-only")
+                if candidate:
+                    expected_clip = 2.0 if aug["arm"].endswith("light") else 4.0
+                    grid = op.get("tile_grid_size")
+                    if op.get("clip_limit") != expected_clip or grid != [8, 8] or any(type(value) is not int for value in grid) or op["p"] != 0.3 or "window_fraction" in op:
+                        raise ValueError("candidate CLAHE requires OpenCV clip 2/4, tile_grid_size=[8,8], p=0.3; no legacy window_fraction")
+                else:
+                    if "tile_grid_size" in op:
+                        raise ValueError("legacy CLAHE does not accept OpenCV tile_grid_size")
+                    _number(op["clip_limit"], "CLAHE clip_limit", 1e-12, 1)
+                    _number(op["window_fraction"], "CLAHE window_fraction", 1e-12, 1)
+                    if cfg["input"]["color"] != "grayscale_to_rgb":
+                        raise ValueError("v1 CLAHE is explicitly grayscale-only")
     return cfg
 
 

@@ -5,6 +5,7 @@
   "image": "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime",
   "code": "/srv/augment-atlas-code",
   "data": "/srv/atlas-data",
+  "torch_cache": "/srv/atlas-torch",
   "runs": "/srv/atlas-runs",
   "queue_checkout": "/srv/atlas-state/gpu0",
   "remote": "git@github.com:OWNER/augment-atlas.git",

@@ -16,8 +16,10 @@ Only the coordinating session changes server state. Local tests use tiny fixture
 and Git remotes; no local PyTorch installation. Worker models follow installed
 specialist definitions.
 
-Final status (2026-10-15): code integrated; local checks and independent local
-review passed; publication safety audit passed and repository published. Real
-GitHub exclusive reservation and Linux lock/symlink checks passed. Remote
-Docker/CUDA/training acceptance is blocked by the host preflight failure; no
-training or scientific campaign is running. See `acceptance.md` for exact scope.
+Status updated 2026-10-16: the 15 October real Docker/CUDA acceptance passed,
+including five training jobs, checkpoint recovery/parity, real adapter and
+same-host worker contention. See `acceptance.md` for scope and limitations.
+Four isolated arms now extend the smoke examples to ten; independent local
+review passed 60 tests (58 passed, two Windows skips). A new real-GPU trial has
+not started for that extension. The scientific protocol and overnight workload
+are being discussed in `protocol-draft.md`; no final campaign is enabled.

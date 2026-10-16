@@ -112,13 +112,16 @@ def audit_splits(records: list[dict], splits: dict[str, list[str]]) -> None:
 def prepare_splits(cfg: dict, records: list[dict], output: str | Path) -> dict:
     """Persist actual lists; never regenerate on resume/library changes.
 
-    group-hash-v1 is an unstratified 60/20/20 technical partition, not the
-    future five-fold scientific evaluation. Supplied lists take precedence.
+    group-hash-v1 is an unstratified 60/20/20 technical partition. The scientific
+    outer-fold algorithm consumes pre-generated, audited private lists only;
+    it must never silently fall back to the technical hash holdout.
     """
     output = Path(output)
     target = output / "splits.json"
     manifest_hash = canonical_hash(sorted(records, key=lambda r: r["id"]))
     spec = cfg["splits"]
+    if spec["version"] not in ("group-hash-v1", "stratified-group-outer-v1"):
+        raise ValueError("unknown split algorithm version")
     identity = {"manifest_sha256": manifest_hash, "dataset_version": cfg["dataset"]["version"],
                 "split_seed": spec["split_seed"], "fold": spec["fold"], "algorithm": spec["version"]}
     source = cfg["dataset"].get("split_file")
@@ -130,6 +133,8 @@ def prepare_splits(cfg: dict, records: list[dict], output: str | Path) -> dict:
         if document.get("sha256") != canonical_hash({k: v for k, v in document.items() if k != "sha256"}):
             raise ValueError("persisted split checksum mismatch")
     else:
+        if spec["version"] == "stratified-group-outer-v1":
+            raise ValueError("scientific splits require an existing split_file or persisted artifact; hash fallback is forbidden")
         groups = sorted({row["group"] for row in records}, key=lambda group: canonical_hash([spec["split_seed"], spec["fold"], group]))
         if len(groups) < 6:
             raise ValueError("technical split requires at least six independent groups")
@@ -143,6 +148,9 @@ def prepare_splits(cfg: dict, records: list[dict], output: str | Path) -> dict:
     expected_groups = {name: sorted({row["group"] for row in records if row["id"] in ids}) for name, ids in document["lists"].items()}
     if document.get("groups") != expected_groups:
         raise ValueError("persisted split group lists mismatch")
+    if spec["version"] == "stratified-group-outer-v1":
+        from .scientific_splits import audit_scientific_split
+        audit_scientific_split(records, document)
     if not target.exists():
         atomic_json(target, document)
     return document

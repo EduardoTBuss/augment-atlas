@@ -16,10 +16,48 @@ class ContractTests(unittest.TestCase):
     def setUp(self):
         self.cfg = load_config(ROOT / "configs/smoke/synthetic.json")
 
-    def test_all_six_arm_examples_are_valid(self):
+    def test_all_ten_arm_examples_are_valid(self):
+        self.assertEqual(set(ARMS), {"none", "basic", "basic_gamma_light", "basic_gamma_heavy",
+                                     "basic_clahe_light", "basic_clahe_heavy", "gamma_light",
+                                     "gamma_heavy", "clahe_light", "clahe_heavy"})
         for arm in ARMS:
-            cfg = load_config(ROOT / f"configs/smoke/{arm}.json")
-            self.assertEqual(cfg["augmentation"]["arm"], arm)
+            with self.subTest(arm=arm):
+                cfg = load_config(ROOT / f"configs/smoke/{arm}.json")
+                self.assertEqual(cfg["augmentation"]["arm"], arm)
+
+    def test_isolated_examples_preserve_legacy_parameters_and_other_sections(self):
+        for arm in ("gamma_light", "gamma_heavy", "clahe_light", "clahe_heavy"):
+            with self.subTest(arm=arm):
+                combined = load_config(ROOT / f"configs/smoke/basic_{arm}.json")
+                isolated = load_config(ROOT / f"configs/smoke/{arm}.json")
+                self.assertEqual(isolated["augmentation"]["ops"], combined["augmentation"]["ops"][1:])
+                expected = copy.deepcopy(combined)
+                expected["augmentation"] = copy.deepcopy(isolated["augmentation"])
+                self.assertEqual(isolated, expected)
+                self.assertEqual(isolated["phase"], "smoke")
+                self.assertEqual(isolated["scientific_status"], "provisional")
+                self.assertIn("isolated", isolated["augmentation"]["provenance"].lower())
+                self.assertIn(combined["augmentation"]["provenance"], isolated["augmentation"]["provenance"])
+
+    def test_isolated_arms_reject_basic(self):
+        for arm in ("gamma_light", "gamma_heavy", "clahe_light", "clahe_heavy"):
+            with self.subTest(arm=arm):
+                cfg = load_config(ROOT / f"configs/smoke/basic_{arm}.json")
+                cfg["augmentation"]["arm"] = arm
+                with self.assertRaisesRegex(ValueError, "operations/order"):
+                    validate_config(cfg)
+
+    def test_combined_arms_require_basic_before_intensity(self):
+        for arm in ("gamma_light", "gamma_heavy", "clahe_light", "clahe_heavy"):
+            for invalid in ("missing_basic", "reversed_order"):
+                with self.subTest(arm=arm, invalid=invalid):
+                    cfg = load_config(ROOT / f"configs/smoke/basic_{arm}.json")
+                    if invalid == "missing_basic":
+                        cfg["augmentation"]["ops"] = cfg["augmentation"]["ops"][1:]
+                    else:
+                        cfg["augmentation"]["ops"].reverse()
+                    with self.assertRaisesRegex(ValueError, "operations/order"):
+                        validate_config(cfg)
 
     def test_final_and_other_models_rejected(self):
         for key, value in (("phase", "final"), ("scientific_status", "approved")):

@@ -1,0 +1,9 @@
+# Supply the already validated local base by immutable image ID or repo digest.
+# No default tag: the caller must choose and record the exact existing image.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+# The base owns torch/CUDA/NumPy/Pillow. Never resolve or upgrade dependencies.
+# Wheel-only avoids accidentally compiling a large native stack on the host.
+RUN python -m pip install --no-cache-dir --no-deps --only-binary=:all: opencv-python-headless==4.12.0.88
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+WORKDIR /code

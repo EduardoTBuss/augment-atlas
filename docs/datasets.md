@@ -75,7 +75,7 @@ INbreast pilot as an unseen independent test.
 
 The input policy is explicit: `grayscale_to_rgb` opens an image as 8-bit PIL `L`,
 applies grayscale augmentation, then replicates into RGB. `rgb` preserves three
-channels and applies basic/gamma transformations there. CLAHE is currently
+channels and applies basic/gamma transformations there. Legacy CLAHE is
 accepted only for `grayscale_to_rgb`. Fixed ImageNet mean/std normalize the
 result after bilinear resize and conversion to a float32 tensor in `[0,1]`.
 No preprocessing statistic is learned from selection or test.
@@ -93,7 +93,11 @@ of `max(8, round(window_fraction * image_width))` before final resize.
 Every sample gets a deterministic RNG from train seed, epoch and image identity;
 loader order also depends only on train seed and epoch. Shared basic operations
 consume the same draws across arms. Augmentation never consults class labels.
-See `provenance.md` for the six provisional examples and their limitations.
+See `provenance.md` for the ten provisional examples and their limitations.
+For isolated gamma/CLAHE arms, basic is absent. The current sequential RNG gives
+repeatable draws within an arm but does not pair the exact intensity realization
+between isolated and combined arms. Named per-operation streams are proposed
+for the scientific protocol; the legacy implementation is preserved here.
 
 ## Running and restarting
 
@@ -106,10 +110,24 @@ python -m augment_atlas.train --config configs/smoke/synthetic.json --output /ou
 
 Validation/preflight uses only the Python standard library. Runtime requires
 the pinned torch/torchvision stack plus NumPy/Pillow and scikit-image for CLAHE.
-The smoke examples explicitly use `weights: none`; they are random-init
-technical tests. `weights: IMAGENET1K_V2` requires the matching file already in
-the torch cache. Downloads are disabled. Mount a prepared cache separately;
-never use random initialization silently as a pretrained fallback.
+The legacy smoke examples use `weights: none`. Candidate-v2 uses
+`weights: IMAGENET1K_V2` and a full `model.weights_sha256`. The host setting
+`torch_cache` points to a prepared Torch home containing
+`hub/checkpoints/resnet50-11ad3fa6.pth`; the worker validates the file before
+claiming and mounts it read-only as `/torch-cache`. The trainer rechecks before
+loading. Downloads are disabled; no random-initialization fallback is allowed.
+
+Candidate-v2 resizes first and uses named per-operation RNG. Gamma is a direct
+power on the fixed uint8 domain; CLAHE uses OpenCV fixed clipping/grid, in gray
+or RGB Lab luminance. It requires cv2 4.12.0 and the headless distribution
+4.12.0.88 before reservation. These semantics are separate from the legacy
+extrema-preserving gamma and scikit-image CLAHE described above.
+
+`stratified-group-outer-v1` accepts only pre-generated private split artifacts.
+The `augment_atlas.scientific_splits` CLI prepares five outer folds and one
+inner selection holdout per fold, with group/class/hash and external-coverage
+audits. It does not execute HPO or full inner CV. Missing artifacts fail instead
+of generating a new hash holdout. Persisted lists define resumption.
 
 The runner uses FP32, disables autocast and TF32, enables deterministic torch
 algorithms, and records real package/CUDA/GPU versions and numeric flags in

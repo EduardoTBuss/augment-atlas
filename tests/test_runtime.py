@@ -5,6 +5,8 @@ evidence of a Docker container, CUDA kernel, real training or GitHub execution.
 """
 import contextlib
 import copy
+import io
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -15,7 +17,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from augment_atlas import runtime
-from augment_atlas.queue import QueueError, StaleAttempt
+from augment_atlas.queue import QueueError, StaleAttempt, parse_record, render_record
+from augment_atlas.schema import new_record
 from augment_atlas.storage import atomic_json, digest
 from augment_atlas.contracts import canonical_hash
 
@@ -34,6 +37,35 @@ class TemporaryTest(unittest.TestCase):
         directory = tempfile.TemporaryDirectory(prefix="augment-atlas-runtime-")
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
+
+
+class ProbeTests(unittest.TestCase):
+    def test_probe_optional_opencv_reporting_uses_only_mock_ml_modules(self):
+        """Execute the container probe text with MOCK modules, not CUDA/ML code."""
+        for version,distribution in ((None,None),('4.12.0',None),('4.12.0','4.12.0.88')):
+            with self.subTest(opencv=version,distribution=distribution):
+                torch=Mock()
+                torch.__version__='torch-fixture'
+                torch.version.cuda='cuda-fixture'
+                torch.cuda.is_available.return_value=True
+                torch.cuda.get_device_capability.return_value=(5,2)
+                torch.isfinite.return_value.all.return_value=True
+                torchvision=Mock()
+                torchvision.__version__='torchvision-fixture'
+                cv2=Mock()
+                cv2.__version__=version
+                modules={'torch':torch,'torchvision':torchvision,'numpy':Mock(),'PIL':Mock(),
+                         'skimage':Mock(),'cv2':cv2}
+                output=io.StringIO()
+                with patch.dict(sys.modules,modules), \
+                     patch('importlib.util.find_spec',return_value=None if version is None else object()), \
+                     patch('importlib.metadata.version',return_value=distribution,
+                           side_effect=importlib.metadata.PackageNotFoundError if distribution is None else None), \
+                     contextlib.redirect_stdout(output):
+                    exec(runtime.PROBE,{})
+                observed=json.loads(output.getvalue())
+                self.assertEqual(version,observed['opencv'])
+                self.assertEqual(distribution,observed['opencv_distribution'])
 
 
 class SpoolTests(TemporaryTest):
@@ -112,6 +144,7 @@ class ArtifactTests(TemporaryTest):
                                                  for epoch in range(1, config["training"]["epochs"] + 1)])
         atomic_json(self.root / "progress.json", {"schema_version": 1, "status": "completed",
                     "epoch": config["training"]["epochs"], "epochs": config["training"]["epochs"],
+                    "samples_processed": 12,
                     "config_sha256": config_hash, "splits_sha256": splits["sha256"]})
         atomic_json(self.root / "results.json", {"schema_version": 1, "phase": "smoke",
                     "scientific_status": "provisional", "best_epoch": 1, "selection_loss": 0.4,
@@ -133,6 +166,34 @@ class ArtifactTests(TemporaryTest):
         summary = runtime.validate_artifacts(self.root)
         self.assertEqual(len(files), summary["artifact_count"])
         self.assertEqual(digest(self.root / "completed.json"), summary["completed_sha256"])
+
+    def test_terminal_summary_finishes_markdown_without_periodic_progress_event(self):
+        files=self.write_results()
+        summary=runtime.validate_artifacts(self.root)
+        self.assertEqual((2,2,12),(summary['epoch'],summary['epochs'],summary['samples_processed']))
+        self.assertEqual(len(files),summary['artifact_count'])
+        self.assertEqual(digest(self.root/'completed.json'),summary['completed_sha256'])
+        record=new_record({'protocol_version':'smoke-v1','dataset':'synthetic','dataset_version':'v1',
+                           'split_hash':'fixture-split','recipe_hash':'fixture-recipe','phase':'smoke',
+                           'fold':0,'train_seed':3,'arm':'none','code_commit':'b'*40})
+        record.update(state='succeeded',version=3,seq=3,attempt_id='attempt-fixture',token='token-fixture',
+                      owner={'server':'host-fixture'})
+        metadata={'at':'2026-10-16T03:00:00+00:00','attempt_id':'attempt-fixture'}
+        record['history']=[{**metadata,'seq':1,'state':'claimed'},
+                           {**metadata,'seq':2,'state':'running','epoch':0,'epochs':2},
+                           {**metadata,'seq':3,'state':'succeeded',**summary}]
+        markdown=render_record(record)
+        self.assertIn('Epoch: 2/2 |',markdown)
+        self.assertEqual(record,parse_record(markdown))
+
+    def test_terminal_summary_excludes_unvalidated_optional_sample_count(self):
+        for samples in (True,-1,2.5,'12',None):
+            with self.subTest(samples=samples):
+                self.write_results()
+                progress=json.loads((self.root/'progress.json').read_text(encoding='utf-8'))
+                atomic_json(self.root/'progress.json',{**progress,'samples_processed':samples})
+                self.reseal('progress.json')
+                self.assertNotIn('samples_processed',runtime.validate_artifacts(self.root))
 
     def test_corrupt_or_missing_required_artifact_rejected(self):
         for name in ("checkpoint.pt", "progress.json", "splits.json"):
@@ -176,6 +237,7 @@ class ArtifactTests(TemporaryTest):
     def test_rehashed_incomplete_progress_and_split_corruption_rejected(self):
         for name, mutation in (("progress.json", {"status": "running"}),
                                ("progress.json", {"epoch": 1}),
+                               ("progress.json", {"epoch": 2.0}),
                                ("splits.json", {"sha256": "0" * 64}),
                                ("environment.json", {"config_sha256": "0" * 64})):
             with self.subTest(name=name, mutation=mutation):
@@ -214,6 +276,37 @@ class ArtifactTests(TemporaryTest):
         for change in ({"split_hash": "0" * 64}, {"train_seed": spec["train_seed"] + 1}, {"arm": "basic"}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 runtime.validate_artifacts(self.root, {**spec, **change})
+
+    def pretrained_results(self):
+        """Reconcile the fixture hashes after changing the initialization contract."""
+        self.write_results()
+        config=json.loads((self.root/'config.json').read_text(encoding='utf-8'))
+        config['model'].update(weights='IMAGENET1K_V2',weights_sha256='e'*64)
+        atomic_json(self.root/'config.json',config)
+        config_hash=canonical_hash(config)
+        for name in ('completed.json','environment.json','progress.json','results.json'):
+            value=json.loads((self.root/name).read_text(encoding='utf-8'))
+            value['config_sha256']=config_hash
+            if name=='environment.json':value.update(weights='IMAGENET1K_V2',weights_sha256='e'*64)
+            atomic_json(self.root/name,value)
+        for name in ('config.json','environment.json','progress.json','results.json'):self.reseal(name)
+
+    def test_pretrained_environment_must_match_config_and_explicit_spec(self):
+        self.pretrained_results()
+        config=json.loads((self.root/'config.json').read_text(encoding='utf-8'))
+        splits=json.loads((self.root/'splits.json').read_text(encoding='utf-8'))
+        spec={'split_hash':splits['sha256'],'train_seed':config['training']['seed'],'arm':config['augmentation']['arm']}
+        runtime.validate_artifacts(self.root,{**spec,'weights_sha256':'e'*64})
+        for mismatch in ({'weights_sha256':'f'*64},{'model':{'weights_sha256':'f'*64}}):
+            with self.subTest(mismatch=mismatch),self.assertRaises(ValueError):
+                runtime.validate_artifacts(self.root,{**spec,**mismatch})
+        for mutation in ({'weights':'none'},{'weights_sha256':'f'*64},{'weights_sha256':None}):
+            with self.subTest(mutation=mutation):
+                self.pretrained_results()
+                env=json.loads((self.root/'environment.json').read_text(encoding='utf-8'))
+                atomic_json(self.root/'environment.json',{**env,**mutation})
+                self.reseal('environment.json')
+                with self.assertRaises(ValueError):runtime.validate_artifacts(self.root)
 
 
 class ConfigTests(TemporaryTest):
@@ -293,6 +386,110 @@ class ConfigTests(TemporaryTest):
             with self.assertRaises(ValueError):
                 self.runtime.preflight()
             external.assert_not_called()
+
+    def cached_weights_fixture(self):
+        self.settings['torch_cache']=str(self.root/'torch-home')
+        cached=Path(self.settings['torch_cache'])/'hub'/'checkpoints'/'resnet50-11ad3fa6.pth'
+        cached.parent.mkdir(parents=True,exist_ok=True)
+        cached.write_bytes(b'synthetic host cache bytes; not torch weights\n'*31)
+        self.cfg['model'].update(weights='IMAGENET1K_V2',weights_sha256=digest(cached))
+        atomic_json(self.path,self.cfg)
+        return cached
+
+    def test_matching_pretrained_host_cache_full_hash_is_validated_without_torch(self):
+        cached=self.cached_weights_fixture()
+        original=cached.read_bytes()
+        with patch('augment_atlas.runtime.digest',wraps=digest) as streamed:
+            _,cfg=self.runtime.config_for(self.job())
+        self.assertEqual('IMAGENET1K_V2',cfg['model']['weights'])
+        self.assertIn(cached.resolve(),[Path(call.args[0]) for call in streamed.call_args_list])
+        self.assertEqual(original,cached.read_bytes())
+
+    def test_missing_or_mismatched_pretrained_cache_never_falls_back(self):
+        for failure in ('setting','missing','checksum','config-checksum'):
+            with self.subTest(failure=failure):
+                cached=self.cached_weights_fixture()
+                if failure=='setting':self.settings.pop('torch_cache')
+                elif failure=='missing':cached.unlink()
+                elif failure=='checksum':cached.write_bytes(b'different synthetic bytes')
+                else:
+                    self.cfg['model'].pop('weights_sha256')
+                    atomic_json(self.path,self.cfg)
+                with self.assertRaises(ValueError):self.runtime.config_for(self.job())
+
+    def test_explicit_spec_weight_hash_mismatch_is_rejected(self):
+        self.cached_weights_fixture()
+        with self.assertRaises(ValueError):
+            self.runtime.config_for({**self.job(),'weights_sha256':'0'*64})
+
+    def test_missing_pretrained_cache_fails_real_worker_selection_before_mock_claim(self):
+        self.cached_weights_fixture().unlink()
+        self.assert_worker_selection_rejected_before_mock_claim()
+
+    def assert_worker_selection_rejected_before_mock_claim(self):
+        settings={**self.settings,'runs':str(self.root/'runs'),'queue_checkout':str(self.root/'queue'),
+                  'remote':'mock-remote','server':'host-fixture','gpu':'0'}
+        self.runtime.gpu_uuid='GPU-fixture'
+        queue=Mock()
+        queue.list_jobs.return_value=[{'job_id':'a'*64,'state':'pending','spec':self.job()}]
+        with patch('augment_atlas.runtime.DockerRuntime',return_value=self.runtime), \
+             patch.object(self.runtime,'preflight'),patch.object(self.runtime,'probe'), \
+             patch.object(self.runtime,'compatible',return_value=True), \
+             patch('augment_atlas.runtime.GitQueue',return_value=queue), \
+             patch('augment_atlas.runtime.gpu_lock',return_value=contextlib.nullcontext()), \
+             patch('augment_atlas.runtime.command') as docker:
+            with self.assertRaises(ValueError):runtime.worker(settings,once=True)
+        queue.claim.assert_not_called()
+        docker.assert_not_called()
+
+    def candidate_backend_fixture(self):
+        self.cfg['protocol_version']='candidate-v2'
+        self.cfg['augmentation']['backend']='candidate-opencv-v2'
+        atomic_json(self.path,self.cfg)
+
+    def test_candidate_backend_requires_opencv_image_probe_before_mock_claim(self):
+        self.candidate_backend_fixture()
+        for environment in ({'opencv':None}, {'opencv':'4.12.0'},
+                            {'opencv':'4.12.0','opencv_distribution':'4.11.0.86'},
+                            {'opencv':'4.11.0','opencv_distribution':'4.12.0.88'}):
+            with self.subTest(environment=environment):
+                self.runtime.environment=environment
+                self.assert_worker_selection_rejected_before_mock_claim()
+
+    def test_candidate_backend_accepts_reported_opencv_and_legacy_works_without_it(self):
+        self.runtime.environment={'opencv':None}
+        self.runtime.config_for(self.job())
+        self.candidate_backend_fixture()
+        self.runtime.environment={'opencv':'4.12.0','opencv_distribution':'4.12.0.88'}
+        self.runtime.config_for(self.job())
+
+    def test_mock_docker_mounts_verified_pretrained_cache_readonly_and_sets_torch_home(self):
+        self.cached_weights_fixture()
+        self.runtime.commit='b'*40
+        self.runtime.image='sha256:fixture'
+        self.settings['gpu']='0'
+        with patch('augment_atlas.runtime.command') as docker, \
+             patch('augment_atlas.runtime.os.getuid',return_value=1000,create=True), \
+             patch('augment_atlas.runtime.os.getgid',return_value=1000,create=True):
+            self.runtime.create('container-fixture',self.job(),self.root/'output')
+        args=docker.call_args.args[0]
+        mount=f"type=bind,src={Path(self.settings['torch_cache']).resolve()},dst=/torch-cache,readonly"
+        self.assertIn(mount,args)
+        self.assertIn('TORCH_HOME=/torch-cache',args)
+        self.assertIn('--network',args)
+        self.assertEqual('none',args[args.index('--network')+1])
+
+    def test_mock_random_initialization_preserves_cache_optional_legacy_command(self):
+        self.runtime.commit='b'*40
+        self.runtime.image='sha256:fixture'
+        self.settings['gpu']='0'
+        self.settings['torch_cache']=str(self.root/'does-not-exist')
+        with patch('augment_atlas.runtime.command') as docker, \
+             patch('augment_atlas.runtime.os.getuid',return_value=1000,create=True), \
+             patch('augment_atlas.runtime.os.getgid',return_value=1000,create=True):
+            self.runtime.create('container-fixture',self.job(),self.root/'output')
+        self.assertFalse(any('/torch-cache' in str(arg) or str(arg).startswith('TORCH_HOME=')
+                             for arg in docker.call_args.args[0]))
 
 
 class WorkerBoundaryTests(TemporaryTest):

@@ -57,7 +57,8 @@ Do not remove the private journal, queue clone or container before reconciliatio
 
 See [acceptance](docs/acceptance.md) for executed checks and current limitations;
 the report distinguishes mocks, local real Git and remote Docker/CUDA evidence.
-[Queue recovery](docs/queue.md), [datasets](docs/datasets.md),
+[Candidate-v2 acceptance](docs/acceptance-v2.md) tracks the separate 16 October
+extension. [Queue recovery](docs/queue.md), [datasets](docs/datasets.md),
 [telemetry](docs/telemetry.md), [provenance](docs/provenance.md), and
 [scientific design](docs/scientific-design.md) describe the contracts.
 The [dataset and augmentation survey](docs/dataset-research.md) records primary
@@ -65,8 +66,15 @@ sources and current discussion preferences without fixing a final protocol.
 
 Only ResNet-50 is implemented. Synthetic examples use random initialization and
 tiny images to verify operation. The direct trainer supports cached ImageNet weights;
-the v1 worker requires random initialization until a weight-cache mount is deployed.
-The six demonstration augmentation policies are not optimized article parameters.
+the worker can mount a prepared host Torch cache read-only, requiring the
+full configured ImageNet checksum before claiming a pretrained job.
+The ten demonstration augmentation policies are not optimized article parameters.
+Four isolated gamma/CLAHE arms extend the original six without changing their
+algorithms or ranges. See the [protocol proposal](docs/protocol-draft.md).
+Separate `configs/smoke/candidate-v2/` examples use the provisional parameters
+accepted for 16 October: fixed-domain gamma, OpenCV CLAHE, named operation RNG
+and resize before augmentation. They use cached ImageNet weights and 224px;
+the legacy examples remain unchanged.
 Real data and effective patient/group split lists remain private on each server.
 Images are not duplicated by fold, seed or arm. Group-hash partitions are technical
 60/20/20 holdouts, **not** the future five-fold protocol. Learned preprocessing
@@ -75,7 +83,8 @@ statistics must come only from training; current normalization uses fixed consta
 Final datasets/labels/access, HPO design and budget, endpoints, augmentation ranges,
 evaluation and statistical analysis remain decisions for a later reviewed protocol.
 INbreast has already been examined in the earlier pilot. Changing seeds or folds
-does not restore independence. The future nominal 360 runs are not started here.
+does not restore independence. The ten-arm proposal would require 600 final runs;
+that campaign has not started.
 No energy or emissions claim follows from operational telemetry.
 
 This package uses a new selected history. Earlier pilot results are not results of

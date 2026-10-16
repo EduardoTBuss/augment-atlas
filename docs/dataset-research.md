@@ -85,7 +85,7 @@ extrema-preserving gamma formula also differs from a fixed 0–255-domain power.
 [MediAug](https://arxiv.org/abs/2504.18983) provide additional contemporary
 comparators. They use different operation spaces, mixing or data-expansion
 budgets; MedAugment does not use gamma/CLAHE. Adding them would expand the
-current six-arm design and needs a separate budget/protocol decision.
+proposed ten-arm design and needs a separate budget/protocol decision.
 
 Next decisions: choose acquisition/task and data release; verify groups and
 access; freeze preprocessing and metrics; choose protected HPO protocol and

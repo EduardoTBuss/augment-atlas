@@ -7,13 +7,21 @@ executado nesta revisão; nenhum parâmetro científico recebeu aprovação aqui
 Contexto: requisitos do projeto de 15/10/2026 e revisão estática dos contratos.
 Este documento registra recomendações; decisões científicas continuam pendentes.
 
+Atualização16/10: Eduardo escolheu HPO interno por fold, sem augmentation, e
+solicitou quatro braços isolados adicionais. O desenho agora é2×5, dez braços;
+detalhes, limites aceitos e escolhas provisórias do Codex em
+[protocol-draft.md](protocol-draft.md). Faixas para os testes de hoje não são
+ótimos nem aprovação da campanha. As alternativas históricas abaixo continuam
+documentadas para explicar a escolha.
+
 ## Pergunta, unidades e limites da conclusão
 
 A pergunta proposta é quanto cada política de augmentation altera o desempenho de
 uma receita ResNet50 ImageNet FP32 congelada, em uma tarefa de classificação definida,
 comparada aos controles. A direção atual contém INbreast, retina, dermoscopia e
-raio-X do tórax, com releases finais a escolher. Os seis braços são `none`, `basic`, `basic_gamma_light`,
-`basic_gamma_heavy`, `basic_clahe_light` e `basic_clahe_heavy`.
+raio-X do tórax, com releases finais a escolher. Os dez braços são `none`, `basic`,
+`basic_gamma_light`, `basic_gamma_heavy`, `basic_clahe_light`, `basic_clahe_heavy`,
+`gamma_light`, `gamma_heavy`, `clahe_light` e `clahe_heavy`.
 
 O paciente é a unidade de agrupamento das partições quando identificável. Imagens, exames,
 lesões e visitas do mesmo paciente permanecem juntos; se houver dependência maior
@@ -55,12 +63,12 @@ falhas, contrastes, multiplicidade e critérios de parada. Qualquer mudança dep
 disso deve aparecer como emenda datada ou análise pós-hoc, preservando a análise
 original. Sensibilidades não substituem silenciosamente o endpoint primário.
 
-## HPO: duas opções abertas e condição de escolha
+## HPO: escolha de16/10 e alternativa histórica
 
 | Opção | Separação necessária | Condição de viabilidade / limite |
 | --- | --- | --- |
-| Um estudo por dataset em desenvolvimento separado | Todo HPO e suas validações usam população de desenvolvimento excluída de todos os testes finais; congelar receita antes deles | Preferência discutida. Só adotar se restarem pacientes e eventos suficientes para avaliação útil; com cerca de 103 grupos no piloto INbreast, calcular a perda de precisão antes de reservar essa população. |
-| HPO dentro de cada treino externo | Cada fold externo executa HPO apenas em suas partições internas agrupadas; seleção de época/limiar fica interna; teste externo nunca informa escolhas | Alternativa se a separação de desenvolvimento inviabilizar amostra. A receita pode diferir entre folds, mas é compartilhada pelos seis braços dentro do fold; aumenta o orçamento e avalia um procedimento de seleção, não uma única receita global. |
+| Um estudo por dataset em desenvolvimento separado | Todo HPO e suas validações usam população de desenvolvimento excluída de todos os testes finais; congelar receita antes deles | Alternativa histórica, não escolhida em16/10. Exige pacientes/eventos suficientes após reservar desenvolvimento. |
+| HPO dentro de cada treino externo | Cada fold externo executa HPO apenas em suas partições internas agrupadas; seleção de época/limiar fica interna; teste externo nunca informa escolhas | Escolhido por Eduardo em16/10. A receita pode diferir entre folds, mas é compartilhada pelos dez braços dentro do fold; avalia um procedimento de seleção, não uma única receita global. |
 
 Não escolher o vencedor por comparar resultados externos dessas duas opções.
 Em ambas, HPO é sem augmentation; algoritmo, espaço de busca, número de tentativas,
@@ -85,11 +93,11 @@ população não exposta, essa limitação acompanha qualquer das opções.
    anterior, duplicatas e precisão esperada para uma diferença mínima relevante
    escolhida cientificamente. Se eventos forem insuficientes, decidir reduzir
    folds ou rever a pergunta antes de gerar resultados. Não procurar split favorável.
-3. Para a pergunta de ganho incremental, propor cinco contrastes por dataset:
-   `basic - none` e os quatro braços gamma/CLAHE menos `basic`. Estes controles
-   discriminam o efeito incremental de cada política. Comparações leve–forte e
-   gamma–CLAHE adicionais serão secundárias/exploratórias, se não registradas antes.
-4. A direção futura é 4 datasets × 6 braços × 5 folds externos × 3 seeds = **360
+3. No desenho dez braços, separar efeito isolado, incremento sobre básico e
+   interação. Família de contrastes e multiplicidade ainda precisa ser congelada;
+   a proposta mínima revisada está em protocol-draft.md. Não herdar automaticamente
+   os cinco contrastes do desenho anterior.
+4. A direção futura é4datasets ×10braços ×5folds externos ×3seeds = **600
    treinos de avaliação**, com os mesmos folds e seeds correspondentes por braço.
    Isso exclui HPO, piloto e retreinos: seus custos devem ser orçados separadamente.
    Não autoriza executar essa matriz agora. Se a pergunta científica for reduzida,

@@ -40,3 +40,66 @@ def apply_augmentation(image, operations: list[dict], rng):
         else:
             raise ValueError("unknown augmentation operation")
     return image
+
+
+def candidate_operation_draws(seed_identity: list, operation: dict) -> dict:
+    """Local named RNG streams; adding basic cannot change intensity draws."""
+    import random
+    from .contracts import canonical_hash
+    name = operation["op"]
+    rng = random.Random(int(canonical_hash([seed_identity, name, "candidate-v2"]), 16))
+    if name == "basic":
+        return {"flip": rng.random() < operation["flip_p"],
+                "photometric": rng.random() < operation["photometric_p"],
+                "brightness": rng.uniform(*operation["brightness"]),
+                "contrast": rng.uniform(*operation["contrast"])}
+    if name == "gamma":
+        return {"applied": rng.random() < operation["p"], "gamma": rng.uniform(*operation["range"])}
+    if name == "clahe":
+        return {"applied": rng.random() < operation["p"]}
+    raise ValueError("unknown candidate augmentation operation")
+
+
+def apply_candidate_augmentation(image, augmentation: dict, seed_identity: list):
+    """Candidate uint8 policy, applied AFTER the caller resizes its image.
+
+    Gamma uses a fixed [0,255] domain. OpenCV CLAHE uses grayscale or RGB Lab
+    luminance. Basic retains only the legacy flip/brightness/contrast policy;
+    geometry additions and final scientific parameters remain outside v2.
+    """
+    from PIL import Image, ImageEnhance
+    from .contracts import CANDIDATE_BACKEND
+    if augmentation.get("backend") != CANDIDATE_BACKEND:
+        raise ValueError("candidate augmentation requires its explicit backend")
+    if image.mode not in ("L", "RGB"):
+        raise ValueError("candidate augmentation requires uint8 PIL L or RGB")
+    for operation in augmentation["ops"]:
+        name = operation["op"]
+        draws = candidate_operation_draws(seed_identity, operation)
+        if name == "basic":
+            if draws["flip"]:
+                image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+            if draws["photometric"]:
+                image = ImageEnhance.Brightness(image).enhance(draws["brightness"])
+                image = ImageEnhance.Contrast(image).enhance(draws["contrast"])
+        elif name == "gamma":
+            if draws["applied"]:
+                import numpy as np
+                pixels = np.asarray(image, dtype=np.float64)
+                out = np.clip(np.rint(255.0 * (pixels / 255.0) ** draws["gamma"]), 0, 255).astype(np.uint8)
+                image = Image.fromarray(out)
+        elif name == "clahe":
+            if draws["applied"]:
+                import cv2
+                import numpy as np
+                pixels = np.asarray(image, dtype=np.uint8)
+                clahe = cv2.createCLAHE(clipLimit=float(operation["clip_limit"]),
+                                       tileGridSize=tuple(operation["tile_grid_size"]))
+                if image.mode == "L":
+                    result = clahe.apply(pixels)
+                else:
+                    lab = cv2.cvtColor(pixels, cv2.COLOR_RGB2LAB)
+                    lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+                    result = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+                image = Image.fromarray(result)
+    return image

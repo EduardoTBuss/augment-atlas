@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "phase": "smoke",
+  "scientific_status": "provisional",
+  "protocol_version": "candidate-v2",
+  "dataset": {
+    "id": "synthetic-tiny",
+    "version": "v1",
+    "adapter": "synthetic",
+    "synthetic_groups": 12
+  },
+  "splits": {
+    "version": "group-hash-v1",
+    "fold": 0,
+    "split_seed": 17
+  },
+  "recipe": {
+    "id": "technical-resnet50",
+    "version": "v1",
+    "frozen": true,
+    "hpo": {
+      "status": "pending",
+      "protocol": "within-outer-fold",
+      "origin": "technical-smoke-no-search"
+    },
+    "dependencies": []
+  },
+  "model": {
+    "name": "resnet50",
+    "weights": "IMAGENET1K_V2",
+    "num_classes": 2,
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "input": {
+    "size": 224,
+    "color": "grayscale_to_rgb"
+  },
+  "augmentation": {
+    "arm": "basic",
+    "ops": [
+      {
+        "op": "basic",
+        "flip_p": 0.5,
+        "photometric_p": 0.8,
+        "brightness": [
+          0.9,
+          1.1
+        ],
+        "contrast": [
+          0.9,
+          1.1
+        ]
+      }
+    ],
+    "provenance": "Candidate v2 technical smoke, provisional parameters accepted for today only. Fixed-domain uint8 gamma; OpenCV fixed clip/grid CLAHE after resize. Basic preserves legacy flip/brightness/contrast only; no new geometry. Scientific final protocol remains subject to review.",
+    "backend": "candidate-opencv-v2"
+  },
+  "training": {
+    "seed": 3,
+    "epochs": 2,
+    "batch_size": 2,
+    "accumulation_steps": 1,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "device": "cuda",
+    "workers": 0,
+    "deterministic": true,
+    "autocast": false,
+    "tf32": false,
+    "freeze_batchnorm": true
+  }
+}

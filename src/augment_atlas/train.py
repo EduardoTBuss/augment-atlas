@@ -33,7 +33,7 @@ class ClassificationDataset:
         import numpy as np
         import torch
         from PIL import Image
-        from .augment import apply_augmentation
+        from .augment import apply_augmentation, apply_candidate_augmentation
         row = self.records[index]
         cfg = self.cfg
         if cfg["dataset"]["adapter"] == "synthetic":
@@ -46,10 +46,20 @@ class ClassificationDataset:
         else:
             with Image.open(confined_path(data_root(cfg), row["path"])) as source:
                 image = source.convert("L" if cfg["input"]["color"] == "grayscale_to_rgb" else "RGB")
-        if self.training:
+        candidate = cfg['augmentation'].get('backend') == 'candidate-opencv-v2'
+        if candidate:
+            # Candidate v2 explicitly fixes resize BEFORE train-only augmentation.
+            # Keep the legacy path unchanged for old configs/checkpoints.
+            image = image.resize((cfg['input']['size'],) * 2, Image.Resampling.BILINEAR)
+        if self.training and candidate:
+            image = apply_candidate_augmentation(image, cfg['augmentation'],
+                                                 [cfg['training']['seed'], self.epoch, row['id']])
+        elif self.training:
             rng = random.Random(int(canonical_hash([cfg["training"]["seed"], self.epoch, row["id"]])[:16], 16))
             image = apply_augmentation(image, cfg["augmentation"]["ops"], rng)
-        image = image.resize((cfg["input"]["size"],) * 2, Image.Resampling.BILINEAR).convert("RGB")
+        if not candidate:
+            image = image.resize((cfg['input']['size'],) * 2, Image.Resampling.BILINEAR)
+        image = image.convert('RGB')
         pixels = np.asarray(image, dtype=np.float32).copy() / 255.0
         tensor = torch.from_numpy(pixels).permute(2, 0, 1)
         mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
@@ -123,6 +133,9 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
         weights_file = Path(torch.hub.get_dir()) / "checkpoints" / filename
         if not weights_file.is_file():
             raise RuntimeError("ImageNet weights missing from local torch cache; downloads are disabled")
+        expected_weights_hash = cfg['model'].get('weights_sha256')
+        if expected_weights_hash and file_hash(weights_file) != expected_weights_hash:
+            raise ValueError('ImageNet cache checksum differs from the frozen model configuration')
         model.load_state_dict(torch.load(weights_file, map_location="cpu", weights_only=True))
     model.fc = torch.nn.Linear(model.fc.in_features, cfg["model"]["num_classes"])
     model.to(device=device, dtype=torch.float32)
@@ -142,6 +155,13 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                    "code_commit": os.environ.get("ATLAS_CODE_COMMIT", "unavailable"),
                    "image_id": os.environ.get("ATLAS_IMAGE_ID", "unavailable"),
                    "config_sha256": config_hash, "splits_sha256": splits["sha256"]}
+    environment['augmentation_backend'] = cfg['augmentation'].get('backend', 'legacy-pilot-v1')
+    environment['augmentation_resize_order'] = 'resize-before-augmentation' if cfg['augmentation'].get('backend') == 'candidate-opencv-v2' else 'augmentation-before-resize'
+    if cfg['augmentation'].get('backend') == 'candidate-opencv-v2':
+        import cv2
+        from importlib.metadata import version
+        environment['opencv'] = cv2.__version__
+        environment['opencv_python_headless'] = version('opencv-python-headless')
     environment["dataset_integrity"] = {"manifest_records_sha256": splits["manifest_sha256"],
                                          "image_hashes_present": sum("sha256" in row for row in records),
                                          "images_total": len(records),

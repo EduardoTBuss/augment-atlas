@@ -1,4 +1,10 @@
-"""Host worker. Git credentials never enter the training container."""
+"""Host worker. Git credentials never enter the training container.
+
+Optional settings.torch_cache is the host TORCH_HOME root, containing
+hub/checkpoints/resnet50-11ad3fa6.pth. Pretrained jobs require its exact full
+SHA256 from model.weights_sha256; the cache is mounted read-only at /torch-cache.
+Random-initialization jobs need no cache. No weight downloads are performed.
+"""
 from __future__ import annotations
 import contextlib
 import datetime as dt
@@ -38,7 +44,16 @@ def gpu_lock(root, gpu_uuid):
         yield
 
 
-PROBE = '''import json,torch,torchvision,numpy,PIL,skimage
+PROBE = '''import json,torch,torchvision,numpy,PIL,skimage,importlib.util,importlib.metadata
+opencv=None
+opencv_distribution=None
+if importlib.util.find_spec('cv2') is not None:
+    import cv2
+    opencv=cv2.__version__
+try:
+    opencv_distribution=importlib.metadata.version('opencv-python-headless')
+except importlib.metadata.PackageNotFoundError:
+    pass
 torch.backends.cuda.matmul.allow_tf32=False
 torch.backends.cudnn.allow_tf32=False
 assert torch.cuda.is_available()
@@ -46,8 +61,27 @@ x=torch.randn(2,3,16,16,device='cuda',requires_grad=True)
 torch.nn.Conv2d(3,4,3).cuda()(x).square().mean().backward()
 torch.cuda.synchronize()
 assert x.grad is not None and torch.isfinite(x.grad).all()
-print(json.dumps(dict(torch=torch.__version__,torchvision=torchvision.__version__,cuda=torch.version.cuda,capability=torch.cuda.get_device_capability(),forward_backward=True)))
+print(json.dumps(dict(torch=torch.__version__,torchvision=torchvision.__version__,cuda=torch.version.cuda,capability=torch.cuda.get_device_capability(),forward_backward=True,opencv=opencv,opencv_distribution=opencv_distribution)))
 '''
+
+
+IMAGENET_V2_CHECKPOINT = 'resnet50-11ad3fa6.pth'
+
+
+def expected_weights_sha256(cfg,spec=None):
+    """Reconcile immutable config/spec weight identity without importing torch."""
+    expected=cfg['model'].get('weights_sha256') if cfg['model']['weights']!='none' else None
+    if cfg['model']['weights']!='none':
+        if cfg['model']['weights']!='IMAGENET1K_V2' or not isinstance(expected,str) or not re.fullmatch('[a-f0-9]{64}',expected):
+            raise ValueError('IMAGENET1K_V2 requires an explicit full lowercase model.weights_sha256')
+    if spec:
+        declared=[]
+        if 'weights_sha256' in spec:declared.append(spec['weights_sha256'])
+        if isinstance(spec.get('model'),dict) and 'weights_sha256' in spec['model']:
+            declared.append(spec['model']['weights_sha256'])
+        if any(value!=expected for value in declared):
+            raise ValueError('Job/config pretrained weights checksum mismatch')
+    return expected
 
 
 class DockerRuntime:
@@ -85,6 +119,21 @@ class DockerRuntime:
                                             '--entrypoint','python',self.image,'-c',PROBE],timeout=120))
         return self.environment
 
+    def weights_cache_for(self,cfg,spec):
+        """Verify host bytes before ownership is claimed; missing cache fails closed."""
+        expected=expected_weights_sha256(cfg,spec)
+        if expected is None:return None
+        setting=self.s.get('torch_cache')
+        if not isinstance(setting,str) or not setting.strip():
+            raise ValueError('Pretrained jobs require settings.torch_cache pointing to a host TORCH_HOME')
+        root=Path(setting).expanduser().resolve()
+        checkpoint=(root/'hub'/'checkpoints'/IMAGENET_V2_CHECKPOINT).resolve()
+        if not root.is_dir() or not checkpoint.is_relative_to(root) or not checkpoint.is_file():
+            raise ValueError('Required cached IMAGENET1K_V2 checkpoint is unavailable')
+        if digest(checkpoint)!=expected:
+            raise ValueError('Cached IMAGENET1K_V2 checkpoint checksum mismatch')
+        return root
+
     def config_for(self,spec):
         name=spec.get('config')
         if not isinstance(name,str) or not name.startswith('configs/smoke/'):
@@ -92,15 +141,18 @@ class DockerRuntime:
         path=(self.code/name).resolve()
         if not path.is_relative_to(self.code) or not path.is_file():
             raise ValueError('Invalid training config path')
-        from .contracts import load_config
+        from .contracts import load_config,CANDIDATE_BACKEND
         from .data import load_records,prepare_splits
         from .cli import recipe_identity
         import tempfile
         cfg=load_config(path)
-        if cfg['model']['weights']!='none':
-            raise ValueError('Worker v1 smoke requires weights=none; cached ImageNet mount needs an explicit later deployment')
+        if cfg['augmentation'].get('backend')==CANDIDATE_BACKEND:
+            environment=getattr(self,'environment',{})
+            if environment.get('opencv')!='4.12.0' or environment.get('opencv_distribution')!='4.12.0.88':
+                raise ValueError('candidate-opencv-v2 requires cv2=4.12.0 and opencv-python-headless=4.12.0.88 before claim')
         if spec.get('config_sha256') != digest(path):
             raise ValueError('Training config checksum mismatch')
+        self.weights_cache_for(cfg,spec) # streaming hash before a worker may claim
         # Local roots are runtime inputs, never public absolute paths.
         old=os.environ.get('ATLAS_DATA_ROOT'); os.environ['ATLAS_DATA_ROOT']=str(self.data)
         try:
@@ -129,7 +181,7 @@ class DockerRuntime:
                 and c.get('gpu_uuid',self.gpu_uuid)==self.gpu_uuid)
 
     def create(self,name,spec,out,resume=False):
-        config,_=self.config_for(spec)
+        config,cfg=self.config_for(spec) # revalidate cache immediately before create
         args=['docker','create','--name',name,'--label','org.augment-atlas.attempt='+name,
               '--network','none','--gpus','device='+str(self.s['gpu']),
               '--user',f'{os.getuid()}:{os.getgid()}','--cpus',str(self.s.get('cpus',2)),
@@ -141,8 +193,11 @@ class DockerRuntime:
               '-e','CUBLAS_WORKSPACE_CONFIG=:4096:8',
               '--mount',f'type=bind,src={self.code},dst=/code,readonly',
               '--mount',f'type=bind,src={self.data},dst=/data,readonly',
-              '--mount',f'type=bind,src={out},dst=/output',
-              '--workdir','/code','--entrypoint','python',self.image,
+              '--mount',f'type=bind,src={out},dst=/output']
+        if cfg['model']['weights']!='none':
+            cache=Path(self.s['torch_cache']).expanduser().resolve()
+            args+=['--mount',f'type=bind,src={cache},dst=/torch-cache,readonly','-e','TORCH_HOME=/torch-cache']
+        args+=['--workdir','/code','--entrypoint','python',self.image,
               '-m','augment_atlas.train','--config','/code/'+config,'--output','/output','--resume-if-exists']
         if resume: args+=['--resume','/output/checkpoint.pt']
         command(args)
@@ -210,12 +265,17 @@ def _validate_artifacts(out,spec=None):
     results=json.loads((out/'results.json').read_text())
     metrics=json.loads((out/'metrics.json').read_text())
     environment=json.loads((out/'environment.json').read_text())
+    weights_hash=expected_weights_sha256(cfg,spec)
+    if weights_hash is not None and (environment.get('weights')!=cfg['model']['weights'] or environment.get('weights_sha256')!=weights_hash):
+        raise ValueError('Environment pretrained weights identity mismatch')
     if not isinstance(metrics,list) or len(metrics)!=cfg['training']['epochs']:
         raise ValueError('Incomplete epoch history')
     for record in (value,progress,results,environment):
         if record.get('config_sha256')!=config_hash or record.get('splits_sha256')!=splits['sha256']:
             raise ValueError('Completion config/split identity mismatch')
-    if progress.get('status')!='completed' or progress.get('epoch')!=cfg['training']['epochs'] or value.get('epoch')!=progress['epoch']:
+    if (progress.get('status')!='completed' or type(progress.get('epoch')) is not int
+            or progress['epoch']!=cfg['training']['epochs'] or type(value.get('epoch')) is not int
+            or value['epoch']!=progress['epoch']):
         raise ValueError('Training did not complete every configured epoch')
     test=results.get('test',{})
     loss,accuracy=test.get('loss'),test.get('accuracy')
@@ -223,7 +283,10 @@ def _validate_artifacts(out,spec=None):
         raise ValueError('Invalid evaluation artifact')
     if spec and (spec['split_hash']!=splits['sha256'] or cfg['training']['seed']!=spec['train_seed'] or cfg['augmentation']['arm']!=spec['arm']):
         raise ValueError('Result belongs to another job')
-    return dict(completed_sha256=digest(p),artifact_count=len(files))
+    summary=dict(completed_sha256=digest(p),artifact_count=len(files),epoch=progress['epoch'],epochs=cfg['training']['epochs'])
+    samples=progress.get('samples_processed')
+    if type(samples) is int and samples>=0:summary['samples_processed']=samples
+    return summary
 
 
 def worker(settings,once=False):

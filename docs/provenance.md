@@ -1,11 +1,17 @@
 # Technical provenance and provisional scientific choices
 
-The current phase is `smoke`, with `scientific_status: provisional`. All six
+The current phase is `smoke`, with `scientific_status: provisional`. All ten
 arm configurations are examples for integration tests. They are not optimized
 hyperparameters, literature-backed ranges or approval to launch a final
 campaign. The scientific code and parameters will be reviewed again before
 that campaign. Only ResNet-50 classification is implemented here; the old
 multitask module is never imported.
+
+On 2026-10-16, four isolated arms (`gamma_light`, `gamma_heavy`, `clahe_light`,
+`clahe_heavy`) were derived from the corresponding combined examples by removing
+only `basic` and changing the arm/provenance fields. The original six remain
+unchanged, including the explicit demonstration gap for heavy CLAHE. These
+examples still use the legacy algorithm, not the newly discussed OpenCV recipe.
 
 The implementation was written for AugmentAtlas after inspecting these paths
 in the existing `mamografia-estudo` working tree, read-only, on 2026-10-15:
