@@ -17,9 +17,10 @@ import signal
 import subprocess
 import time
 import uuid
+import zipfile
 
 from .storage import atomic_json, digest
-from .queue import GitQueue, QueueError, QueueConflict
+from .queue import GitQueue, QueueError, QueueConflict, StaleAttempt
 from .telemetry import append_sample
 
 
@@ -230,6 +231,160 @@ class Spool:
             self.record=record
             self.events.pop(0); self.save()
         return self.record
+
+
+def _stopped_checkpoint(out,spec,code):
+    """Verify host provenance and archive bytes, without loading pickle or torch.
+
+    This deliberately does not assert tensor/model/optimizer resumability. A CPU
+    checkpoint load in the pinned training environment is a separate acceptance
+    check before an operator explicitly resumes the attempt.
+    """
+    from .contracts import load_config,canonical_hash
+    out=Path(out)
+    source=(Path(code)/spec['config']).resolve()
+    if not source.is_relative_to(Path(code).resolve()) or digest(source)!=spec['config_sha256']:
+        raise ValueError('checkpoint_config_identity')
+    cfg=load_config(out/'config.json')
+    if canonical_hash(cfg)!=canonical_hash(load_config(source)):
+        raise ValueError('checkpoint_config_identity')
+    splits=json.loads((out/'splits.json').read_text(encoding='utf-8'))
+    if (splits.get('sha256')!=spec['split_hash'] or
+            splits['sha256']!=canonical_hash({k:v for k,v in splits.items() if k!='sha256'})):
+        raise ValueError('checkpoint_split_identity')
+    progress=json.loads((out/'progress.json').read_text(encoding='utf-8'))
+    if (progress.get('config_sha256')!=canonical_hash(cfg) or
+            progress.get('splits_sha256')!=splits['sha256'] or
+            progress.get('checkpoint')!='checkpoint.pt'):
+        raise ValueError('checkpoint_progress_identity')
+    epoch,epochs,samples=(progress.get(k) for k in ('epoch','epochs','samples_processed'))
+    if (type(epoch) is not int or type(epochs) is not int or type(samples) is not int or
+            epochs!=cfg['training']['epochs'] or not 0<=epoch<=epochs or samples<0):
+        raise ValueError('checkpoint_progress_invalid')
+    checkpoint=out/'checkpoint.pt'
+    if checkpoint.is_symlink() or not checkpoint.is_file() or checkpoint.stat().st_size==0:
+        raise ValueError('checkpoint_missing')
+    try:
+        with zipfile.ZipFile(checkpoint) as archive:
+            names=archive.namelist()
+            if (len(names)!=len(set(names)) or
+                    sum(name.endswith('/data.pkl') for name in names)!=1 or
+                    not any('/data/' in name for name in names) or archive.testzip() is not None):
+                raise ValueError('checkpoint_archive_invalid')
+    except (zipfile.BadZipFile,RuntimeError) as exc:
+        raise ValueError('checkpoint_archive_invalid') from exc
+    return (dict(epoch=epoch,epochs=epochs,samples_processed=samples),
+            dict(sha256=digest(checkpoint),size_bytes=checkpoint.stat().st_size,
+                 validation='zip-crc-and-job-artifact-identity',
+                 config_sha256=canonical_hash(cfg),splits_sha256=splits['sha256']))
+
+
+def reconcile_stopped_attempt(settings,active_path,*,reason,runtime=None,queue=None):
+    """Reconcile an owned, stopped attempt without training or a CUDA probe.
+
+    The existing journal, token, versions and durable event IDs remain the only
+    authority. Queue conflicts propagate. A Git outage returns pending=True;
+    calling this function again replays the same event, including lost replies.
+    The caller must ensure the worker is stopped before invoking reconciliation.
+    """
+    if not isinstance(reason,str) or not reason.strip() or len(reason)>500 or '\n' in reason or '\r' in reason:
+        raise ValueError('Reconciliation requires a short public audit reason')
+    active=Path(active_path).resolve()
+    root=Path(settings['runs']).resolve()
+    if not active.is_relative_to(root) or active.name!='active.json':
+        raise ValueError('Active journal is outside configured runs')
+    local=json.loads(active.read_text(encoding='utf-8'))
+    initial=local['record']; out=Path(local['output']).resolve()
+    if out!=root/initial['job_id']/initial['attempt_id']:
+        raise ValueError('Active output does not belong to journal attempt')
+    owner=initial.get('owner') or {}
+    if (owner.get('server')!=settings['server'] or str(owner.get('gpu'))!=str(settings['gpu']) or
+            not owner.get('gpu_uuid') or active.parent.name!='worker-'+owner['gpu_uuid']):
+        raise StaleAttempt('Active journal does not belong to configured worker')
+    if local.get('stage') not in ('launched','interrupted','reconciliation-pending','failed','succeeded','cancelled'):
+        raise ValueError('Only previously launched attempts may be reconciled')
+    provenance=json.loads((out/'runtime.json').read_text(encoding='utf-8'))
+    for key,wanted in dict(job_id=initial['job_id'],attempt_id=initial['attempt_id'],owner=owner,
+                           code_commit=initial['spec']['code_commit'],image_id=local['image']).items():
+        if provenance.get(key)!=wanted:
+            raise ValueError('Runtime provenance differs from active attempt')
+    spool=Spool(out/'events-pending.json',initial)
+    record=spool.record
+    if record.get('owner')!=owner or record.get('spec')!=initial['spec']:
+        raise StaleAttempt('Spool ownership or immutable spec differs from journal')
+    runtime=runtime if runtime is not None else DockerRuntime(settings)
+    container=runtime.inspect(local['container'])
+    if container is None:
+        raise ValueError('Reconciliation requires the original stopped container')
+    state=container.get('State',{})
+    if state.get('Running') is not False or state.get('Status') not in ('exited','dead'):
+        raise ValueError('Reconciliation requires a confirmed stopped, previously executed container')
+    config=container.get('Config',{})
+    env=config.get('Env') or []
+    mounts=container.get('Mounts') or []
+    if (container.get('Name','').lstrip('/')!=local['container'] or container.get('Image')!=local['image'] or
+            (config.get('Labels') or {}).get('org.augment-atlas.attempt')!=local['container'] or
+            'ATLAS_CODE_COMMIT='+record['spec']['code_commit'] not in env or
+            'ATLAS_IMAGE_ID='+local['image'] not in env or
+            not any(m.get('Destination')=='/output' and m.get('Type')=='bind' and
+                    Path(m.get('Source','')).resolve()==out and m.get('RW') is True for m in mounts)):
+        raise ValueError('Stopped container identity or output mount differs from journal')
+    if type(state.get('ExitCode')) is not int:
+        raise ValueError('Stopped container lacks an exit status')
+    terminals={'succeeded','failed','interrupted','cancelled'}
+    terminal=next((event for event in spool.events if event['state'] in terminals),None)
+    checkpoint=None
+    if terminal is None and record['state'] not in terminals:
+        numbers={}
+        error=None
+        completed=False
+        try:
+            if state['ExitCode']==0 and (out/'completed.json').exists():
+                numbers=validate_artifacts(out,record['spec'])
+                completed=True
+            else:
+                numbers,checkpoint=_stopped_checkpoint(out,record['spec'],settings['code'])
+        except (ValueError,OSError,KeyError,TypeError,AttributeError) as exc:
+            error=str(exc) if str(exc).startswith('checkpoint_') else 'checkpoint_artifacts_invalid'
+        interrupted_exit=state['ExitCode'] in (75,130,137,143)
+        training_failed=not completed and ((out/'failed.json').exists() or not interrupted_exit)
+        target=('succeeded' if completed else 'interrupted') if error is None and state.get('OOMKilled') is not True and not training_failed else 'failed'
+        data=dict(reason=reason,exit_code=state['ExitCode'],oom_killed=state.get('OOMKilled') is True,
+                  reconciliation=True,**numbers)
+        if checkpoint is not None:data['checkpoint']=checkpoint
+        if error is not None:data['validation_error']=error
+        if training_failed:data['training_failed']=True
+        spool.add(target,**data)
+        terminal=spool.events[-1]
+    target=terminal['state'] if terminal is not None else record['state']
+    if terminal is not None:checkpoint=terminal.get('checkpoint')
+    elif record['state'] in terminals:
+        checkpoint=next((event.get('checkpoint') for event in reversed(record.get('history',[]))
+                         if event.get('attempt_id')==record['attempt_id'] and event.get('state')==target),None)
+    local.update(record=spool.record,stage='reconciliation-pending',reconciliation_state=target)
+    atomic_json(active,local)
+    confirmed=False
+    # Persist the decision BEFORE any Git work (including GitQueue construction).
+    # An outer operator timeout can therefore never lose the terminal event.
+    try:
+        queue=queue if queue is not None else GitQueue(settings['queue_checkout'],settings['remote'],settings.get('branch','queue'))
+        current=next((item for item in queue.list_jobs() if item['job_id']==record['job_id']),None)
+        if current is None:
+            raise QueueConflict('Journal job is absent from queue')
+        if any(current.get(k)!=record.get(k) for k in ('attempt_id','token','owner','spec')):
+            raise StaleAttempt('Stopped attempt is no longer the queue owner')
+        if not spool.events and current['version']!=record['version']:
+            raise QueueConflict('Queue version differs from journal; inspect before reconciliation')
+        spool.flush(queue)
+        confirmed=True
+    except QueueConflict:
+        raise
+    except QueueError:
+        pass
+    local.update(record=spool.record,stage=target if confirmed else 'reconciliation-pending')
+    atomic_json(active,local)
+    return dict(record=spool.record,state=target,pending=not confirmed,pending_events=len(spool.events),
+                remote_confirmed=confirmed,active=str(active),checkpoint=checkpoint)
 
 
 def validate_artifacts(out,spec=None):

@@ -14,10 +14,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 
 from augment_atlas import runtime
-from augment_atlas.queue import QueueError, StaleAttempt, parse_record, render_record
+from augment_atlas.queue import GitQueue, QueueConflict, QueueError, StaleAttempt, parse_record, render_record
 from augment_atlas.schema import new_record
 from augment_atlas.storage import atomic_json, digest
 from augment_atlas.contracts import canonical_hash
@@ -618,6 +619,236 @@ class ResumeCrashTests(TemporaryTest):
 
     def test_mock_child_started_and_finished_before_coordinator_restart(self):
         self.run_recovery(started_after_crash=True)
+
+
+class StoppedReconciliationTests(TemporaryTest):
+    """Real local Git transport and durable journals; Docker inspect is mocked.
+
+    The checkpoint is an opaque ZIP fixture, not a loadable torch checkpoint.
+    Reconciliation promises CRC/provenance validation, never resumability.
+    """
+    def setUp(self):
+        super().setUp()
+        self.settings=dict(code=str(self.root/'code'),data=str(self.root/'data'),runs=str(self.root/'runs'),
+                           queue_checkout=str(self.root/'queue'),remote=str(self.root/'remote.git'),
+                           server='fixture-host',gpu='0')
+        subprocess.run(['git','init','--bare',self.settings['remote']],check=True,capture_output=True)
+        self.queue=GitQueue(self.settings['queue_checkout'],self.settings['remote'])
+        cfg=json.loads((Path(__file__).resolve().parents[1]/'configs/smoke/synthetic.json').read_text())
+        cfg['training']['epochs']=5
+        source=Path(self.settings['code'])/'configs/smoke/fixture.json'
+        atomic_json(source,cfg)
+        splits={'lists':{'train':['one'],'selection':['two'],'test':['three']}}
+        splits['sha256']=canonical_hash(splits)
+        spec=dict(protocol_version='smoke-v1',dataset='synthetic',dataset_version='v1',
+                  split_hash=splits['sha256'],recipe_hash='fixture-recipe',phase='smoke',fold=0,
+                  train_seed=cfg['training']['seed'],arm=cfg['augmentation']['arm'],code_commit='b'*40,
+                  config='configs/smoke/fixture.json',config_sha256=digest(source))
+        pending=self.queue.seed([spec])[0]
+        owner=dict(server='fixture-host',gpu='0',gpu_uuid='GPU-fixture')
+        claimed=self.queue.claim(pending['job_id'],owner)
+        self.record=self.queue.update(claimed['job_id'],claimed['attempt_id'],claimed['token'],claimed['version'],
+                                      dict(event_id='fixture-start',state='running',epoch=0))
+        self.out=Path(self.settings['runs'])/self.record['job_id']/self.record['attempt_id']
+        self.out.mkdir(parents=True)
+        self.active=Path(self.settings['runs'])/'worker-GPU-fixture/active.json'
+        self.name='atlas-'+self.record['attempt_id']
+        self.image='sha256:fixture-image'
+        atomic_json(self.active,dict(record=self.record,output=str(self.out),container=self.name,
+                                    image=self.image,stage='launched'))
+        atomic_json(self.out/'runtime.json',dict(job_id=self.record['job_id'],attempt_id=self.record['attempt_id'],
+                    code_commit=spec['code_commit'],image_id=self.image,owner=owner))
+        atomic_json(self.out/'config.json',cfg)
+        atomic_json(self.out/'splits.json',splits)
+        atomic_json(self.out/'progress.json',dict(status='interrupted',epoch=3,epochs=5,samples_processed=48,
+                    config_sha256=canonical_hash(cfg),splits_sha256=splits['sha256'],checkpoint='checkpoint.pt'))
+        with zipfile.ZipFile(self.out/'checkpoint.pt','w') as archive:
+            archive.writestr('checkpoint/data.pkl',b'opaque fixture; never unpickle')
+            archive.writestr('checkpoint/data/0',b'opaque tensor fixture')
+        self.container=dict(Name='/'+self.name,Image=self.image,
+                            State=dict(Status='exited',Running=False,ExitCode=143,OOMKilled=False),
+                            Config=dict(Labels={'org.augment-atlas.attempt':self.name},
+                                        Env=['ATLAS_CODE_COMMIT='+spec['code_commit'],'ATLAS_IMAGE_ID='+self.image]),
+                            Mounts=[dict(Type='bind',Source=str(self.out),Destination='/output',RW=True)])
+        self.host=Mock()
+        self.host.inspect.return_value=self.container
+
+    def reconcile(self,queue=None):
+        with patch('augment_atlas.runtime.command',side_effect=AssertionError('forbidden command')), \
+             patch('augment_atlas.runtime.subprocess.run',side_effect=AssertionError('forbidden subprocess')) if queue is not None else contextlib.nullcontext():
+            return runtime.reconcile_stopped_attempt(self.settings,self.active,reason='thermal_guard: preventative89C; ceiling90C',
+                                                    runtime=self.host,queue=self.queue if queue is None else queue)
+
+    def test_stopped_owned_attempt_converges_progress_reason_and_terminal(self):
+        before={name for name in sys.modules if name=='torch' or name.startswith('torch.')}
+        result=self.reconcile()
+        self.assertTrue(result['remote_confirmed'])
+        self.assertEqual(0,result['pending_events'])
+        final=self.queue.list_jobs()[0]
+        event=final['history'][-1]
+        self.assertEqual(('interrupted',3,5,48),tuple(event[k] for k in ('state','epoch','epochs','samples_processed')))
+        self.assertEqual(143,event['exit_code'])
+        self.assertIn('thermal_guard',event['reason'])
+        self.assertEqual(digest(self.out/'checkpoint.pt'),event['checkpoint']['sha256'])
+        journal=json.loads(self.active.read_text())
+        self.assertEqual(final,journal['record'])
+        self.assertEqual('interrupted',journal['stage'])
+        self.assertEqual([],runtime.Spool(self.out/'events-pending.json',self.record).events)
+        self.assertIn('Epoch: 3/5 |',render_record(final))
+        self.assertEqual(before,{name for name in sys.modules if name=='torch' or name.startswith('torch.')})
+        self.host.preflight.assert_not_called(); self.host.probe.assert_not_called(); self.host.create.assert_not_called()
+        # A fully acknowledged repeat emits no new queue event.
+        self.assertTrue(self.reconcile()['remote_confirmed'])
+        self.assertEqual(final,self.queue.list_jobs()[0])
+
+    def test_running_created_or_missing_container_never_mutates_journal_or_queue(self):
+        original=self.active.read_bytes()
+        for status,running in (('running',True),('paused',False),('created',False)):
+            with self.subTest(status=status):
+                self.container['State'].update(Status=status,Running=running)
+                with self.assertRaisesRegex(ValueError,'confirmed stopped'):
+                    self.reconcile()
+        self.host.inspect.return_value=None
+        with self.assertRaisesRegex(ValueError,'original stopped'):
+            self.reconcile()
+        self.assertEqual(original,self.active.read_bytes())
+        self.assertFalse((self.out/'events-pending.json').exists())
+        self.assertEqual(self.record,self.queue.list_jobs()[0])
+
+    def test_container_and_runtime_identity_mismatch_rejected(self):
+        original=copy.deepcopy(self.container)
+        for mutate in (lambda c:c.update(Image='sha256:other'),
+                       lambda c:c['Config']['Labels'].clear(),
+                       lambda c:c['Config']['Env'].clear(),
+                       lambda c:c['Mounts'][0].update(Source=str(self.root/'foreign'))):
+            with self.subTest(mutation=mutate):
+                changed=copy.deepcopy(original); mutate(changed)
+                self.host.inspect.return_value=changed
+                with self.assertRaisesRegex(ValueError,'identity or output mount'):
+                    self.reconcile()
+        self.assertFalse((self.out/'events-pending.json').exists())
+
+    def test_runtime_owner_or_spool_owner_mismatch_rejected(self):
+        path=self.out/'runtime.json'
+        provenance=json.loads(path.read_text())
+        atomic_json(path,{**provenance,'owner':{'server':'foreign'}})
+        with self.assertRaisesRegex(ValueError,'Runtime provenance'):
+            self.reconcile()
+        atomic_json(path,provenance)
+        foreign={**self.record,'owner':{'server':'foreign'}}
+        runtime.Spool(self.out/'events-pending.json',foreign).save()
+        with self.assertRaises(StaleAttempt):self.reconcile()
+        self.assertEqual([],runtime.Spool(self.out/'events-pending.json',self.record).events)
+
+    def test_remote_stale_ownership_rejected_without_remote_mutation(self):
+        current=self.queue.update(self.record['job_id'],self.record['attempt_id'],self.record['token'],self.record['version'],
+                                  dict(event_id='external-stop',state='interrupted'))
+        current=self.queue.retry(current['job_id'],current['version'],'test fixture changes owner')
+        replacement=self.queue.claim(current['job_id'],dict(server='other-fixture'))
+        with self.assertRaises(StaleAttempt):self.reconcile()
+        self.assertEqual(replacement,self.queue.list_jobs()[0])
+        self.assertEqual(1,len(runtime.Spool(self.out/'events-pending.json',self.record).events))
+
+    def test_remote_unrelated_version_change_requires_inspection(self):
+        self.queue.update(self.record['job_id'],self.record['attempt_id'],self.record['token'],self.record['version'],
+                          dict(event_id='external-observation',state='running',epoch=1))
+        with self.assertRaises(QueueConflict):self.reconcile()
+        self.assertEqual(1,len(runtime.Spool(self.out/'events-pending.json',self.record).events))
+
+    def test_terminal_event_is_durable_before_first_git_io_can_be_interrupted(self):
+        interrupted=Mock()
+        def abort_during_git():
+            pending=runtime.Spool(self.out/'events-pending.json',self.record)
+            self.assertEqual('interrupted',pending.events[0]['state'])
+            self.assertEqual('reconciliation-pending',json.loads(self.active.read_text())['stage'])
+            raise KeyboardInterrupt('synthetic operator timeout during first Git operation')
+        interrupted.list_jobs.side_effect=abort_during_git
+        with self.assertRaises(KeyboardInterrupt):self.reconcile(interrupted)
+        self.assertTrue(self.reconcile()['remote_confirmed'])
+
+    def test_git_outage_durable_event_replays_exactly_once_with_real_git(self):
+        offline=Mock()
+        offline.list_jobs.side_effect=QueueError('synthetic network outage')
+        offline.update.side_effect=QueueError('synthetic network outage')
+        result=self.reconcile(offline)
+        self.assertEqual((True,False,1),(result['pending'],result['remote_confirmed'],result['pending_events']))
+        pending=runtime.Spool(self.out/'events-pending.json',self.record)
+        event=copy.deepcopy(pending.events[0])
+        self.assertEqual('reconciliation-pending',json.loads(self.active.read_text())['stage'])
+        self.reconcile(offline)
+        self.assertEqual([event],runtime.Spool(pending.path,self.record).events)
+        self.reconcile()
+        final=self.queue.list_jobs()[0]
+        self.assertEqual(1,len([e for e in final['history'] if e.get('event_id')==event['event_id']]))
+        self.assertEqual(self.record['version']+1,final['version'])
+
+    def test_accepted_event_with_lost_reply_replays_same_id_once(self):
+        online=self.queue.update
+        def lost_reply(*args,**kwargs):
+            online(*args,**kwargs)
+            raise QueueError('synthetic lost acknowledgement')
+        with patch.object(self.queue,'update',side_effect=lost_reply):
+            first=self.reconcile()
+        self.assertTrue(first['pending'])
+        pending=runtime.Spool(self.out/'events-pending.json',self.record)
+        event_id=pending.events[0]['event_id']
+        recovered=self.reconcile()
+        self.assertFalse(recovered['pending'])
+        final=self.queue.list_jobs()[0]
+        self.assertEqual(1,len([e for e in final['history'] if e.get('event_id')==event_id]))
+        self.assertEqual(self.record['version']+1,final['version'])
+
+    def test_corrupt_checkpoint_fails_instead_of_interruption(self):
+        (self.out/'checkpoint.pt').write_bytes(b'corrupt ZIP')
+        result=self.reconcile()
+        self.assertEqual('failed',result['state'])
+        self.assertEqual('checkpoint_archive_invalid',self.queue.list_jobs()[0]['history'][-1]['validation_error'])
+
+    def test_missing_checkpoint_fails_instead_of_interruption(self):
+        (self.out/'checkpoint.pt').unlink()
+        self.assertEqual('failed',self.reconcile()['state'])
+        self.assertEqual('checkpoint_missing',self.queue.list_jobs()[0]['history'][-1]['validation_error'])
+
+    def test_oom_failure_preserves_valid_progress_without_calling_retry(self):
+        self.container['State']['OOMKilled']=True
+        with patch.object(self.queue,'retry',side_effect=AssertionError('retry forbidden')):
+            self.assertEqual('failed',self.reconcile()['state'])
+        final=self.queue.list_jobs()[0]
+        self.assertEqual((3,5,48),tuple(final['history'][-1][k] for k in ('epoch','epochs','samples_processed')))
+        self.assertTrue(final['history'][-1]['oom_killed'])
+
+    def test_trainer_failure_with_valid_checkpoint_is_not_an_interruption(self):
+        self.container['State']['ExitCode']=1
+        atomic_json(self.out/'failed.json',dict(status='failed',message='private error text must stay local'))
+        self.assertEqual('failed',self.reconcile()['state'])
+        terminal=self.queue.list_jobs()[0]['history'][-1]
+        self.assertTrue(terminal['training_failed'])
+        self.assertEqual(3,terminal['epoch'])
+        self.assertNotIn('private error text',json.dumps(terminal))
+
+    def test_zero_exit_without_completion_is_failed(self):
+        self.container['State']['ExitCode']=0
+        self.assertEqual('failed',self.reconcile()['state'])
+        self.assertTrue(self.queue.list_jobs()[0]['history'][-1]['training_failed'])
+
+    def test_completed_success_is_preserved_after_worker_crash(self):
+        self.container['State']['ExitCode']=0
+        atomic_json(self.out/'completed.json',{'mock':'completion validation exercised separately'})
+        with patch('augment_atlas.runtime.validate_artifacts',return_value=dict(epoch=5,epochs=5,samples_processed=80)) as validate:
+            result=self.reconcile()
+        validate.assert_called_once_with(self.out,self.record['spec'])
+        self.assertEqual('succeeded',result['state'])
+        self.assertEqual('succeeded',self.queue.list_jobs()[0]['state'])
+        self.assertFalse(self.reconcile()['pending'])
+
+    def test_progress_identity_mismatch_fails_without_publishing_untrusted_numbers(self):
+        progress=json.loads((self.out/'progress.json').read_text())
+        atomic_json(self.out/'progress.json',{**progress,'config_sha256':'0'*64})
+        result=self.reconcile()
+        self.assertEqual('failed',result['state'])
+        terminal=self.queue.list_jobs()[0]['history'][-1]
+        self.assertEqual('checkpoint_progress_identity',terminal['validation_error'])
+        self.assertNotIn('epoch',terminal)
 
 
 @unittest.skipIf(os.name == "nt", "flock is a Linux runtime boundary; Windows coordinator skips it")

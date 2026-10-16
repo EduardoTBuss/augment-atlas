@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "phase": "smoke",
+  "scientific_status": "provisional",
+  "protocol_version": "candidate-v2",
+  "dataset": {
+    "id": "synthetic-recovery-1024",
+    "version": "v1",
+    "adapter": "synthetic",
+    "synthetic_groups": 1024
+  },
+  "splits": {
+    "version": "group-hash-v1",
+    "fold": 0,
+    "split_seed": 17
+  },
+  "recipe": {
+    "id": "technical-resnet50-endurance",
+    "version": "v1",
+    "frozen": true,
+    "hpo": {
+      "status": "pending",
+      "protocol": "within-outer-fold",
+      "origin": "technical-endurance-no-search"
+    },
+    "dependencies": []
+  },
+  "model": {
+    "name": "resnet50",
+    "weights": "IMAGENET1K_V2",
+    "num_classes": 2,
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "input": {
+    "size": 224,
+    "color": "grayscale_to_rgb"
+  },
+  "augmentation": {
+    "arm": "none",
+    "ops": [],
+    "provenance": "Candidate-v2 synthetic recovery gate: distinct infrastructure fixture for bounded checkpoint/resume, live-container reattach and isolated worker Git outage. Not a clinical dataset or scientific evaluation.",
+    "backend": "candidate-opencv-v2"
+  },
+  "training": {
+    "seed": 3,
+    "epochs": 10000,
+    "batch_size": 2,
+    "accumulation_steps": 1,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "device": "cuda",
+    "workers": 0,
+    "deterministic": true,
+    "autocast": false,
+    "tf32": false,
+    "freeze_batchnorm": true,
+    "evaluation_scope": "test"
+  }
+}
