@@ -31,6 +31,28 @@ def command(args, timeout=60):
     return r.stdout.strip()
 
 
+def request_training_stop(runtime, observed):
+    """Signal the inspected container ID once; tolerate only confirmed exit races.
+
+    A TERM handler may finish training between inspect and the Docker request.
+    A failing client is harmless only when that exact container is now exited.
+    Missing containers, daemon failures and live/changed identities still fail.
+    """
+    container_id=observed.get('Id')
+    if not isinstance(container_id,str) or not container_id:
+        raise RuntimeError('Cannot signal training without its inspected container ID')
+    try:
+        command(['docker','kill','--signal','TERM',container_id])
+    except (RuntimeError,subprocess.TimeoutExpired):
+        latest=runtime.inspect(container_id)
+        if (latest is None or latest.get('Id')!=container_id or
+                latest.get('State',{}).get('Running') is not False or
+                latest.get('State',{}).get('Status') not in ('exited','dead')):
+            raise
+        return latest
+    return observed
+
+
 @contextlib.contextmanager
 def gpu_lock(root, gpu_uuid):
     """All workers on a host must share this directory, indexed by GPU UUID."""
@@ -532,11 +554,13 @@ def worker(settings,once=False):
                     local['record']=spool.record; atomic_json(active,local)
                     command(['docker','start',name])
                 last_progress=last_sample=0
+                stop_requested=False
                 while True:
                     state=runtime.inspect(name)
                     if state is None: raise RuntimeError('Active container missing')
-                    if stopping[0] and state['State']['Running']:
-                        command(['docker','kill','--signal','TERM',name])
+                    if stopping[0] and state['State']['Running'] and not stop_requested:
+                        state=request_training_stop(runtime,state)
+                        stop_requested=True
                     now=time.monotonic()
                     progress={}
                     if (out/'progress.json').exists():
@@ -550,16 +574,21 @@ def worker(settings,once=False):
                              settings['gpu'],out,settings.get('optional_collectors',True))
                         last_sample=now
                         if row.get('gpu'):
-                            try:
-                                if float(row['gpu']['temperature.gpu'])>=settings.get('max_temperature_c',85):
-                                    stopping[0]=True; command(['docker','kill','--signal','TERM',name])
-                            except (ValueError,TypeError): pass
+                            try:temperature=float(row['gpu']['temperature.gpu'])
+                            except (ValueError,TypeError):temperature=None
+                            if temperature is not None and temperature>=settings.get('max_temperature_c',85):
+                                stopping[0]=True
+                                if not stop_requested:
+                                    state=request_training_stop(runtime,state)
+                                    stop_requested=True
                     if now-last_progress>=settings.get('progress_seconds',3600) and state['State']['Running']:
                         spool.add('running',**numbers); last_progress=now
                     try:
                         spool.flush(queue); local['record']=spool.record; atomic_json(active,local)
-                    except QueueConflict:
-                        if state['State']['Running']: command(['docker','kill','--signal','TERM',name])
+                    except QueueConflict as conflict:
+                        if state['State']['Running'] and not stop_requested:
+                            try:request_training_stop(runtime,state)
+                            except Exception as stop_error:raise conflict from stop_error
                         raise
                     except QueueError: pass # running child and checkpoints survive network failure
                     if not state['State']['Running']:break
@@ -572,7 +601,11 @@ def worker(settings,once=False):
                         summary=validate_artifacts(out,record['spec'])
                         spool.add('succeeded',**summary)
                     except (ValueError,OSError,KeyError):
-                        spool.add('interrupted' if (out/'checkpoint.pt').exists() and (stopping[0] or progress.get('status')=='interrupted') else 'failed',exit_code=state['State']['ExitCode'])
+                        interrupted=((out/'checkpoint.pt').exists() and not (out/'failed.json').exists()
+                                     and state['State'].get('OOMKilled') is not True
+                                     and state['State']['ExitCode'] in (75,130,137,143)
+                                     and (stopping[0] or progress.get('status')=='interrupted'))
+                        spool.add('interrupted' if interrupted else 'failed',exit_code=state['State']['ExitCode'],**numbers)
                 while spool.events:
                     try: spool.flush(queue)
                     except QueueConflict:raise
