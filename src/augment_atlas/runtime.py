@@ -277,9 +277,21 @@ def _validate_artifacts(out,spec=None):
             or progress['epoch']!=cfg['training']['epochs'] or type(value.get('epoch')) is not int
             or value['epoch']!=progress['epoch']):
         raise ValueError('Training did not complete every configured epoch')
-    test=results.get('test',{})
-    loss,accuracy=test.get('loss'),test.get('accuracy')
-    if type(test.get('samples')) is not int or test['samples']<=0 or type(loss) not in (float,int) or not math.isfinite(loss) or type(accuracy) not in (float,int) or not math.isfinite(accuracy) or not 0<=accuracy<=1:
+    scope=cfg['training'].get('evaluation_scope','test')
+    if scope=='selection-only':
+        if results.get('evaluation_scope')!=scope or environment.get('evaluation_scope')!=scope or 'test' in results:
+            raise ValueError('Selection-only evaluation scope mismatch')
+        evaluation=results.get('selection',{})
+        if spec and 'recipe_hash' in spec:
+            from .cli import recipe_identity
+            if spec['recipe_hash']!=recipe_identity(cfg):
+                raise ValueError('Selection-only frozen recipe identity mismatch')
+    else:
+        if results.get('evaluation_scope','test')!='test' or environment.get('evaluation_scope','test')!='test':
+            raise ValueError('Test evaluation scope mismatch')
+        evaluation=results.get('test',{})
+    loss,accuracy=evaluation.get('loss'),evaluation.get('accuracy')
+    if type(evaluation.get('samples')) is not int or evaluation['samples']<=0 or type(loss) not in (float,int) or not math.isfinite(loss) or type(accuracy) not in (float,int) or not math.isfinite(accuracy) or not 0<=accuracy<=1:
         raise ValueError('Invalid evaluation artifact')
     if spec and (spec['split_hash']!=splits['sha256'] or cfg['training']['seed']!=spec['train_seed'] or cfg['augmentation']['arm']!=spec['arm']):
         raise ValueError('Result belongs to another job')

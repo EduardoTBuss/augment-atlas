@@ -19,7 +19,14 @@ specialist definitions.
 Status updated 2026-10-16: the 15 October real Docker/CUDA acceptance passed,
 including five training jobs, checkpoint recovery/parity, real adapter and
 same-host worker contention. See `acceptance.md` for scope and limitations.
-Four isolated arms now extend the smoke examples to ten; independent local
-review passed 60 tests (58 passed, two Windows skips). A new real-GPU trial has
-not started for that extension. The scientific protocol and overnight workload
-are being discussed in `protocol-draft.md`; no final campaign is enabled.
+Four isolated arms extend the smoke examples to ten. The separate candidate-v2
+backend passed ten actual Docker/CUDA jobs, two epochs each, on one GPU with
+cached ImageNet weights. All ten fetched remote Markdown files showed2/2 and
+their eight required artifacts passed hash validation. See `acceptance-v2.md`
+for source/image identity and workload limits.
+
+The subsequent selection-only objective contract passed the complete CPU
+container suite:127tests, all passed, zero skips. Independent review accepted
+the change. Five real-data outer folds were prepared and audited privately;
+the existing grouping still requires patient-identity provenance. Scientific
+search, final dataset choices and the600-run campaign remain unexecuted.

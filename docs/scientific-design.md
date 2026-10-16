@@ -191,10 +191,21 @@ todas as classes em cada subconjunto. São limites esperados do smoke, não evid
 de validação científica concluída. As configurações em `configs/smoke/` são
 exemplos técnicos provisórios.
 
-Próxima decisão do projeto: obter inventário de grupos/eventos/exposição,
-definir tarefas e endpoint, então escolher HPO separado ou interno por viabilidade
-e congelar o protocolo antes da literatura parametrizar intervenções e de qualquer
-avaliação final. A discussão agora prioriza retina, dermoscopia (ISIC com HAM
+Atualização16/10: cinco folds externos e um holdout interno por fold foram
+preparados e auditados sobre o manifesto privado existente:387imagens,
+103grupos, sem interseção de grupos entre partições, ambas as classes em cada
+partição e cobertura externa de cada imagem exatamente uma vez. A origem atual
+de `group_key` é um token do nome de aquisição; sua correspondência com paciente
+ainda não foi comprovada. Portanto esses folds não são certificados como
+independentes por paciente. Nenhum modelo/HPO foi ajustado nessa auditoria.
+
+O contrato `selection-only` foi implementado para preparar um objetivo interno
+sem inferência/métricas no teste externo. Checagens de integridade dos arquivos
+continuam incluindo o manifesto completo. O serviço de busca não está implementado.
+
+Próximo passo do protocolo: resolver identidade dos grupos, exposição anterior,
+tarefas e endpoints; congelar espaço/orçamento da busca interna escolhida e as
+intervenções antes de qualquer avaliação final. A discussão prioriza retina, dermoscopia (ISIC com HAM
 como alternativa menor) e raio-X do tórax, além do INbreast. Permanecem abertos
 releases finais, rótulos, autorização/acesso,
 orçamento, algoritmo HPO, ranges de augmentation, agregação por paciente e

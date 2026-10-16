@@ -145,8 +145,18 @@ from the previous committed boundary. Resume uses the same attempt directory;
 an existing checkpoint requires explicit resume. Checkpoints are trusted
 private artifacts and must not be loaded from arbitrary untrusted sources.
 
-Selection loss chooses the epoch. Only after the configured epochs finish does
-the selected model evaluate the external test once. There is no threshold HPO.
+Selection loss chooses the epoch. The default `training.evaluation_scope: "test"`
+evaluates the selected model on the external test once, after training finishes.
+For a future inner-fold HPO objective, set
+`training.evaluation_scope: "selection-only"`, `augmentation.arm: "none"`,
+empty augmentation operations and `recipe.hpo.protocol: "within-outer-fold"`.
+This mode reports `results.selection` and never constructs a test dataset or
+computes test predictions/metrics. Manifest integrity checks still cover every
+listed file, including hashes of test files when supplied. The scope participates
+in config/recipe identity and resume validation; switching it cannot reuse an
+existing checkpoint. Completion validation rejects any `results.test` in this
+mode. This contract prepares an objective; it does not implement a search service,
+choose its budget or authorize scientific HPO. There is no threshold HPO.
 `completed.json` is written last and lists SHA-256/size for every required
 artifact: checkpoint, selected model, config, environment, splits, metrics,
 results and progress. The coordinator must verify those hashes; exit zero

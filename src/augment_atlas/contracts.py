@@ -124,6 +124,11 @@ def validate_config(cfg: dict) -> dict:
         expected.append("clahe")
     if not isinstance(ops, list) or [op.get("op") for op in ops] != expected:
         raise ValueError("augmentation operations/order must match the declared arm")
+    evaluation_scope = training.get("evaluation_scope", "test")
+    if evaluation_scope not in ("test", "selection-only"):
+        raise ValueError("training.evaluation_scope must be test or selection-only")
+    if evaluation_scope == "selection-only" and (aug["arm"] != "none" or ops or hpo["protocol"] != "within-outer-fold"):
+        raise ValueError("selection-only requires no augmentation and within-outer-fold HPO protocol")
     for op in ops:
         if op["op"] == "basic":
             for key in ("flip_p", "photometric_p"):

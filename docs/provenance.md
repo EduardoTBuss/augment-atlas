@@ -13,6 +13,14 @@ only `basic` and changing the arm/provenance fields. The original six remain
 unchanged, including the explicit demonstration gap for heavy CLAHE. These
 examples still use the legacy algorithm, not the newly discussed OpenCV recipe.
 
+The separate `configs/smoke/candidate-v2/` examples implement the provisional
+16October trial choices: gamma0.8–1.2/0.67–1.5 and CLAHE clips2/4, both withp0.3;
+OpenCV4.12.0.88, grid8×8, fixed-domain gamma, resize first and named RNG streams.
+Those are trial settings accepted for testing, without a claim of optimality.
+The basic operations remain the existing flip/brightness/contrast. Codex chose
+224px for this trial to avoid the demonstrated clip2/4 quantization collapse
+at64px. See `acceptance-v2.md` for the separate evidence and unchanged legacy.
+
 The implementation was written for AugmentAtlas after inspecting these paths
 in the existing `mamografia-estudo` working tree, read-only, on 2026-10-15:
 
@@ -41,10 +49,12 @@ scientific conclusion is inferred from these infrastructure tests.
 ## Recipe and HPO boundaries
 
 Each config records a frozen, versioned technical recipe, HPO status, protocol,
-origin and dependency identifiers. `pending` + `undecided` is intentional.
+origin and dependency identifiers. Legacy examples retain `pending` + `undecided`.
 An `external` origin requires a protocol choice and artifact hash. These are
-validation contracts, not an executed HPO service: the current version neither
-searches nor resolves global-development versus within-outer-fold HPO. Stage
+validation contracts, not an executed HPO service. On16October the future design
+selected within-outer-fold HPO without augmentation; its search space and budget
+remain to be frozen. The new selection-only evaluation contract prepares that
+objective and requires an explicit within-fold protocol. Stage
 dependency execution belongs to the coordinator; a recipe listing dependencies
 does not itself prove they completed.
 

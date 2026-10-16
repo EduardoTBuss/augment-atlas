@@ -87,7 +87,21 @@ comparators. They use different operation spaces, mixing or data-expansion
 budgets; MedAugment does not use gamma/CLAHE. Adding them would expand the
 proposed ten-arm design and needs a separate budget/protocol decision.
 
+## ISIC release clarification — 16 October 2026
+
+The official [ISIC data portal](https://challenge.isic-archive.com/data/) and
+[ISIC2020 dataset descriptor](https://doi.org/10.1038/s41597-021-00815-z) establish
+33,126training dermoscopic images from2,056patients,584melanomas, patient and
+lesion identifiers, and425declared pixel duplicates. The declared duplicate
+list must be reconciled before splitting. This makes2020 a practical candidate
+for patient grouping **if the task is melanoma versus the remaining lesions**.
+That is a different task from HAM's seven classes or ISIC2019's eight classes.
+The2020official test has10,982images without public ground truth; do not assume
+its labels are available for a local external test. ISIC2019 lesion identifiers
+alone do not establish patient grouping. Codex recommends evaluating2020 for the
+binary protocol; this does not silently change the study task or acquire data.
+
 Next decisions: choose acquisition/task and data release; verify groups and
-access; freeze preprocessing and metrics; choose protected HPO protocol and
-training budget; then define literature-informed candidate augmentation ranges.
+access; freeze preprocessing and metrics; freeze the chosen inner-fold HPO
+search space and training budget; then fix candidate augmentation settings.
 None of these choices is replaced by a successful infrastructure smoke test.

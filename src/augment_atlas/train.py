@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 
-from .contracts import atomic_json, canonical_hash, file_hash, load_config
+from .contracts import atomic_json, canonical_hash, file_hash, load_config, validate_config
 from .data import confined_path, data_root, load_records, prepare_splits
 
 
@@ -91,6 +91,7 @@ def _restore_rng(torch, np, state):
 
 
 def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: int | None = None) -> int:
+    validate_config(cfg)
     # Must precede importing torch or initializing CUDA.
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     import numpy as np
@@ -110,6 +111,7 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
         raise ValueError("attempt directory already belongs to a different config")
     atomic_json(output / "config.json", cfg)
     training = cfg["training"]
+    evaluation_scope = training.get("evaluation_scope", "test")
     seed = training["seed"]
     random.seed(seed)
     np.random.seed(seed)
@@ -155,6 +157,7 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                    "code_commit": os.environ.get("ATLAS_CODE_COMMIT", "unavailable"),
                    "image_id": os.environ.get("ATLAS_IMAGE_ID", "unavailable"),
                    "config_sha256": config_hash, "splits_sha256": splits["sha256"]}
+    environment["evaluation_scope"] = evaluation_scope
     environment['augmentation_backend'] = cfg['augmentation'].get('backend', 'legacy-pilot-v1')
     environment['augmentation_resize_order'] = 'resize-before-augmentation' if cfg['augmentation'].get('backend') == 'candidate-opencv-v2' else 'augmentation-before-resize'
     if cfg['augmentation'].get('backend') == 'candidate-opencv-v2':
@@ -287,16 +290,22 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
             if interrupted["signal"] is not None or (stop_after_epoch is not None and epoch >= stop_after_epoch):
                 progress("interrupted")
                 return 128 + interrupted["signal"] if interrupted["signal"] else 75
-        # Only selection chooses the epoch. External test is touched once here.
+        # Selection chooses the epoch. Technical HPO trials explicitly stop at
+        # selection; the default evaluation retains the external-test contract.
         if best_model is None:
             raise RuntimeError("no selected model was produced")
         model.load_state_dict(best_model)
         _atomic_torch(torch, output / "best.pt", {"model": best_model, "epoch": best_epoch,
                                                 "selection_loss": best_loss, "config_sha256": config_hash})
         results = {"schema_version": 1, "phase": "smoke", "scientific_status": "provisional",
-                   "best_epoch": best_epoch, "selection_loss": best_loss, "test": evaluate("test"),
+                   "best_epoch": best_epoch, "selection_loss": best_loss,
                    "config_sha256": config_hash, "splits_sha256": splits["sha256"],
                    "inbreast_previously_examined_in_pilot": cfg["dataset"]["adapter"] == "inbreast_csv"}
+        if evaluation_scope == "selection-only":
+            results["evaluation_scope"] = evaluation_scope
+            results["selection"] = evaluate("selection")
+        else:
+            results["test"] = evaluate("test")
         if interrupted["signal"] is not None:
             progress("interrupted")
             return 128 + interrupted["signal"]
