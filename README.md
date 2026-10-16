@@ -93,5 +93,11 @@ does not restore independence. The ten-arm proposal would require 600 final runs
 that campaign has not started.
 No energy or emissions claim follows from operational telemetry.
 
+The [bounded endurance test](docs/endurance-test.md) defines a separate
+five-to-six-hour technical battery with existing INbreast data and synthetic
+load, checkpoints and Git communication exercises. Its configurations require
+the private orchestrator and independent resource guardian; the document does
+not establish that the timed run has completed.
+
 This package uses a new selected history. Earlier pilot results are not results of
 this protocol. MIT attribution is retained in [provenance](docs/provenance.md).

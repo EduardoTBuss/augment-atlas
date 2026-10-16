@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "phase": "smoke",
+  "scientific_status": "provisional",
+  "protocol_version": "candidate-v2",
+  "dataset": {
+    "id": "inbreast-pilot-endurance",
+    "version": "inbreast-existing-classification-integrity-20261016",
+    "adapter": "inbreast_csv",
+    "manifest": "atlas_scientific_v2/inbreast_images_hashed.csv",
+    "manifest_sha256": "90b7e97a8c2dfbb804b6b0dd486047ea406e86270f6b9b46e1fa90c55eede178",
+    "require_image_hashes": true,
+    "split_file": "atlas_scientific_v2/fold-0.json",
+    "previously_examined_in_pilot": true
+  },
+  "splits": {
+    "version": "stratified-group-outer-v1",
+    "fold": 0,
+    "split_seed": 17
+  },
+  "recipe": {
+    "id": "technical-resnet50-endurance",
+    "version": "v1",
+    "frozen": true,
+    "hpo": {
+      "status": "pending",
+      "protocol": "within-outer-fold",
+      "origin": "technical-endurance-no-search"
+    },
+    "dependencies": []
+  },
+  "model": {
+    "name": "resnet50",
+    "weights": "IMAGENET1K_V2",
+    "num_classes": 2,
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "input": {
+    "size": 224,
+    "color": "grayscale_to_rgb"
+  },
+  "augmentation": {
+    "arm": "basic_gamma_light",
+    "ops": [
+      {
+        "op": "basic",
+        "flip_p": 0.5,
+        "photometric_p": 0.8,
+        "brightness": [
+          0.9,
+          1.1
+        ],
+        "contrast": [
+          0.9,
+          1.1
+        ]
+      },
+      {
+        "op": "gamma",
+        "p": 0.3,
+        "range": [
+          0.8,
+          1.2
+        ]
+      }
+    ],
+    "provenance": "Candidate-v2 technical endurance only; provisional parameters retained unchanged. Existing INbreast fold 0 was previously inspected and is not an untouched scientific test. No HPO or scientific comparison. Basic preserves legacy flip/brightness/contrast only.",
+    "backend": "candidate-opencv-v2"
+  },
+  "training": {
+    "seed": 3,
+    "epochs": 5,
+    "batch_size": 2,
+    "accumulation_steps": 1,
+    "lr": 0.001,
+    "weight_decay": 0.0,
+    "device": "cuda",
+    "workers": 0,
+    "deterministic": true,
+    "autocast": false,
+    "tf32": false,
+    "freeze_batchnorm": true,
+    "evaluation_scope": "test"
+  }
+}
