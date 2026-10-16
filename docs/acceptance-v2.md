@@ -30,7 +30,8 @@ this snapshot and accepted the change; their local rerun passed14tests with
 three container-only cases skipped. The127-test run includes those three:
 tiny real CPU training loops substitute a small model for the ResNet constructor
 to check selection-only, default test evaluation and resume. This is CPU evidence,
-not an additional GPU ResNet-50 trial.
+not an additional GPU ResNet-50 trial at that milestone. The later two-job GPU
+check of the new scope is recorded below.
 
 - Ten old-style arm examples preserve the six original configurations and
   algorithms. Four isolated examples remove only basic.
@@ -106,8 +107,8 @@ and launch guards. No real overtemperature fault was induced. This trial-specifi
 guardian is not a general long-term thermal protection service.
 
 The accepted ceiling was ten jobs, two epochs each, one GPU and30minutes, with
-zero automatic retries. No further GPU training was started for the subsequent
-selection-only change. Its separate evidence is the127-test CPU gate above.
+zero automatic retries. At that milestone the subsequent selection-only change
+had only the127-test CPU evidence above. A later small GPU gate follows below.
 Existing mammography outputs remain preserved and their queue was not restarted.
 
 ## Existing INbreast manifest: audit without training
@@ -124,6 +125,32 @@ assessed; this is no proof of patient identity.
 The current group key comes from a filename token, without a verified patient
 column. Patient identity remains a prerequisite before calling these partitions
 patient independent. This audit does not undo exposure in the earlier pilot.
+
+## Later16October: selection-only on actual GPU
+
+A new request authorized small server GPU tests. Codex chose a separate bound
+of two jobs, one epoch each, GPU0,300seconds total container lifetime, zero
+training retries,75°C and20GiB free. This was a technical synthetic test.
+
+**PASS:** source `60b0c2f99f443cced572559378bb8536822192a6`, same immutable image
+and ImageNet cache as above. One real ResNet50 job used `selection-only`; a
+second retained the default `test` control. Both trained eight samples for one
+epoch at224px/batch2/seed3, exited0 and passed all eight artifact hash checks.
+The selection-only result has selection metrics and no external test metric
+key; the default control has test metrics. They do not constitute scientific
+HPO, a new augmentation comparison or clinical metric validation.
+
+Reconciliation repeated the16artifact checks. Total Created→FinishedAt lifetime
+was25.711512seconds;45independent guardian samples observed a maximum34°C and
+maximum0.715-second sample gap. No container remained running.
+
+An initial controller attempt failed BEFORE creating any training container:
+Docker's lowercase `no such object` response was not recognized. Its failed
+manifest and logs were preserved. The private helper was corrected, including
+two regression mocks; ten focused mock tests passed. The failed guardian alone
+was terminated after verifying the exact process identity, failed controller
+state and absence of all planned containers. The corrected trial used a new
+evidence directory. No training was retried and no production source changed.
 
 Raw logs, private manifests, checkpoints and sensor samples stay outside the
 public repository. No600-run campaign, new dataset acquisition, HPO outcome,

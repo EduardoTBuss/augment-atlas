@@ -80,9 +80,12 @@ Images are not duplicated by fold, seed or arm. Group-hash partitions are techni
 60/20/20 holdouts, **not** the future five-fold protocol. Learned preprocessing
 statistics must come only from training; current normalization uses fixed constants.
 
-Inner-fold HPO without augmentation was selected for the future protocol. A
+The latest preference is one HPO per dataset without augmentation, using
+development patients excluded from every final test; see the
+[dataset/protocol update](docs/dataset-protocol-update.md). A
 `selection-only` evaluation scope prepares its objective without test inference;
-see [dataset contracts](docs/datasets.md). No scientific search has run.
+see [dataset contracts](docs/datasets.md). Its current within-fold contract
+does not yet implement the new global-development search. No scientific search has run.
 Final datasets/labels/access, HPO search space and budget, endpoints, augmentation ranges,
 evaluation and statistical analysis remain decisions for a later reviewed protocol.
 INbreast has already been examined in the earlier pilot. Changing seeds or folds

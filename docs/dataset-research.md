@@ -6,6 +6,11 @@ datasets with larger references and records their actual use in recent work.
 No new dataset was downloaded and no scientific augmentation range was approved.
 The existing technical smoke settings remain provisional.
 
+Later16October update: [patient grouping and inexpensive HPO](dataset-protocol-update.md)
+adds BRSET/mBRSET, current access/storage checks, accepted metric families and
+the new preference for one HPO per dataset. Earlier candidate tables below are
+retained as a dated survey rather than a final data-release choice.
+
 Discussion preference recorded on 2026-10-15: compare manageable and larger
 options, prioritizing evidence of use in recent competitive work. For skin,
 prioritize **ISIC dermoscopy**, with **HAM10000** as the smaller alternative.

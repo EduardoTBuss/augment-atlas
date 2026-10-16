@@ -14,6 +14,13 @@ detalhes, limites aceitos e escolhas provisórias do Codex em
 ótimos nem aprovação da campanha. As alternativas históricas abaixo continuam
 documentadas para explicar a escolha.
 
+Atualização ainda posterior de16/10: preferência alterada por Eduardo para
+uma busca por dataset, receita compartilhada pelos dez braços; métricas
+discutidas e agrupamento por paciente aceitos. O
+[checkpoint mais recente](dataset-protocol-update.md) define a separação
+econômica recomendada, limitações do INbreast e alternativas por release.
+As descrições de HPO interno abaixo registram a decisão anterior.
+
 ## Pergunta, unidades e limites da conclusão
 
 A pergunta proposta é quanto cada política de augmentation altera o desempenho de

@@ -58,6 +58,11 @@ objective and requires an explicit within-fold protocol. Stage
 dependency execution belongs to the coordinator; a recipe listing dependencies
 does not itself prove they completed.
 
+A later16October request changed the future preference to one HPO per dataset.
+The [updated design](dataset-protocol-update.md) recommends development groups
+outside every final test. This does not change the existing source contract:
+global-development selection/trial orchestration still requires implementation.
+
 Future literature work will define candidate ranges, then an explicit HPO
 protocol will select a training recipe, initially without augmentation. Budget,
 search space, optimizer, final datasets/tasks and patient development budget

@@ -11,6 +11,13 @@ e até10jobs de2épocas, umaGPU, teto30min de treinamento. Escolhas técnicas
 provisórias feitas pelo Codex estão identificadas para revisão do projeto.
 A campanha600 e os releases/tarefas finais não foram iniciados.
 
+Atualização posterior de16/10: Eduardo substituiu HPO interno por fold por
+uma busca por dataset, receita compartilhada. A separação recomendada é
+desenvolvimento independente de todos os testes; embaralhar folds não certifica
+ausência de viés. Métricas discutidas e agrupamento por paciente foram aceitos.
+O [checkpoint de datasets/HPO](dataset-protocol-update.md) prevalece sobre as
+referências à escolha anterior de HPO neste rascunho histórico.
+
 ## Pergunta e dez braços
 
 Medir como gamma e CLAHE alteram uma receita ResNet-50 ImageNet FP32 congelada,
