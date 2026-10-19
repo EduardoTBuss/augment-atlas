@@ -9,7 +9,8 @@ de outro autor e não é tocado aqui.
 
 Legenda de confiança: **[C]** confirmado em fonte primária nesta pesquisa;
 **[S]** visto só em fonte secundária ou snippet; **[NC]** não confirmado, precisa
-ser checado no probe ou na página oficial antes de usar.
+ser checado no probe ou na página oficial antes de usar. Os fatos do ISIC conferidos
+na segunda rodada estão no §3.1.1, com a URL de cada um.
 
 ---
 
@@ -17,7 +18,7 @@ ser checado no probe ou na página oficial antes de usar.
 
 | Dataset | Licença / acesso | Tamanho bruto | Paciente | Tarefa / métrica primária | Status |
 |---|---|---|---|---|---|
-| **ISIC 2020 Training** (DOI 10.34970/2020-ds01) | CC BY-NC 4.0 **[C]**. Links diretos no portal, sem login identificado **[S]**. A licença por imagem no Archive varia (CC-0/CC-BY/CC-BY-NC) **[C]** | JPEG ≈ 23 GB, 33.126 imgs **[C]**. DICOM 48,9 GB e DICOM corrigido 23,0 GB **[S]**. Metadata v2 ≈ 2 MB, lista de duplicatas ≈ 2 MB (425) **[S]** | `patient_id`, 2.056 pacientes. `lesion_id` só no metadata v2 **[C]** | Binária melanoma (`target`=1) vs demais. AUROC. **Emenda de tarefa** | **Pode baixar já** (estratégia streaming, §3), depois das 4 aprovações do §7.1 |
+| **ISIC 2020 Training** (DOI 10.34970/2020-ds01) | CC BY-NC 4.0 **[C]**. Links diretos no portal, sem login identificado **[S]** (§3.1.1). A licença por imagem no Archive varia (CC-0/CC-BY/CC-BY-NC) **[C]** | JPEG ≈ 23 GB, 33.126 imgs **[C]**. DICOM 48,9 GB e DICOM corrigido 23,0 GB **[S]**. Metadata v2 ≈ 2 MB **[C]**, lista de duplicatas ≈ 2 MB com 425 imagens **[C]** (tamanhos só arredondados, sem bytes exatos) | `patient_id`, 2.056 pacientes **[C]**. `lesion_id` só no metadata v2 **[C]** | Binária melanoma (`target`=1) vs demais. AUROC. **Emenda de tarefa** | **Pode baixar já** (estratégia streaming, §3), depois das 4 aprovações do §7.1 |
 | **mBRSET 1.0** (DOI 10.13026/qxpd-1y65) | PhysioNet credenciado + CITI + DUA **[C]** | **[NC]** (ver "Files" na página) | `patient`, 5.164 imgs / 1.291 pacientes **[C]** | DR ICDR 0–4 (`final_icdr`, grau 4 inclui pós-laser **[C]**). QWK | **Depende do Eduardo** |
 | BRSET 1.0.2 (27/07/2026, DOI 10.13026/mysn-8b26) | PhysioNet credenciado + DUA **[C]** | **[NC]**. Imagens com altura 874–2304 px e largura 951–2984 px (v1.0.0) **[C]** | `patient_id`, 16.266 / 8.524 **[C]** | DR ordinal. QWK | Alternativa maior. Depende do Eduardo |
 | **CheXpert v1.0** | Stanford Research Use Agreement, só pesquisa, sem redistribuição **[C]** | `CheXpert-v1.0.zip` 471,12 GB na listagem AIMI/Azure **[S]**. HF 512 px 38,3 GB, gated, com relatos de aprovação demorada **[S]**. "Small" 10,76 GB só em torrent, sem fonte oficial **[NC]** | Diretório `patientNNNNN`, 224.316 / 65.240 **[C]** | Multilabel, macro-AUROC. **O trainer ainda não suporta multilabel** | Depende do Eduardo **e** de implementação. Última prioridade |
@@ -53,10 +54,10 @@ precisa copiar os links do botão da página. URL construída à mão não vale.
 
 | Papel | Nome esperado | Tamanho |
 |---|---|---|
-| Imagens | `ISIC_2020_Training_JPEG.zip` | ≈ 23 GB **[C]** |
-| Rótulo + paciente | `ISIC_2020_Training_GroundTruth.csv` (`image_name, patient_id, sex, age_approx, anatom_site_general_challenge, diagnosis, benign_malignant, target`) **[NC nas colunas]** | ≈ 2 MB **[S]** |
-| Paciente + lesão | `ISIC_2020_Training_GroundTruth_v2.csv` (acrescenta `lesion_id`) **[S]** | ≈ 2 MB **[S]** |
-| Duplicatas | `ISIC_2020_Training_Duplicates.csv` (425 pares) **[S no conteúdo, NC no nome/colunas]** | ≈ 2 MB **[S]** |
+| Imagens | `ISIC_2020_Training_JPEG.zip` **[NC no nome]** | ≈ 23 GB **[C]**, bytes exatos **[NC]** |
+| Rótulo + paciente ("gold standard lesion diagnoses", 33.126 entradas **[C]**) | `ISIC_2020_Training_GroundTruth.csv` **[NC no nome]**. Colunas `image_name, patient_id, sex, age_approx, anatom_site_general_challenge, diagnosis, benign_malignant, target` **[S, só Kaggle/terceiros]** | ≈ 2 MB **[C]** |
+| Metadata v2 (paciente + lesão) | `ISIC_2020_Training_GroundTruth_v2.csv` **[NC no nome]**. A página oficial descreve o conteúdo como "patient ID, lesion ID, sex, age, general anatomic site" **[C]**. Ela **não cita** diagnóstico nem `target` no v2, então o v2 pode não trazer rótulo (§3.1.1) | ≈ 2 MB **[C]** |
+| Duplicatas | `ISIC_2020_Training_Duplicates.csv` **[NC no nome e nas colunas]**. Oficial: "425 duplicate images" **[C]**. Se a contagem é de **imagens** ou de **pares**, não está documentado | ≈ 2 MB **[C]** |
 | Teste oficial (10.982 imgs, ≈ 6,7 GB, **sem rótulos públicos**) | **não baixar** | — |
 
 **Checksums oficiais: não encontrados.** Nem o ISIC nem o DOI publicam SHA256/MD5. A
@@ -66,6 +67,99 @@ membro conferido contra o central directory do ZIP, e os hashes que nós calcula
 terceiros, com cadeia de licença e bytes não verificáveis contra o DOI, e por isso foram
 descartadas. Os TFRecords 1024 da competição Kaggle exigem aceitar regras de competição
 **[NC]**, e por isso também foram descartados.
+
+### 3.1.1 Fatos confirmados (19/10/2026)
+
+Método: só WebSearch. Não abri nenhuma página inteira, não baixei nada, não fiz HEAD e
+não aceitei termos. "Oficial" quer dizer que o trecho veio de domínio do ISIC, do DOI
+ou do descriptor dos próprios autores. A ferramenta de busca devolve o texto da página,
+**não os `href` dos botões**, então nenhuma URL de arquivo pôde ser confirmada.
+
+| Fato | Valor | Fonte | Tipo |
+|---|---|---|---|
+| Imagens de treino | 33.126 | <https://api.isic-archive.com/collections/70/> ("Challenge 2020: Training") | Oficial |
+| Pacientes | 2.056 | <https://api.isic-archive.com/collections/70/> | Oficial |
+| Lesões especificadas | 32.701 | <https://api.isic-archive.com/collections/70/> | Oficial |
+| Melanomas confirmados por histopatologia | 584 (1,8% das imagens) | <https://www.nature.com/articles/s41597-021-00815-z> (resumo) e <https://arxiv.org/abs/2008.07360v1> | Oficial (descriptor) |
+| Pacientes com ≥ 1 melanoma | 20,8% (79,2% com zero), média de 16 lesões por paciente | <https://www.nature.com/articles/s41597-021-00815-z> | Oficial (descriptor) |
+| Duplicatas | 425 imagens pixel a pixel idênticas, ingeridas por "erro clerical" e mantidas para espelhar o dataset da competição | <https://www.nature.com/articles/s41597-021-00815-z> | Oficial (descriptor) |
+| Arquivos listados no portal | JPEG "Download (23GB)" com 33.126 JPEG; ground truth ≈ 2 MB com 33.126 entradas de "gold standard lesion diagnoses"; metadata v2 ≈ 2 MB ("patient ID, lesion ID, sex, age, general anatomic site"); lista de duplicatas ≈ 2 MB com 425 imagens | <https://challenge.isic-archive.com/data/> | Oficial (snippet). A página exibe essas linhas sob um título "Citing 2019 datasets", mas as contagens são as do 2020 |
+| Teste | 10.982 imagens, sem rótulo público | <https://arxiv.org/pdf/2206.00356> | Secundária |
+| Licença agregada | CC BY-NC 4.0, DOI 10.34970/2020-ds01, acesso público pelo ISIC Archive | <https://www.nature.com/articles/s41597-021-00815-z>, <https://doi.org/10.34970/2020-ds01> | Oficial |
+| Atribuição exigida | Citar o agregado como "International Skin Imaging Collaboration. SIIM-ISIC 2020 Challenge Dataset. International Skin Imaging Collaboration https://doi.org/10.34970/2020-ds01 (2020)", para cumprir a atribuição do CC-BY-NC, e citar também o descriptor (Rotemberg et al., Sci Data 8, 34, 2021) | <https://challenge.isic-archive.com/data/> (seção "Citing 2020 datasets", vista só por snippet); a string literal foi reproduzida por <https://www.etamu.edu/projects/augmented-image-repository/citing-this-work-and-references/> | Oficial no requisito, **secundária na string literal** |
+| Detentor do copyright | "(c) by ISDIS, 2020", texto legal em creativecommons.org/licenses/by-nc/4.0/legalcode.txt | <https://data.brainchip.com/dataset-mirror/siim-isic-melanoma/license.txt> (mirror) | Secundária |
+| Licença por imagem no Archive | Varia. Exemplos: CC-BY-NC atribuída ao Hospital Clínic de Barcelona (exemplo 1) e CC-BY atribuída ao MSKCC (exemplo 2) | páginas de imagem individuais de `https://api.isic-archive.com/images/` (IDs omitidos por política: nada de IDs de imagem no Git) | Oficial |
+| Colunas do CSV de treino | `image_name, patient_id, sex, age_approx, anatom_site_general_challenge, diagnosis, benign_malignant, target` (`sex` vazio quando desconhecido; `target` = binarização de `benign_malignant`) | <https://arxiv.org/pdf/2204.10142>, <https://mlr3torch.mlr-org.com/reference/mlr_tasks_melanoma.html> (descrevem o `train.csv` do Kaggle) | **Secundária (Kaggle)** |
+| Curadoria | Scripts dos autores em `ISIC-Research/2020-Challenge-Curation` | <https://github.com/ISIC-Research/2020-Challenge-Curation> | Oficial (autores) |
+
+**Continua sem confirmação** (o probe resolve ou o Eduardo copia da página):
+
+- **URLs diretas** dos 4 arquivos (ZIP JPEG, ground truth, metadata v2, duplicatas):
+  não encontradas. Os nomes `ISIC_2020_Training_*.{zip,csv}` e o bucket
+  `isic-challenge-data` vêm só do padrão histórico.
+- **Login ou termos para baixar:** não encontrado nenhum indício de login nos trechos
+  do portal (só links "Download"). Isso **não** prova que o acesso é anônimo.
+- **Tamanhos em bytes:** não encontrados. O portal só publica valores arredondados
+  (23 GB, 2 MB).
+- **Checksums oficiais (MD5/SHA):** não encontrados (a busca confirma o que já estava
+  no §3.1).
+- **Suporte a HTTP Range:** não documentado em nenhuma fonte oficial. Não foi testado.
+- **Colunas exatas do CSV oficial do portal:** não encontradas. A lista acima é a do
+  `train.csv` do Kaggle; o CSV do portal pode ter outro nome ou outra ordem de colunas.
+- **Colunas do metadata v2** e se ele traz `diagnosis`/`target`: não encontrado.
+- **Colunas e formato do CSV de duplicatas:** não encontrados. Também não se sabe se as
+  "425 duplicate images" são 425 linhas de pares, 425 imagens a remover ou outra coisa.
+  O tamanho de ≈ 2 MB é grande demais para 425 pares só com nomes (≈ 30 KB), o que
+  sugere um formato diferente (talvez todas as linhas com um flag) ou um rótulo de
+  tamanho genérico.
+- **Contagem de positivos no CSV:** o documentado é 584 melanomas **por imagem**. Que
+  `target==1` some exatamente 584 no CSV ainda não foi visto.
+
+**O que muda no plano:**
+
+1. **Duplicatas.** O documentado é "425 imagens", não "425 pares". No config e no
+   manifesto, `duplicate_pairs` vira `duplicate_images_documented: 425` (§4.1). O
+   `verify` conta linhas e pares depois de ler o formato real, e qualquer diferença vira
+   divergência que precisa de decisão.
+2. **Metadata v2 ≠ ground truth.** O rótulo vem do ground truth (33.126 entradas), e o
+   `lesion_id` vem do metadata v2. O probe faz o join por `image_name` e exige bijeção.
+   O v2 não pode ser tratado como substituto do ground truth sem conferir as colunas.
+3. **Colunas validadas no probe, não no código.** O config lista as colunas esperadas
+   como hipótese. O probe lê o cabeçalho real e, se não bater, sai com exit 3 e espera
+   decisão humana. Não há mapeamento automático de nomes.
+4. **URLs: passo manual curto.** Como os `href` não puderam ser lidos, alguém precisa
+   abrir <https://challenge.isic-archive.com/data/#2020> num navegador, copiar os 4
+   links e colá-los no config (§7.1). Se algum botão pedir login ou aceite de termos,
+   **parar**: o Eduardo aceita e baixa ele mesmo, e o plano passa a ingerir o ZIP pelo
+   link que ele fornecer (sem gravar tokens, como no §7.4).
+5. **Range.** Continua obrigatório no probe (passo 2 do §3.4), com o fallback já previsto
+   no §12 (stream único sem retomada).
+
+### 3.1.2 Verificação direta dos arquivos oficiais (maestro, 19/10/2026 ~16:40 BRT) — **supersede o §3.1.1 onde divergir**
+
+Método: HTML público de <https://challenge.isic-archive.com/data/> lido por `curl` (links do botão extraídos), `HEAD` de cada arquivo,
+leitura só da 1ª linha dos CSVs de rótulo (`Range: bytes=0-300`, nada gravado no repo) e download apenas da lista de duplicatas
+(11.500 bytes, só nomes de imagem, mantida fora do repo). Nenhum termo/login apareceu: os links são objetos S3 públicos.
+
+| Arquivo (URL oficial `https://isic-archive.s3.amazonaws.com/challenges/2020/…`) | Bytes (`Content-Length`) | ETag | Cabeçalho real |
+|---|---|---|---|
+| `ISIC_2020_Training_JPEG.zip` | 24.707.698.022 | `ebb879d3b9be0f5b4515e28dc8ebbb88-472` (multipart: **não** é MD5 do arquivo) | — |
+| `ISIC_2020_Training_GroundTruth.csv` | 2.056.020 | `86657c7009b003543b377b62a8745b4c` | `image_name,patient_id,sex,age_approx,anatom_site_general_challenge,diagnosis,benign_malignant,target` |
+| `ISIC_2020_Training_GroundTruth_v2.csv` | 2.387.418 | `f894624ff25df80143501a2702d4d9fe` | `image_name,patient_id,lesion_id,sex,age_approx,anatom_site_general_challenge,diagnosis,benign_malignant,target` |
+| `ISIC_2020_Training_Duplicates.csv` | 11.500 | `62992a2252b492095a54dbc5ce0d5b3e` (= MD5 do arquivo baixado, conferido) | `image_name_1,image_name_2` |
+
+Todos com `Last-Modified` 19/09/2025 e `Accept-Ranges: bytes`; `GET Range: bytes=0-99` do ZIP devolveu **206** com
+`Content-Range: bytes 0-99/24707698022` ⇒ streaming com retomada é viável.
+
+Correções ao §3.1.1:
+1. **O v2 traz rótulo** (`diagnosis`, `benign_malignant`, `target`) **e** `lesion_id` ⇒ fonte única de rótulo+paciente+lesão é o
+   `GroundTruth_v2.csv`; o v1 é baixado só para conferir que `image_name/patient_id/target` coincidem 1:1 com o v2.
+2. **Duplicatas = 425 pares** (425 linhas de dados, 850 nomes distintos, pares disjuntos) — isto é, 425 imagens redundantes,
+   uma por par; as duas leituras do §3.1.1 batem. O "≈ 2 MB" do snippet estava errado (são 11.500 bytes).
+3. Checksums oficiais: não há MD5/SHA publicado; os ETags simples dos 3 CSVs servem como MD5 de transporte; o ZIP só tem ETag
+   multipart ⇒ integridade do ZIP = CRC32 por membro (CD) + SHA256 próprio por membro, como já previsto.
+4. O passo do Eduardo "copiar os 4 links" (§7.1) **não é mais necessário**: as URLs acima estão no HTML oficial. O ZIP cru
+   (24,7 GB) segue não cabendo em `/home` com reserva; a estratégia streaming→derivado continua a escolhida.
 
 ### 3.2 Comparação
 
@@ -128,7 +222,8 @@ CLI proposta (stdlib, exceto `derive`):
 
 **Entradas.** `configs/acquisition/isic2020-derived-512-v1.json` é público e não tem IDs.
 Contém: URLs copiadas da página, contagens documentadas (33.126 imagens, 2.056 pacientes,
-584 melanomas, 425 duplicatas, 32.701 lesões segundo o Archive), parâmetros de
+584 melanomas, 425 imagens na lista de duplicatas, 32.701 lesões segundo o Archive; §3.1.1),
+as colunas esperadas de cada CSV como hipótese a validar no probe, parâmetros de
 pré-processamento, `reserve_gib=20`, `derived_cap_gib=8`, `spool_cap_gib=2`,
 `max_rate_mib_s=25`, `workers=2`, `chunk_bytes=32 MiB`, além de `split_seed` e frações D/E
 fixados **antes** do download.
@@ -160,8 +255,9 @@ manifest/
    livre ≥ 31,5 GiB). Se falhar: sair com 75 sem escrever nada.
 2. **Probe (idempotente).** Fazer HEAD de cada URL e exigir `Accept-Ranges: bytes`,
    Content-Length, ETag e Last-Modified. Baixar os 3 CSVs (só alguns MB) para `release/`
-   com SHA256. Em sessões posteriores, ETag ou tamanho diferente → **exit 3** (o objeto
-   mudou; decisão humana).
+   com SHA256. Conferir o cabeçalho de cada CSV contra as colunas esperadas do config;
+   diferença → **exit 3**. Em sessões posteriores, ETag ou tamanho diferente → **exit 3**
+   (o objeto mudou; decisão humana).
 3. **Central directory.** Pedir `Range: bytes=-131072` e localizar EOCD → locator ZIP64 →
    EOCD64. Depois pedir o range do CD e fazer o parse das entradas: nome, método, flags,
    CRC32, tamanhos (ZIP64 extra), offset do local header.
@@ -241,10 +337,14 @@ Pode conviver com uma campanha GPU, porque a guarda mede o disco real.
 ### 3.5 Duplicatas, grupos e rótulos
 
 - **Grupo = componente conexo (union-find)** de `patient_id`, ligado por qualquer par de
-  duplicata: os 425 pares oficiais e os SHA256 de originais idênticos, calculados de
+  duplicata: os pares derivados da lista oficial (425 imagens documentadas; o formato
+  do arquivo ainda é **[NC]**, §3.1.1) e os SHA256 de originais idênticos, calculados de
   graça. Se um par cruza pacientes, os dois pacientes caem no mesmo grupo. Isso evita
   vazamento entre treino e teste. O `group` no CSV é `isic20-g-` + sha256(sorted
   patient_ids)[:16].
+- Como o descriptor diz que as 425 são **pixel a pixel idênticas**, todo par oficial
+  deve aparecer também como par de SHA256 idêntico do original. Par oficial sem SHA256
+  igual, ou vice-versa, vira divergência.
 - `patient_id` vazio ou ausente → falha. Nunca imputar com o ID da imagem.
 - `label = int(target)`. Conferir `target==1 ⇔ diagnosis=="melanoma"` e
   `benign_malignant`. Inconsistência vira divergência.
@@ -254,7 +354,7 @@ Pode conviver com uma campanha GPU, porque a guarda mede o disco real.
   Par com rótulos conflitantes: excluir os dois e registrar.
 - Quase-duplicatas (dHash 64-bit do derivado, distância ≤ 4) entram **só como
   relatório**, sem excluir nada. Cassidy et al. 2022 relatam muito mais sobreposição
-  entre releases ISIC; dentro do 2020, o oficial são 425.
+  entre releases ISIC; dentro do 2020, o oficial são 425 imagens.
 
 ---
 
@@ -277,16 +377,18 @@ Pode conviver com uma campanha GPU, porque a guarda mede o disco real.
                  "sha256": "<hex|null>", "sha256_null_reason": "multi-session",
                  "chunked_sha256": {"chunk_bytes": 33554432, "n_chunks": 0, "root": "<hex>"},
                  "central_directory_sha256": "<hex>"},
-                {"role": "ground_truth_csv", "url": "...", "sha256": "<hex>", "bytes": 0}],
+                {"role": "ground_truth_csv", "url": "...", "sha256": "<hex>", "bytes": 0,
+                 "header": ["<colunas observadas>"]}],
     "sessions": [{"start_utc": "...", "end_utc": "...", "range_start": 0, "range_end": 0, "exit": 75}]
   },
   "preprocessing": {"id": "isic2020-derived-512-v1", "short_side": 512, "upscale": false,
                     "resample": "LANCZOS", "reducing_gap": null, "exif_transpose": false,
                     "format": "JPEG", "quality": 95, "subsampling": "4:4:4", "keep_icc": false},
   "documented_counts": {"images": 33126, "patients": 2056, "melanoma_images": 584,
-                        "duplicate_pairs": 425, "lesions_archive": 32701},
+                        "duplicate_images_documented": 425, "lesions_archive": 32701},
   "observed_counts": {"zip_jpg_members": 0, "csv_rows": 0, "patients": 0, "melanoma_images": 0,
-                      "lesions": 0, "duplicate_pairs_official": 0, "duplicate_pairs_exact_hash": 0,
+                      "lesions": 0, "duplicate_rows_official": 0, "duplicate_pairs_official": 0,
+                      "duplicate_pairs_exact_hash": 0,
                       "near_duplicate_pairs": 0, "exif_orientation_ne_1": 0, "icc_present": 0,
                       "non_rgb_mode": 0, "short_side_lt_512": 0, "skipped": 0},
   "divergences": [{"field": "...", "documented": 0, "observed": 0, "source_url": "...",
@@ -365,11 +467,12 @@ sklearn. Ele é distinto do `stratified-group-outer-v1`, que é within-outer-fol
    - contagens de imagens, positivas e grupos por pool.
 
    Se reprovar, parar e escalar. Não existe fallback automático.
-6. **Ordem de grandeza esperada.** 20,8% dos pacientes têm ≥ 1 melanoma, ≈ 428 grupos
-   positivos. Isso dá: D ≈ 411 grupos (≈ 86 positivos); D_select ≈ 82 (≈ 17 positivos)
-   com `f_sel=0,20` ou ≈ 123 (≈ 26) com 0,30; cada E_f ≈ 329 (≈ 68 positivos, ≈ 93
-   melanomas). São estimativas a confirmar no `verify`, não resultados. Com 0,20 o
-   D_select fica perto do limiar, por isso a recomendação é **`f_sel=0,30`**.
+6. **Ordem de grandeza esperada.** 20,8% dos pacientes têm ≥ 1 melanoma **[C]**
+   (§3.1.1), ≈ 428 grupos positivos. Isso dá: D ≈ 411 grupos (≈ 86 positivos);
+   D_select ≈ 82 (≈ 17 positivos) com `f_sel=0,20` ou ≈ 123 (≈ 26) com 0,30; cada
+   E_f ≈ 329 (≈ 68 positivos, ≈ 93 melanomas). São estimativas a confirmar no `verify`,
+   não resultados. Com 0,20 o D_select fica perto do limiar, por isso a recomendação é
+   **`f_sel=0,30`**.
 7. **Saídas privadas** em `.../isic2020/splits/global-dev-eval-v1/`: `pools.json` e
    `folds.json` com `canonical_hash`. O público recebe só contagens e hashes.
    `split_seed` e as frações ficam no config **antes** do download.
@@ -386,10 +489,10 @@ sklearn. Ele é distinto do `stratified-group-outer-v1`, que é within-outer-fol
 flowchart LR
   subgraph ISIC["ISIC portal / S3 (público)"]
     Z[ISIC_2020_Training_JPEG.zip ~23 GB]
-    G[GroundTruth / v2 / Duplicates CSV]
+    G[GroundTruth / metadata v2 / Duplicates CSV]
   end
   subgraph X299["x299 · container pinado · --cpus 2 · sem outros mounts"]
-    P[probe: HEAD + CSVs + central directory] --> L[(ledger.sqlite)]
+    P[probe: HEAD + CSVs + cabeçalhos + central directory] --> L[(ledger.sqlite)]
     S[stream Range/If-Range + token bucket] -->|CRC32 vs CD, SHA256| SP[spool ≤ 2 GiB]
     SP --> W[2 workers: decode → 512 → JPEG q95]
     W --> D[derived-512-v1 ≤ 8 GiB]
@@ -407,6 +510,7 @@ flowchart LR
   D --> V
   M --> PUB[summary-public.json → Git/Brain após privacy lint]
   subgraph ED["Eduardo (manual)"]
+    URLS[copiar os 4 links da página ISIC para o config] --> P
     PN[PhysioNet: CITI + credencial + DUA] --> WG[wget no servidor sob guarda de disco]
     CX[AIMI: RUA + link pessoal]
   end
@@ -419,8 +523,16 @@ flowchart LR
 
 ### 7.1 Antes do ISIC (decisões, nenhuma ação em servidor)
 
-- [ ] Confirmar uso **não comercial** e atribuição (CC BY-NC 4.0, citar o DOI e o
-      descriptor). Derivados não são redistribuídos.
+- [ ] Confirmar uso **não comercial** e atribuição (CC BY-NC 4.0). Citar o agregado como
+      "International Skin Imaging Collaboration. SIIM-ISIC 2020 Challenge Dataset.
+      International Skin Imaging Collaboration https://doi.org/10.34970/2020-ds01 (2020)"
+      e o descriptor (Rotemberg et al., Sci Data 8, 34, 2021). Conferir essa string na
+      seção "Citing 2020 datasets" da página, porque aqui ela só foi vista por fonte
+      secundária (§3.1.1). Derivados não são redistribuídos.
+- [ ] Abrir <https://challenge.isic-archive.com/data/#2020> no navegador e copiar os 4
+      links (ZIP JPEG de treino, ground truth, metadata v2, lista de duplicatas) para o
+      config. Se algum link pedir login ou aceite de termos, **não** passar credencial
+      para a ferramenta: aceitar pessoalmente e me avisar (§3.1.1, item 4).
 - [ ] Aprovar a **emenda de tarefa**: ISIC2020 binário `target` (melanoma vs demais),
       AUROC primária.
 - [ ] Aprovar `isic2020-derived-512-v1` (lado menor 512, JPEG q95 4:4:4, sem ampliar)
@@ -551,9 +663,9 @@ para os splits.
 
 | Fase | Entrega | Critério de pronto |
 |---|---|---|
-| F0 | Decisões do §7.1 registradas | Config público com seed, frações, preprocessing e política de duplicatas, hash commitado antes de qualquer download |
-| F1 | Ferramenta + testes offline | Testes com ZIP64 sintético ≥ 4 GiB lógico (ou via offsets forçados), quedas em 3 pontos, 200 na retomada abortado, ETag trocado → exit 3, disco simulado → exit 75 sem `.tmp`, nomes `../` ignorados. Nenhum acesso de rede |
-| F2 | Probe no servidor | HEAD OK com Range; CD com 33.126 `.jpg` (ou divergência registrada); CSVs com contagens documentadas; tamanhos reais anotados |
+| F0 | Decisões do §7.1 registradas | Config público com seed, frações, preprocessing, política de duplicatas e os 4 links copiados da página, hash commitado antes de qualquer download |
+| F1 | Ferramenta + testes offline | Testes com ZIP64 sintético ≥ 4 GiB lógico (ou via offsets forçados), quedas em 3 pontos, 200 na retomada abortado, ETag trocado → exit 3, disco simulado → exit 75 sem `.tmp`, nomes `../` ignorados, cabeçalho de CSV diferente do esperado → exit 3. Nenhum acesso de rede |
+| F2 | Probe no servidor | HEAD OK com Range; CD com 33.126 `.jpg` (ou divergência registrada); CSVs com cabeçalhos e contagens documentadas; formato real da lista de duplicatas registrado; tamanhos reais em bytes anotados no §3.1.1 |
 | F3 | Canary de 500 imagens | Projeção ≤ 6 GiB (≤ 8 GiB rígido); tempo/imagem medido; `pixel_sha256` reproduzido em 2 execuções |
 | F4 | Run completo | Ledger 100% `DERIVED`/`SKIPPED` justificado; spool vazio; reserva nunca violada (log da guarda) |
 | F5 | Verify + READY + sumário | Todos os rehashes OK; divergências decididas; `READY.json`; sumário público com lint 0 |
@@ -571,10 +683,10 @@ para os splits.
 - **ADR-A2 Derivado 512 / JPEG q95 4:4:4.** Contexto: o treino é a 224 e o espaço é
   curto. Decisão: lado menor 512, sem ampliar. Consequência: dupla compressão documentada
   como emenda, mas mantém margem para 448 no futuro.
-- **ADR-A3 Integridade sem checksum oficial.** Contexto: o ISIC não publica hashes.
-  Decisão: CRC32 vs CD + SHA256 por membro + raiz por chunks + ETag. Consequência:
-  conseguimos detectar corrupção e troca do objeto, mas não autenticar contra o
-  publicador.
+- **ADR-A3 Integridade sem checksum oficial.** Contexto: o ISIC não publica hashes
+  (reconfirmado no §3.1.1). Decisão: CRC32 vs CD + SHA256 por membro + raiz por chunks +
+  ETag. Consequência: conseguimos detectar corrupção e troca do objeto, mas não
+  autenticar contra o publicador.
 - **ADR-A4 Um container, ledger SQLite.** Contexto: um pesquisador solo, que precisa
   retomar depois de quedas. Decisão: um processo downloader + 2 workers, `sqlite3` da
   stdlib. Consequência: arquitetura simples. A rede convive com a decodificação de JPEG
@@ -588,13 +700,21 @@ para os splits.
 - **ADR-A7 Split stdlib por hash e estrato.** Contexto: listas reprodutíveis
   independentes da versão do sklearn. Decisão: `global-dev-eval-v1`. Consequência: o
   equilíbrio de imagens por fold é aproximado e auditado, não otimizado.
+- **ADR-A8 Schema dos CSVs validado no probe.** Contexto: as colunas exatas e o formato
+  das duplicatas só foram vistos em fonte secundária (§3.1.1). Decisão: o config guarda as
+  colunas esperadas como hipótese e o probe para com exit 3 se o cabeçalho real divergir.
+  Consequência: um passo humano a mais se o Kaggle e o portal diferirem, mas nenhum
+  rótulo ou paciente é lido de coluna errada.
 
 ## 12. Riscos
 
 | Risco | Mitigação |
 |---|---|
 | URL ou objeto do ISIC muda (ETag) | Exit 3, re-probe; o config guarda os links copiados da página |
-| Servidor sem Range | Fallback com stream único e sem retomada (recomeça do zero); o disco ainda cabe |
+| Link do portal pede login ou termos (não descartado no §3.1.1) | Parar; o Eduardo aceita pessoalmente e fornece o link, que nunca é gravado |
+| Servidor sem Range (não documentado no §3.1.1) | Fallback com stream único e sem retomada (recomeça do zero); o disco ainda cabe |
+| CSV do portal com colunas diferentes do `train.csv` do Kaggle | Exit 3 no probe (ADR-A8); sem mapeamento automático |
+| Lista de duplicatas em formato inesperado (425 imagens vs pares) | Contar linhas e pares no probe; cruzar com SHA256 idêntico; divergência decidida por humano |
 | Layout do ZIP inesperado (ZIP64, data descriptor, prefixo de pasta) | Parser testado com essas variantes; validação de contiguidade |
 | Disco disputado por jobs GPU | A guarda mede o livre real; pausa limpa com exit 75 |
 | Decodificador diferente (libjpeg) | Só a imagem pinada; `pixel_sha256` |
@@ -609,10 +729,19 @@ para os splits.
 
 - ISIC: <https://challenge.isic-archive.com/data/#2020>, <https://doi.org/10.34970/2020-ds01>,
   <https://api.isic-archive.com/collections/70/>, descriptor
-  <https://www.nature.com/articles/s41597-021-00815-z> (correções 10.1038/s41597-021-00865-3,
+  <https://www.nature.com/articles/s41597-021-00815-z> (preprint
+  <https://arxiv.org/abs/2008.07360v1>; correções 10.1038/s41597-021-00865-3,
   10.1038/s41597-021-00879-x), AWS Open Data <https://registry.opendata.aws/isic-archive/>,
   isic-cli <https://github.com/ImageMarkup/isic-cli>, duplicatas entre releases
   <https://e-space.mmu.ac.uk/631025>.
+- ISIC, segunda rodada (§3.1.1): licença por imagem
+  páginas de imagem individuais do Archive (IDs omitidos); curadoria
+  <https://github.com/ISIC-Research/2020-Challenge-Curation>; secundárias: colunas do
+  `train.csv` <https://arxiv.org/pdf/2204.10142>,
+  <https://mlr3torch.mlr-org.com/reference/mlr_tasks_melanoma.html>; string de citação
+  <https://www.etamu.edu/projects/augmented-image-repository/citing-this-work-and-references/>;
+  copyright do mirror <https://data.brainchip.com/dataset-mirror/siim-isic-melanoma/license.txt>;
+  contagem do teste <https://arxiv.org/pdf/2206.00356>.
 - PhysioNet: <https://physionet.org/content/mbrset/1.0/>,
   <https://physionet.org/content/brazilian-ophthalmological/1.0.2/>,
   <https://physionet.org/content/mimic-cxr-jpg/2.1.0/>, CITI
