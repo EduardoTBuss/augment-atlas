@@ -7,6 +7,8 @@ Random-initialization jobs need no cache. No weight downloads are performed.
 """
 from __future__ import annotations
 import contextlib
+import copy
+from dataclasses import dataclass
 import datetime as dt
 import json
 import math
@@ -15,6 +17,7 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import tempfile
 import time
 import uuid
 import zipfile
@@ -362,7 +365,7 @@ def reconcile_stopped_attempt(settings,active_path,*,reason,runtime=None,queue=N
         completed=False
         try:
             if state['ExitCode']==0 and (out/'completed.json').exists():
-                numbers=validate_artifacts(out,record['spec'])
+                numbers=validate_completion(settings,out,record['spec'])
                 completed=True
             else:
                 numbers,checkpoint=_stopped_checkpoint(out,record['spec'],settings['code'])
@@ -409,14 +412,147 @@ def reconcile_stopped_attempt(settings,active_path,*,reason,runtime=None,queue=N
                 remote_confirmed=confirmed,active=str(active),checkpoint=checkpoint)
 
 
-def validate_artifacts(out,spec=None):
+@dataclass(frozen=True)
+class TrustedEvaluationInputs:
+    """Host-derived expectations for ONE clinical opt-in job.
+
+    Built only from the pinned code checkout config (checked against the job's
+    config_sha256) and the operator-configured host data directory. Nothing in
+    it comes from the container-writable attempt output: the complete manifest
+    records provide the ID->group->truth mapping that splits.json lacks.
+    """
+    cfg: dict
+    config_file_sha256: str
+    splits: dict
+    records: list
+
+
+def load_trusted_evaluation_inputs(config_path,data,*,expected_config_sha256):
+    """Load trusted inputs from explicit paths; never consults ATLAS_DATA_ROOT or /data."""
+    from .contracts import load_config
+    from .data import load_records,prepare_splits
+    path=Path(config_path).resolve()
+    if not path.is_file() or digest(path)!=expected_config_sha256:
+        raise ValueError('Trusted clinical config checksum mismatch')
+    cfg=load_config(path)
+    if 'evaluation' not in cfg:
+        raise ValueError('Trusted inputs are only defined for clinical evaluation opt-in')
+    if not isinstance(data,(str,os.PathLike)) or not str(data).strip():
+        raise ValueError('Clinical evaluation requires settings.data; no default data root is assumed')
+    root=Path(data).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError('Clinical evaluation data root must be an existing host directory')
+    records=load_records(cfg,check_files=True,root=root)
+    with tempfile.TemporaryDirectory(prefix='atlas-clinical-trust-') as directory:
+        splits=prepare_splits(cfg,records,directory,root=root)
+    return TrustedEvaluationInputs(cfg=copy.deepcopy(cfg),config_file_sha256=expected_config_sha256,
+                                   splits=copy.deepcopy(splits),records=copy.deepcopy(records))
+
+
+def trusted_evaluation_inputs(settings,spec):
+    """Resolve the job config inside settings.code; None means a legacy config.
+
+    The opt-in decision comes from the pinned checkout, never from the attempt's
+    own config.json. Specs without a config path cannot have been claimed by
+    config_for; they keep the legacy call and validate_artifacts still rejects an
+    output config that declares evaluation without trusted inputs.
+    """
+    if not isinstance(spec,dict) or 'config' not in spec:
+        return None
+    code=Path(settings['code']).resolve()
+    name=spec['config']
+    if not isinstance(name,str) or not name.startswith('configs/smoke/'):
+        raise ValueError('Job requires a config under configs/smoke/')
+    path=(code/name).resolve()
+    if not path.is_relative_to(code) or not path.is_file():
+        raise ValueError('Invalid training config path')
+    # The opt-in decision must be made on the exact bytes the job pinned: a
+    # checkout moved after claim fails closed for legacy and clinical jobs alike.
+    if digest(path)!=spec.get('config_sha256'):
+        raise ValueError('Pinned job config checksum mismatch; settings.code differs from the job')
+    if 'evaluation' not in json.loads(path.read_text(encoding='utf-8')):
+        return None
+    return load_trusted_evaluation_inputs(path,settings.get('data'),expected_config_sha256=spec.get('config_sha256'))
+
+
+def validate_completion(settings,out,spec):
+    """Worker/reconciliation entry: legacy jobs keep the exact legacy call.
+
+    Parser failures (deeply nested JSON, oversized CSV fields) are validation
+    failures of this attempt, never exceptions that escape the worker loop.
+    """
+    import csv
     try:
-        return _validate_artifacts(out,spec)
+        try:
+            trusted=trusted_evaluation_inputs(settings,spec)
+        except (TypeError,AttributeError,KeyError) as exc:
+            raise ValueError('Malformed trusted clinical evaluation inputs') from exc
+        if trusted is None:
+            return validate_artifacts(out,spec)
+        return validate_artifacts(out,spec,trusted=trusted)
+    except (RecursionError,csv.Error) as exc:
+        raise ValueError('Completion artifacts or host manifest cannot be parsed') from exc
+
+
+def validate_artifacts(out,spec=None,*,trusted=None):
+    """Validate a completed attempt. ``trusted`` is required iff config opts in.
+
+    Without ``evaluation`` in the attempt config and with trusted=None this is
+    the unchanged legacy eight-artifact validation.
+    """
+    try:
+        return _validate_artifacts(out,spec,trusted)
     except (TypeError,AttributeError,KeyError) as exc:
         raise ValueError('Malformed completion artifacts') from exc
 
 
-def _validate_artifacts(out,spec=None):
+def _validate_clinical(out,cfg,splits,results,metrics,environment,files,spec,trusted):
+    """Revalidate predictions.json against host-trusted config/split/manifest."""
+    from .contracts import canonical_hash,recipe_identity,required_artifacts
+    from .evaluation import (PREDICTION_ARTIFACT,evaluation_partition,partition_accuracy_bounds,
+                             selected_epoch,validate_prediction_artifact)
+    if not isinstance(trusted,TrustedEvaluationInputs) or 'evaluation' not in trusted.cfg:
+        raise ValueError('Clinical evaluation opt-in requires trusted host config/manifest inputs')
+    if 'evaluation' not in cfg or canonical_hash(cfg)!=canonical_hash(trusted.cfg):
+        raise ValueError('Attempt config differs from the trusted clinical job config')
+    if canonical_hash(splits)!=canonical_hash(trusted.splits):
+        raise ValueError('Attempt splits differ from host-derived clinical splits')
+    if not set(required_artifacts(cfg)).issubset(files):
+        raise ValueError('Completion checksums must cover the clinical prediction artifact')
+    if (not isinstance(spec,dict) or spec.get('config_sha256')!=trusted.config_file_sha256 or
+            spec.get('recipe_hash')!=recipe_identity(trusted.cfg) or
+            spec.get('split_hash')!=trusted.splits['sha256'] or
+            not isinstance(spec.get('code_commit'),str) or not spec['code_commit']):
+        raise ValueError('Clinical job spec config/recipe/split/code identity mismatch')
+    if environment.get('code_commit')!=spec['code_commit']:
+        raise ValueError('Clinical environment code commit differs from job')
+    # Top-level results carry exactly the trainer's keys: no extra claims
+    # (e.g. scientifically_eligible) can ride along outside clinical_evaluation.
+    allowed={'schema_version','phase','scientific_status','best_epoch','selection_loss','config_sha256',
+             'splits_sha256','inbreast_previously_examined_in_pilot','clinical_evaluation',
+             'evaluation_scope',evaluation_partition(cfg)}
+    pilot=results.get('inbreast_previously_examined_in_pilot',cfg['dataset']['adapter']=='inbreast_csv')
+    if (not set(results)<=allowed or results.get('phase')!='smoke' or
+            results.get('scientific_status')!='provisional' or
+            pilot is not (cfg['dataset']['adapter']=='inbreast_csv')):
+        raise ValueError('Clinical results.json declares keys or status outside the trainer contract')
+    best_epoch,best_loss=selected_epoch(metrics)
+    if (type(results.get('best_epoch')) is not int or results['best_epoch']!=best_epoch or
+            results.get('selection_loss')!=best_loss):
+        raise ValueError('Selected epoch differs from the selection-loss journal')
+    artifact=json.loads((out/PREDICTION_ARTIFACT).read_text(encoding='utf-8'))
+    validate_prediction_artifact(trusted.cfg,trusted.splits,trusted.records,artifact,
+                                 results.get('clinical_evaluation'),expected_best_epoch=best_epoch,
+                                 environment=environment)
+    summary=results[evaluation_partition(cfg)]
+    lower,upper=partition_accuracy_bounds(artifact)
+    correct=summary['accuracy']*summary['samples']
+    if (summary['samples']!=len(artifact['rows']) or abs(correct-round(correct))>1e-6 or
+            not lower<=round(correct)<=upper):
+        raise ValueError('Partition accuracy is inconsistent with stored probabilities')
+
+
+def _validate_artifacts(out,spec=None,trusted=None):
     out=Path(out)
     p=out/'completed.json'
     if not p.is_file(): raise ValueError('Missing completed.json')
@@ -472,6 +608,8 @@ def _validate_artifacts(out,spec=None):
         raise ValueError('Invalid evaluation artifact')
     if spec and (spec['split_hash']!=splits['sha256'] or cfg['training']['seed']!=spec['train_seed'] or cfg['augmentation']['arm']!=spec['arm']):
         raise ValueError('Result belongs to another job')
+    if 'evaluation' in cfg or trusted is not None:
+        _validate_clinical(out,cfg,splits,results,metrics,environment,files,spec,trusted)
     summary=dict(completed_sha256=digest(p),artifact_count=len(files),epoch=progress['epoch'],epochs=cfg['training']['epochs'])
     samples=progress.get('samples_processed')
     if type(samples) is int and samples>=0:summary['samples_processed']=samples
@@ -598,7 +736,7 @@ def worker(settings,once=False):
                 if not any(e['state'] in ('succeeded','failed','interrupted') for e in spool.events) and spool.record['state'] not in ('succeeded','failed','interrupted'):
                     try:
                         if state['State']['ExitCode']!=0:raise ValueError('Nonzero training exit')
-                        summary=validate_artifacts(out,record['spec'])
+                        summary=validate_completion(settings,out,record['spec'])
                         spool.add('succeeded',**summary)
                     except (ValueError,OSError,KeyError):
                         interrupted=((out/'checkpoint.pt').exists() and not (out/'failed.json').exists()

@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 
-from .contracts import atomic_json, canonical_hash, file_hash, load_config, validate_config
+from .contracts import atomic_json, canonical_hash, file_hash, load_config, required_artifacts, validate_config
 from .data import confined_path, data_root, load_records, prepare_splits
 
 
@@ -158,6 +158,9 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                    "image_id": os.environ.get("ATLAS_IMAGE_ID", "unavailable"),
                    "config_sha256": config_hash, "splits_sha256": splits["sha256"]}
     environment["evaluation_scope"] = evaluation_scope
+    if "evaluation" in cfg:
+        from .evaluation import clinical_environment_block
+        environment["clinical_evaluation"] = clinical_environment_block(cfg)
     environment['augmentation_backend'] = cfg['augmentation'].get('backend', 'legacy-pilot-v1')
     environment['augmentation_resize_order'] = 'resize-before-augmentation' if cfg['augmentation'].get('backend') == 'candidate-opencv-v2' else 'augmentation-before-resize'
     if cfg['augmentation'].get('backend') == 'candidate-opencv-v2':
@@ -219,21 +222,27 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                     "splits_sha256": splits["sha256"], "checkpoint": "checkpoint.pt",
                     "interruption_signal": interrupted["signal"]})
 
-    def evaluate(name):
+    def evaluate(name, *, collect_scores=False):
         model.eval()
         loader = torch.utils.data.DataLoader(ClassificationDataset(cfg, partition[name]), batch_size=training["batch_size"],
                                             shuffle=False, num_workers=training["workers"])
         loss_sum, correct, count = 0.0, 0, 0
+        scores = [] if collect_scores else None
         with torch.no_grad():
             for images, labels in loader:
                 images, labels = images.to(device), labels.to(device)
                 with torch.autocast(device_type=device.type, enabled=False):
                     logits = model(images)
                     loss = criterion(logits, labels)
+                if collect_scores:
+                    if not bool(torch.isfinite(logits).all()):
+                        raise RuntimeError("non-finite clinical evaluation logits")
+                    scores.extend(logits.softmax(dim=1).detach().cpu().tolist())
                 loss_sum += loss.item() * len(labels)
                 correct += int((logits.argmax(1) == labels).sum().item())
                 count += len(labels)
-        return {"loss": loss_sum / count, "accuracy": correct / count, "samples": count}
+        result = {"loss": loss_sum / count, "accuracy": correct / count, "samples": count}
+        return (result, scores) if collect_scores else result
 
     try:
         if not resume:
@@ -301,7 +310,18 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                    "best_epoch": best_epoch, "selection_loss": best_loss,
                    "config_sha256": config_hash, "splits_sha256": splits["sha256"],
                    "inbreast_previously_examined_in_pilot": cfg["dataset"]["adapter"] == "inbreast_csv"}
-        if evaluation_scope == "selection-only":
+        clinical_artifact = None
+        if "evaluation" in cfg:
+            # Opt-in: exactly one final pass over the scope's partition with the
+            # already selected model; clinical metrics never influence best_epoch.
+            from .evaluation import build_prediction_artifact, evaluation_partition
+            final_partition = evaluation_partition(cfg)
+            results[final_partition], scores = evaluate(final_partition, collect_scores=True)
+            clinical_artifact, results["clinical_evaluation"] = build_prediction_artifact(
+                cfg, splits, records, scores, best_epoch=best_epoch, environment=environment)
+            if evaluation_scope == "selection-only":
+                results["evaluation_scope"] = evaluation_scope
+        elif evaluation_scope == "selection-only":
             results["evaluation_scope"] = evaluation_scope
             results["selection"] = evaluate("selection")
         else:
@@ -309,10 +329,12 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
         if interrupted["signal"] is not None:
             progress("interrupted")
             return 128 + interrupted["signal"]
+        if clinical_artifact is not None:
+            atomic_json(output / "predictions.json", clinical_artifact)
         atomic_json(output / "results.json", results)
         atomic_json(output / "metrics.json", history)
         progress("completed")
-        required = ["checkpoint.pt", "best.pt", "splits.json", "config.json", "environment.json", "metrics.json", "results.json", "progress.json"]
+        required = required_artifacts(cfg)
         artifacts = {name: file_hash(output / name) for name in required}
         sizes = {name: (output / name).stat().st_size for name in required}
         if any(size <= 0 for size in sizes.values()):

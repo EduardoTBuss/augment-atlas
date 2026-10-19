@@ -14,11 +14,31 @@ ARMS = ("none", "basic", "basic_gamma_light", "basic_gamma_heavy",
         "clahe_light", "clahe_heavy")
 CANDIDATE_BACKEND = "candidate-opencv-v2"
 LEGACY_BACKEND = "legacy-pilot-v1"
+BASE_REQUIRED_ARTIFACTS = ("checkpoint.pt", "best.pt", "splits.json", "config.json",
+                           "environment.json", "metrics.json", "results.json", "progress.json")
+
+
+def required_artifacts(cfg: dict) -> tuple[str, ...]:
+    """Legacy completion stays at eight files; clinical opt-in adds private rows."""
+    return BASE_REQUIRED_ARTIFACTS + (("predictions.json",) if "evaluation" in cfg else ())
 
 
 def canonical_hash(value: Any) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
                                     allow_nan=False).encode()).hexdigest()
+
+
+def recipe_identity(cfg: dict) -> str:
+    """Frozen technical recipe identity, shared by every arm and training seed.
+
+    The optional clinical evaluation decision is included only when the
+    explicit ``evaluation`` key exists, so legacy recipe hashes are unchanged.
+    """
+    train = {k: v for k, v in cfg["training"].items() if k != "seed"}
+    identity = dict(recipe=cfg["recipe"], model=cfg["model"], input=cfg["input"], training=train)
+    if "evaluation" in cfg:
+        identity["evaluation"] = cfg["evaluation"]
+    return canonical_hash(identity)
 
 
 def file_hash(path: str | Path) -> str:
@@ -61,6 +81,9 @@ def validate_config(cfg: dict) -> dict:
     if model.get("name") != "resnet50" or model.get("weights") not in ("none", "IMAGENET1K_V2"):
         raise ValueError("only ResNet-50 with none or cached IMAGENET1K_V2 weights is supported")
     _integer(model["num_classes"], "num_classes", 2)
+    if "evaluation" in cfg:
+        from .evaluation import validate_evaluation_config
+        validate_evaluation_config(cfg["evaluation"], model["num_classes"])
     backend = cfg["augmentation"].get("backend", LEGACY_BACKEND)
     if backend not in (LEGACY_BACKEND, CANDIDATE_BACKEND):
         raise ValueError("unknown augmentation backend")
