@@ -1,0 +1,27 @@
+{
+  "active": [
+    {
+      "attempt_id": "ffffffffffffffffffffffffffffffff",
+      "container": "running",
+      "epoch": 3,
+      "job_id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "progress_age_s": 410
+    }
+  ],
+  "boot_id": "aaaaaaaa-0000-4000-8000-00000000000a",
+  "btime": 1760860800,
+  "coordinator_commit": "cccccccccccccccccccccccccccccccccccccccc",
+  "gap_report": null,
+  "host_loss_detected": [],
+  "node_id": "sim-a",
+  "node_profile_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ntp_synchronized": true,
+  "observed_at_utc": "2026-10-18T22:00:00Z",
+  "schema": "atlas.heartbeat.v1",
+  "sentinel_last_sample_age_s": 0.6,
+  "seq": 1700,
+  "spool_pending_events": 0,
+  "status": "running",
+  "uptime_s": 86400.2,
+  "worker": "gpu0"
+}

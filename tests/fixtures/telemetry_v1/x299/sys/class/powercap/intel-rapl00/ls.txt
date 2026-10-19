@@ -1,0 +1,13 @@
+total 0
+-r--r--r-- 1 root root 4096 out 19 09:38 constraint_0_max_power_uw
+-r--r--r-- 1 root root 4096 out 19 09:38 constraint_0_name
+-rw-r--r-- 1 root root 4096 out 19 09:38 constraint_0_power_limit_uw
+-rw-r--r-- 1 root root 4096 out 19 09:38 constraint_0_time_window_us
+lrwxrwxrwx 1 root root    0 out 19 09:38 device -> ../../intel-rapl:0
+-rw-r--r-- 1 root root 4096 out 19 09:38 enabled
+-r-------- 1 root root 4096 out 19 09:38 energy_uj
+-r--r--r-- 1 root root 4096 out 19 09:38 max_energy_range_uj
+-r--r--r-- 1 root root 4096 out 18 19:25 name
+drwxr-xr-x 2 root root    0 out 19 09:38 power
+lrwxrwxrwx 1 root root    0 out 18 19:26 subsystem -> ../../../../../../class/powercap
+-rw-r--r-- 1 root root 4096 out 18 19:26 uevent
