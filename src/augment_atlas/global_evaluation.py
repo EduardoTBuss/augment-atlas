@@ -345,3 +345,93 @@ def validate_global_predictions(cfg, view, records, artifact, *, pools):
             "samples": len(rows), "primary_metric": primary["metric"], "primary_value": primary["value"],
             "primary_reason": primary["reason"], "content_sha256": expected["content_sha256"],
             "execution_verified": False, "scientific_eligible": False}
+
+
+# --------------------------------------------------------------------------
+# Trainer-side entry points (slice S1, part B; additive)
+# --------------------------------------------------------------------------
+
+_VIEW_RECORD_KEYS = {"id", "path", "group", "label"}
+
+
+def check_hpo_view_local(view, cfg):
+    """Container-side hpo-view check WITHOUT pools; return (records, train, selection).
+
+    The HPO container mounts only the D-view, which deliberately has no pools
+    document (pools list E). Here the view is checked for its own checksum,
+    its binding to the config and internal consistency (exact D_fit/D_select
+    partition of its records, group-disjoint). The E check and the identity of
+    the records against the pools are the host's job (``check_hpo_view``) and
+    are re-run by ``validate_global_predictions``.
+    """
+    if type(view) is not dict or set(view) != _HPO_VIEW_KEYS:
+        _fail("view_hash_mismatch", f"hpo view: closed schema requires exactly {sorted(_HPO_VIEW_KEYS)}")
+    try:
+        body_hash = canonical_hash({key: value for key, value in view.items() if key != "sha256"})
+    except (TypeError, ValueError) as error:
+        _fail("view_hash_mismatch", f"hpo view is not canonical JSON ({error})")
+    if view["sha256"] != body_hash:
+        _fail("view_hash_mismatch", "hpo view checksum mismatch")
+    if (cfg["phase"] != "hpo" or view["sha256"] != cfg["global"]["hpo_view_sha256"]
+            or view["pools_sha256"] != cfg["global"]["pools_sha256"]
+            or type(view["schema_version"]) is not int or view["schema_version"] != 1
+            or view["protocol"] != HPO_VIEW_PROTOCOL or view["scientific_status"] != "provisional"):
+        _fail("view_hash_mismatch", "hpo view is not the view of this config")
+    spec, task = cfg["evaluation"], view["task"]
+    if (type(view["dataset"]) is not dict
+            or view["dataset"] != {"id": cfg["dataset"]["id"], "version": cfg["dataset"]["version"]}
+            or type(task) is not dict or task.get("type") != spec["task"] or task.get("classes") != spec["classes"]
+            or task.get("positive_class") != spec["positive_class"] or task.get("endpoint") != spec["endpoint"]):
+        _fail("view_hash_mismatch", "hpo view dataset/task differ from the config")
+    records = view["records"]
+    if (type(records) is not list or not records
+            or any(type(row) is not dict or set(row) != _VIEW_RECORD_KEYS for row in records)):
+        _fail("records_identity_mismatch", "hpo view records must be {id, path, group, label} objects")
+    ids = [row["id"] for row in records]
+    if (any(type(item) is not str or not item for item in ids) or ids != sorted(set(ids))
+            or any(type(row["label"]) is not int or row["label"] not in spec["classes"] for row in records)
+            or any(type(row["group"]) is not str or not row["group"] for row in records)
+            or any(type(row["path"]) is not str for row in records)):
+        _fail("records_identity_mismatch", "hpo view records must be unique, sorted by ID, with known labels")
+    lists = view["lists"]
+    if type(lists) is not dict or set(lists) != {"train", "selection"}:
+        _fail("view_hash_mismatch", "hpo view lists must be exactly train/selection")
+    train, selection = lists["train"], lists["selection"]
+    for name, values in (("train", train), ("selection", selection)):
+        if (type(values) is not list or not values or any(type(item) is not str for item in values)
+                or values != sorted(set(values))):
+            _fail("view_hash_mismatch", f"hpo view lists.{name} must be nonempty, unique and sorted")
+    lookup = {row["id"]: row for row in records}
+    if set(train) & set(selection) or set(train) | set(selection) != set(lookup):
+        _fail("view_hash_mismatch", "hpo view lists must partition exactly its records")
+    if {lookup[i]["group"] for i in train} & {lookup[i]["group"] for i in selection}:
+        _fail("view_hash_mismatch", "hpo view D_fit/D_select share a group")
+    gj._hex64(view["view_files_sha256"], "hpo view view_files_sha256")
+    return deepcopy(records), list(train), list(selection)
+
+
+def build_hpo_predictions_from_view(cfg, view, scores, *, epoch):
+    """HPO ``predictions.json`` inside the D-view container (no pools available).
+
+    Same artifact as ``build_global_predictions`` for phase ``hpo``: the header
+    task is the view's task, which the host proves equal to the pools task.
+    """
+    gj.validate_global_config(cfg)
+    if cfg["phase"] != "hpo":
+        _fail("global_config_invalid", "view-only predictions exist only for phase hpo")
+    _scalar_only(cfg["evaluation"]["task"])
+    records, _, selection = check_hpo_view_local(view, cfg)
+    if type(epoch) is not int or epoch != cfg["training"]["epochs"]:
+        _fail("epoch_selection_forbidden", "global predictions come from the last epoch only (epoch == epochs)")
+    context = (cfg["evaluation"], selection, {row["id"]: row for row in records})
+    return _build(cfg, view, {"task": view["task"]}, context, scores, strict=False)
+
+
+def final_partition_ids(cfg, view, records, pools):
+    """E_f identities (sorted by ID) after every check ``build_global_predictions`` runs.
+
+    Lets the trainer fail before training instead of after the last epoch.
+    """
+    if type(cfg) is not dict or cfg.get("phase") != "final":
+        _fail("global_config_invalid", "final_partition_ids requires a phase=final config")
+    return list(_context(cfg, view, records, pools)[1])

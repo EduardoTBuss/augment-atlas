@@ -663,6 +663,37 @@ para `D_in_test`/`hpo_view_contains_E` nem re-derivação da view final); cada
 objeto de métrica é `{metric, value, reason, coverage, per_class}` com
 `reason = "metric_undefined:<razão>"` quando `value` é `null`.
 
+Trainer S1 parte B (`train._run_global`; sem códigos novos, divergências
+registradas): (a) o container HPO não lê `pools_file` nem o manifesto (ambos
+listam E): registros e listas vêm só do hpo-view da D-view, checado por
+`global_evaluation.check_hpo_view_local` (checksum, vínculo ao config, partição
+exata D_fit/D_select sem grupo comum), e o artefato sai de
+`build_hpo_predictions_from_view`, idêntico ao de `build_global_predictions`
+com pools; o host continua recalculando com pools (`hpo_view_contains_E`). Sem
+hashes por imagem no hpo-view, a integridade das imagens da D-view fica com o
+listing do runtime. (b) `splits.json` é o próprio documento de visão (hpo-view
+ou `derive_final_view_doc`), logo `splits_sha256 == split_hash` nas duas fases.
+(c) `config_sha256` nos artefatos globais é o hash dos bytes materializados
+(`render_config_bytes`, = spec da fila), não `canonical_hash(cfg)` do legado;
+`config.json` é gravado com esses bytes. (d) `--resume` só aceita o
+`checkpoint.pt` do próprio attempt e exige `lineage = {trainer, phase,
+config_sha256, splits_sha256, initial_state_sha256, trainer_override}` igual;
+caminho estranho ou linhagem diferente ⇒ `checkpoint_lineage_mismatch` antes de
+qualquer escrita no checkpoint. (e) CPU/0 workers só via argumento
+`run(..., trainer_override={device: cpu, workers: 0, reason})`, que a CLI não
+expõe, exige `ATLAS_CONTAINER_CPU_TESTS=1` e é gravado em checkpoint,
+`environment`, `results` e `completed` (o runtime deve recusar attempts com
+override não nulo); `TRAINER_CONSTANTS_V1` e o config ficam intocados. (f) A
+cabeça é re-semeada com `seed` depois de carregar o ImageNet, então
+`initial_state_sha256` depende só da seed (pareamento entre braços). (g) v1
+exige `classes == 0..num_outputs-1` e operações do backend
+`candidate-opencv-v2` (resize antes da augmentation, como em
+`TRAINER_CONSTANTS_V1`); fora disso ⇒ `recipe_adapter_unsupported`. (h)
+`best.pt` = `{model, epoch: epochs, checkpoint_selection: "last_epoch",
+config_sha256}`; `results` traz `test_evaluations`/`selection_evaluations` e o
+acesso é registrado no checkpoint antes da leitura; reavaliação após retomada
+precisa reproduzir o mesmo `content_sha256`.
+
 ---
 
 ## 7. Fluxos

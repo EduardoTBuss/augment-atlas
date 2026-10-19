@@ -71,7 +71,15 @@ def _number(value: Any, name: str, minimum: float = 0, maximum: float = math.inf
         raise ValueError(f"{name} must be finite in [{minimum}, {maximum}]")
 
 
+GLOBAL_PHASES = ("hpo", "final")
+
+
 def validate_config(cfg: dict) -> dict:
+    # Global D/E jobs (ADR-04) have their own closed schema; the legacy smoke
+    # and clinical opt-in rules below stay untouched for every other phase.
+    if isinstance(cfg, dict) and cfg.get("phase") in GLOBAL_PHASES:
+        from .global_jobs import validate_global_config
+        return validate_global_config(cfg)
     if cfg.get("schema_version") != 1 or cfg.get("phase") != "smoke" or cfg.get("scientific_status") != "provisional":
         raise ValueError("v1 accepts only explicit phase=smoke, scientific_status=provisional")
     for name in ("protocol_version",):
