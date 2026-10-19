@@ -385,6 +385,35 @@ O relógio vem do UTC do nó, com NTP obrigatório (`ntp_synchronized` no heartb
 sem privilégio via `timedatectl show -p NTPSynchronized`). Tolerância de skew: 120 s.
 Se `ntp_synchronized=false`, o estado sai como `late` com `evidence.clock_untrusted=true`.
 
+Regras de borda (F5b, esclarecimento; `fleet.liveness`, testes em `tests/test_fleet_heartbeat.py`):
+- Ordem: `n/a` → `legacy_no_lease` → `unknown_observer` (fetch falhou) → `owner_rebooted` →
+  relógio → lease → regra dos 50 %. Os estados possíveis são só os do pseudocódigo acima;
+  `clock_untrusted` é evidência dentro de `late`, não um estado.
+- Bordas inclusivas do lado saudável: `age <= 2 × heartbeat_seconds` → `alive`;
+  `age <= lease_seconds` → `late`; `age > lease_seconds` → `suspect_stale` (ou
+  `unknown_observer`). O skew não alarga o lease.
+- Skew de 120 s vale só para timestamp no futuro: até 120 s conta como `age = 0`; acima disso
+  sai `late` com `clock_untrusted=true` (`reason=future_timestamp`). `ntp_synchronized`
+  diferente de `true` (inclusive `null`) dá `late` com `clock_untrusted=true` em qualquer
+  idade. `owner_rebooted` tem precedência sobre os dois.
+- A última prova de vida da tentativa é o mais novo entre o heartbeat e o evento `claim`.
+  Sem heartbeat no ref (ou com documento de outro worker no ref, ignorado), a idade conta a
+  partir do claim, com `evidence.heartbeat_missing=true`. Um heartbeat mais velho que o claim
+  (menos o skew) não decide o `boot_id`, porque é de antes desta tentativa.
+- Regra dos 50 %: conta só workers de **outros nós**, porque workers do mesmo host travam
+  juntos. Exige ao menos um. "Vencido" significa `age > lease_seconds` do claim avaliado. O
+  observador deve passar só refs de nós ativos; um ref esquecido de nó aposentado puxa para
+  `unknown_observer`.
+- `legacy_no_lease`: `age_s` é a idade do último evento (`observed_at_utc`, senão `at`).
+- Publicação (`heartbeat.HeartbeatPublisher`): `heartbeat.json` = JSON canônico + LF. Falha
+  de Git, timeout ou push rejeitado retornam `ok=false` (`git_unavailable` /
+  `push_not_confirmed`) e nunca lançam exceção. Documento já publicado retorna
+  `already_published`. `seq` não crescente (`seq_not_increasing`) e ponta escrita por outro
+  worker (`foreign_tip`) nunca são sobrescritos. Cada falha grava uma linha com fsync no
+  `liveness.jsonl` (`event=heartbeat_publish_failed`, `reason`, `seq`, `git_ok_last=false`).
+  Documento inválido, documento de outro nó/worker e ref fora do padrão geram `ValueError`
+  antes de qualquer I/O.
+
 ### 4.4 O que acontece quando o lease expira
 
 **Nada automático.** Não há roubo, não há retry e o job não volta para `pending`.
@@ -725,6 +754,15 @@ GPUs podem ser removidos; hoje eles já aparecem em `owner` público. A escrita 
 content, expected_blob)` no `GitQueue`), e só pelo operador.
 `status ∈ {active, draining, retired}`. Com `draining`, o nó termina o job atual e não
 reivindica outro.
+
+`put_document`/`get_document` (F5b, esclarecimento): o path segue
+`fleet/<seg>/…/<nome>.json` (minúsculas, até 4 níveis) e nunca `jobs/`. Em
+`fleet/nodes/<node_id>.json`, o conteúdo precisa passar por `validate_public_card` e ter o
+`node_id` igual ao do nome do arquivo, o que é checado antes de qualquer I/O.
+`expected_blob=None` significa "não pode existir ainda". Um blob divergente gera
+`QueueConflict` e nada é escrito. Reescrever bytes idênticos é idempotente. O retorno é o
+sha do blob, confirmado por refetch. `get_document` retorna `(bytes, blob)` ou
+`(None, None)`.
 
 ---
 

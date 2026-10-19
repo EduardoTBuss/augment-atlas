@@ -33,6 +33,7 @@ field no gate reads (RAPL, fans, other disks...) is ignored.
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta, timezone
 import math
 
 from . import fleet_schema as fs
@@ -569,3 +570,126 @@ def with_requirements(spec, requirements, scheduling=None):
         fs.validate_scheduling(scheduling)
         spec["scheduling"] = dict(scheduling)
     return spec
+
+
+# ------------------------------------------------------------------ liveness (F5b)
+# docs/fleet-protocol.md 4.3/4.4, ADR-3: derived by the observer, never persisted.
+# Pure: no Git, no clock (``now_utc`` is injected), no write, never calls claim/retry/update.
+
+HEARTBEAT_SECONDS = 900
+DEFAULT_LEASE_SECONDS = 4 * HEARTBEAT_SECONDS
+CLOCK_SKEW_SECONDS = 120
+LIVENESS_STATES = ("n/a", "legacy_no_lease", "unknown_observer", "owner_rebooted", "alive", "late", "suspect_stale")
+LIVE_RECORD_STATES = frozenset({"claimed", "running"})
+
+
+def parse_utc(value):
+    """Aware ``datetime`` or ISO-8601 UTC string (``Z`` or ``+00:00``) -> aware UTC datetime."""
+    if isinstance(value, datetime):
+        moment = value
+    elif isinstance(value, str) and value:
+        moment = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+    else:
+        raise ValueError("timestamp must be an ISO-8601 UTC string or an aware datetime")
+    if moment.tzinfo is None or moment.utcoffset() is None:
+        raise ValueError("timestamp must carry a UTC offset (naive time refused)")
+    return moment.astimezone(timezone.utc)
+
+
+def _event_time(event):
+    for key in ("observed_at_utc", "at"):
+        if event.get(key):
+            try:
+                return parse_utc(event[key])
+            except ValueError:
+                continue
+    return None
+
+
+def _attempt_claim(record):
+    attempt = record.get("attempt_id")
+    for event in reversed(record.get("history") or []):
+        if event.get("kind") == "claim" and event.get("attempt_id") == attempt:
+            return event
+    return None
+
+
+def _result(state, age_s, **evidence):
+    return {"state": state, "age_s": None if age_s is None else round(age_s, 3), "evidence": evidence}
+
+
+def liveness(record, heartbeats_by_ref, all_worker_heartbeats=None, now_utc=None, observer_fetch_ok=True, *,
+             heartbeat_seconds=HEARTBEAT_SECONDS, skew_seconds=CLOCK_SKEW_SECONDS):
+    """Derived liveness of one job record (section 4.3) -> ``{state, age_s, evidence}``.
+
+    ``heartbeats_by_ref``: ``{ref: heartbeat doc}`` as returned by
+    ``heartbeat.fetch_heartbeats``; ``all_worker_heartbeats`` defaults to the same
+    mapping (the other workers used by the 50 % observer rule); ``now_utc`` is the
+    observer's UTC clock (required); ``observer_fetch_ok`` is ``False`` when the
+    observer could not read the heartbeat refs.
+
+    Boundaries (all inclusive on the healthy side, F5b clarification in 4.3):
+    ``age <= 2*heartbeat`` alive, ``age <= lease`` late, ``age > lease`` suspect_stale
+    (or unknown_observer). A heartbeat up to ``skew_seconds`` in the future counts as
+    ``age 0``; further in the future, or ``ntp_synchronized`` not ``true``, gives
+    ``late`` with ``evidence.clock_untrusted``.
+    """
+    if now_utc is None:
+        raise ValueError("now_utc is required (the observer clock is injected)")
+    now = parse_utc(now_utc)
+    if heartbeat_seconds <= 0 or skew_seconds < 0:
+        raise ValueError("heartbeat_seconds must be > 0 and skew_seconds >= 0")
+    heartbeats_by_ref = heartbeats_by_ref or {}
+    others_source = heartbeats_by_ref if all_worker_heartbeats is None else all_worker_heartbeats
+    if record.get("state") not in LIVE_RECORD_STATES:
+        return _result("n/a", None, record_state=record.get("state"))
+    claim = _attempt_claim(record)
+    block = (claim or {}).get("fleet")
+    if not isinstance(block, dict):
+        history = record.get("history") or []
+        last = _event_time(history[-1]) if history else None
+        return _result("legacy_no_lease", None if last is None else (now - last).total_seconds(),
+                       last_event_utc=None if last is None else last.isoformat())
+    ref, lease = block["heartbeat_ref"], block.get("lease_seconds", DEFAULT_LEASE_SECONDS)
+    base = {"heartbeat_ref": ref, "lease_seconds": lease, "heartbeat_seconds": heartbeat_seconds}
+    if observer_fetch_ok is not True:
+        return _result("unknown_observer", None, observer_fetch_ok=False, **base)
+    claimed_at = _event_time(claim)
+    hb = heartbeats_by_ref.get(ref)
+    if hb is not None and (hb.get("node_id"), hb.get("worker")) != tuple(ref.rsplit("/", 2)[-2:]):
+        base["heartbeat_ignored"] = "document_of_another_worker"
+        hb = None
+    hb_at = None
+    if hb is not None:
+        hb_at = parse_utc(hb["observed_at_utc"])
+        # A heartbeat older than the claim says nothing about this attempt's boot (4.3, F5b).
+        predates_claim = claimed_at is not None and hb_at < claimed_at - timedelta(seconds=skew_seconds)
+        base.update(seq=hb.get("seq"), heartbeat_utc=hb["observed_at_utc"], heartbeat_predates_claim=predates_claim)
+        if not predates_claim and hb.get("boot_id") != block.get("boot_id"):
+            return _result("owner_rebooted", (now - hb_at).total_seconds(), boot_id_at_claim=block.get("boot_id"),
+                           boot_id_heartbeat=hb.get("boot_id"), **base)
+    else:
+        base["heartbeat_missing"] = True
+    # Last sign of life of this attempt: the newer of its own heartbeat and its claim event.
+    candidates = [moment for moment in (hb_at, claimed_at) if moment is not None]
+    if not candidates:
+        return _result("unknown_observer", None, reason="no_timestamp", **base)
+    reference = max(candidates)
+    age = (now - reference).total_seconds()
+    if hb is not None and hb.get("ntp_synchronized") is not True:
+        return _result("late", max(age, 0.0), clock_untrusted=True, reason="ntp_not_synchronized", **base)
+    if age < -skew_seconds:
+        return _result("late", 0.0, clock_untrusted=True, reason="future_timestamp", future_s=round(-age, 3), **base)
+    if age < 0:
+        base["future_s_tolerated"] = round(-age, 3)
+        age = 0.0
+    if age <= lease:
+        return _result("late" if age > 2 * heartbeat_seconds else "alive", age, **base)
+    node_id = ref.rsplit("/", 2)[-2]
+    others = [doc for other_ref, doc in sorted((others_source or {}).items())
+              if other_ref != ref and isinstance(doc, dict) and doc.get("node_id") != node_id]
+    expired = sum(1 for doc in others if (now - parse_utc(doc["observed_at_utc"])).total_seconds() > lease)
+    base.update(other_node_workers=len(others), other_node_workers_expired=expired)
+    if others and 2 * expired >= len(others):
+        return _result("unknown_observer", age, reason="most_other_nodes_expired", **base)
+    return _result("suspect_stale", age, **base)
