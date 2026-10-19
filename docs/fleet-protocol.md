@@ -755,6 +755,24 @@ select_and_claim(records, profile, card, sentinel_latest, settings) -> record | 
 - `atlas fleet explain --job <id>` roda os passos 0–4 e imprime o motivo de cada filtro. Só lê.
 - "GPU serial" vira `max_concurrent_trainings: 1`: os dois workers do x299 (gpu0 e gpu1) disputam um único slot do nó. Hoje não há esse lock, e dois workers rodariam ao mesmo tempo (pergunta P2).
 
+#### 7.1.1 Regras de borda e catálogo de motivos (F4, esclarecimento)
+
+Implementado em `src/augment_atlas/fleet.py` (`REASONS`); os códigos são estáveis.
+- `requirements` **não** entra no `job_id` (D2/ADR-6); com `--image-id` o seed grava `requirements` e espelha `image_id`/`min_vram_mib` em `compatibility`; **sem `--image-id` e sem nenhuma outra flag de frota, grava o spec legado byte a byte** (o controlador V2 revisado chama `cli seed` assim); flag de frota sem `--image-id` ⇒ erro de uso (exit 2).
+- Job legado: a decisão é exatamente a do `compatible()` atual (imagem do nó se `compatibility.image_id` ausente, pino opcional `compatibility.gpu_uuid`, dataset em `settings.datasets`); **não** exige `image_id ∈ profile.images` nem `profile.datasets`. Única divergência: `min_memory_mb` não numérico ou não finito recusa com motivo, em vez de derrubar o loop.
+- Sem perfil (modo legado explícito) só jobs legados são elegíveis; job v1 → `node_profile_required`. Job `final` sem `hardware_class` → `final_requires_hardware_class` (P4).
+- VRAM: vale a medida do worker (`memory.total`); o perfil é fallback. Capacidade: vale a do probe da imagem; o perfil é fallback; desconhecida com mínimo exigido → recusa.
+- Dataset casa por `(id, version, manifest_sha256)` com igualdade estrita do manifesto; `version: "*"` no perfil casa qualquer versão.
+- Portões de temperatura valem para **todas** as GPUs do nó (nó serial); o portão de ociosidade vale só para a GPU do worker. `null` com motivo nunca lança exceção: num campo lido por um portão, recusa com `*_unavailable`/`gpu_idle_unknown`; em campo que nenhum portão lê (RAPL, fans, outras GPUs no portão de ociosidade), é ignorado. `null` sem motivo torna o `latest.json` inválido.
+
+| Etapa | Motivos |
+|---|---|
+| 1 | `not_pending`, `dependency_not_succeeded` |
+| 2–3 | `invalid_scheduling`, `unsupported_requirements_schema`, `invalid_requirements`, `legacy_compatibility_invalid`, `node_profile_required`, `phase_mismatch`, `code_commit_mismatch`, `node_not_allowed`, `final_requires_hardware_class`, `hardware_class_mismatch`, `gpu_not_allowed`, `gpu_not_in_profile`, `gpu_identity_mismatch`, `gpu_vram_unknown`, `insufficient_vram`, `compute_capability_unknown`, `insufficient_compute_capability`, `image_mismatch`, `image_not_validated_on_node`, `gpu_uuid_mismatch`, `dataset_not_configured`, `dataset_not_validated_on_node`, `weights_not_validated_on_node`, `container_limits_unset`, `container_exceeds_node_limits` |
+| 4 | `disk_insufficient_for_job` |
+| 0 | `node_profile_invalid`, `worker_node_mismatch`, `node_card_missing`, `node_card_invalid`, `node_card_mismatch`, `node_not_active`, `boot_id_unknown`, `sentinel_latest_missing`, `sentinel_latest_invalid`, `sentinel_node_mismatch`, `sentinel_other_boot`, `sentinel_stale`, `thermal_sensor_unsupported`, `gpu_temp_unavailable`, `gpu_too_hot`, `cpu_pkg_temp_unavailable`, `cpu_pkg_too_hot`, `disk_runs_unreported`, `disk_free_unavailable`, `disk_below_reserve`, `gpu_not_reported`, `gpu_idle_unknown`, `gpu_busy`, `node_cooldown` |
+| — | `ok`, `not_evaluated` (só no `explain`) |
+
 ### 7.2 Estagnação ("sem progresso")
 
 O worker observa `progress_age_s` (mtime de `progress.json` e Δ`samples_processed`) e
