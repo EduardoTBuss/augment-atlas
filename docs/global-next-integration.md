@@ -639,6 +639,30 @@ diferentes ou arquivo estranho no diretório da fase; nada é sobrescrito),
 `plan_invalid` (plan v1 que não passa no auditor ancorado; o recálculo a partir
 do search-space continua sendo `plan_not_from_search_space`, S2).
 
+Códigos adicionados na fatia S1 (`global_evaluation.py`, aditivos; o catálogo
+original não distinguia esses casos do `predictions.json` global):
+`predictions_invalid` (S1) (schema fechado do artefato/linhas, `content_sha256`
+divergente, linhas fora da ordem por ID, divergência residual no recálculo),
+`prediction_scores_invalid` (S1) (probabilidade não finita, fora de [0,1],
+bool/string, largura ≠ número de classes, soma fora de 1 ± 1e-6, contagem de
+linhas de scores ≠ partição), `prediction_identity_mismatch` (S1) (artefato
+ligado a outro config/`config_sha256`, view, pools, freeze/campanha, plan,
+candidato, fold, braço, seed ou decisão), `selection_coverage_violation` (S1)
+(HPO sem cobrir D_select exatamente 1×; o análogo de `E_coverage_violation`),
+`decision_recompute_mismatch` (S1) (decisão declarada ≠ regra selada aplicada
+aos scores), `metric_recompute_mismatch` (S1) (métrica declarada ≠ recalculada).
+Reuso S1: `D_in_test` (linha ou view final com ID de D), `hpo_view_contains_E`
+(linha HPO ou hpo-view com ID/grupo de E, checado antes do vínculo ao config),
+`E_coverage_violation`, `view_hash_mismatch`, `records_identity_mismatch`
+(grupo/alvo da linha ≠ registros confiáveis), `epoch_selection_forbidden`
+(`epoch ≠ epochs` ou `checkpoint_selection ≠ last_epoch`) e
+`recipe_adapter_unsupported` com "slice S6" para multilabel. Divergência S1
+registrada: `validate_global_predictions(cfg, view, records, artifact, *, pools)`
+recebe os pools ancorados por `cfg.global.pools_sha256` (sem eles não há D/E
+para `D_in_test`/`hpo_view_contains_E` nem re-derivação da view final); cada
+objeto de métrica é `{metric, value, reason, coverage, per_class}` com
+`reason = "metric_undefined:<razão>"` quando `value` é `null`.
+
 ---
 
 ## 7. Fluxos
