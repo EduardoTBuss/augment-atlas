@@ -1,7 +1,9 @@
 # Integração global D/E: produtor HPO, selagem, treino final e multilabel — especificação v0.1
 
-**Estado: especificação de arquitetura (2026-10-19). Nenhum código, job, servidor,
-dado ou freeze real foi criado ou executado por este documento.** Ela descreve
+**Estado: especificação de arquitetura aprovada em 19/10/2026 com as
+recomendações (decisões Q1–Q13 na seção 12). Nenhum job, servidor, dado ou
+freeze real foi criado ou executado por este documento; a fatia S0 (seção 9) é
+só código offline.** Ela descreve
 o que construir e como encaixar no código existente; a implementação cabe a
 outros agentes, em fatias revisáveis (seção 9). Tudo continua
 `scientific_status="provisional"`; `execution_verified` e `scientific_eligible`
@@ -48,12 +50,12 @@ teste incluindo D só com nova decisão do Eduardo e rótulo "exploratório" —
 PatientID e cronologia reais e revisados.
 
 **Caveat INbreast:** só 4 grupos/4 positivas em D_select ⇒ HPO instável.
-Recomendação: receita externa fixa no INbreast, ou HPO explicitamente
-exploratório. PatientID não comprovado ⇒ piloto, não confirmatório. Pools
+**Decidido (Q1, 19/10/2026):** receita externa fixa no INbreast (sem HPO). PatientID não comprovado ⇒ piloto, não confirmatório. Pools
 auditados: D 77 img/21 grupos, D_fit 59/17, D_select 18/4, E 310/82.
 
-**Métricas primárias:** INbreast AUROC; DR ordinal QWK; pele macro-AUROC OvR
-(ISIC2020 binário só com emenda explícita e AUROC binária); tórax multilabel
+**Métricas primárias:** INbreast AUROC; DR ordinal QWK; pele: emenda ISIC2020
+binária (melanoma vs demais) com AUROC binária primária e AP secundária
+principal (Q12, decidida 19/10/2026; macro-AUROC OvR fica para pele multiclasse); tórax multilabel
 macro-AUROC com política de incerteza fixa (CheXpert -1/blank). Secundárias:
 macro-F1, balanced accuracy, AUPRC. Classe ausente ⇒ indefinido explícito.
 
@@ -394,6 +396,12 @@ Regras:
 | `arm` | `"none"` | braço de `ARMS` |
 | `code_commit` | commit do HPO | commit X da campanha |
 
+Implementação S0: o `split_hash` final é o `sha256` do documento
+`derive_final_view_doc` (algoritmo `global-final-view-v1`: train/test do
+`final_fold_view`, grupos, `pools_sha256`, `freeze_sha256`, `fold`), que liga
+estritamente mais que `canonical_hash(final_fold_view(...))`; é o mesmo corpo do
+`splits.json` da seção 7.3.
+
 Campos extras imutáveis: `global = {pools_sha256, plan_sha256|null,
 search_space_sha256|null, candidate_id|null, freeze_sha256|null,
 campaign_sha256|null, freeze_kind|null}`, `config`, `config_sha256`,
@@ -545,7 +553,7 @@ declaração):
   ARMS`; `augmentation_presets_sha256 == final_policy.augmentation_presets_sha256`.
 - **Seeds disjuntas:** `seeds ∩ search_space.seeds = ∅`; seed de avaliação dos
   pools ∉ {development, selection} (lacuna L11) ⇒ `seed_reuse_forbidden`.
-- `runtime.code_commit == freeze.runtime.commit` (recomendação Q6); exceção só
+- `runtime.code_commit == freeze.runtime.commit` (Q6, decidida 19/10/2026); exceção só
   com nova decisão e campo `runtime_amendment` numa v2.
 - `configs.manifest_sha256` = recálculo determinístico da materialização final;
   `count == len(arms) × 5 × len(seeds)`.
@@ -621,6 +629,15 @@ igual. `_records` continua lendo só `jobs/`.
 `epoch_selection_forbidden`, `D_in_test`, `E_coverage_violation`,
 `external_recipe_contaminated`, `multilabel_policy_missing`,
 `metric_undefined:<reason>` (não é exceção: valor `null` com razão).
+
+Códigos adicionados na fatia S0 (`global_jobs.py`, aditivos; divergência
+registrada porque o catálogo original não cobria esses casos):
+`global_config_invalid` (schema fechado/campos fixos do config global ou da
+spec de fila), `hpo_augmentation_forbidden` (job HPO com braço ≠ `none` ou ops
+não vazias), `materialization_conflict` (arquivo de config existente com bytes
+diferentes ou arquivo estranho no diretório da fase; nada é sobrescrito),
+`plan_invalid` (plan v1 que não passa no auditor ancorado; o recálculo a partir
+do search-space continua sendo `plan_not_from_search_space`, S2).
 
 ---
 
@@ -767,7 +784,8 @@ escalar intocado):**
   nos pools, ou seja, **antes do HPO**, e entra no freeze via `task`.
 - Contagens por pool e por label (positivos/negativos/incertos/ausentes após a
   política de avaliação). Viabilidade: todo label com ≥ 1 positivo e ≥ 1
-  negativo em D_select e em cada E_f (mínimo maior a decidir, Q8); senão
+  negativo em D_select e em cada E_f (mínimo por label/fold fixado no `task`
+antes do split, Q8 decidida 19/10/2026); senão
   `endpoint_feasible=false`, sem remover labels do denominador.
 - Split: atribuição por `hash(seed, stage, group)` ordenado (D/E, depois
   D_fit/D_select, depois folds de E), em unidades de grupo-paciente; inviável ⇒
@@ -838,7 +856,7 @@ continua fora dos testes para manter o pipeline idêntico.
 Contexto: cada fold tem um modelo diferente; concatenar mistura calibrações.
 Decisão: primária = média dos 5 folds (indefinido propaga), depois média das
 seeds; E concatenado como sensibilidade. Consequência: consistente com o
-pareamento por (fold, seed); precisa de confirmação do Eduardo (Q5).
+pareamento por (fold, seed); confirmada pelo Eduardo (Q5, 19/10/2026).
 
 **ADR-10 — Multilabel como protocolo v2 com política selada nos pools.**
 Contexto: a política de incerteza afeta treino e avaliação. Decisão: selar nos
@@ -937,14 +955,15 @@ job real.
 ## 10. Piloto INbreast exploratório de ponta a ponta
 
 **O que roda (recomendação: receita externa fixa):**
-1. Confirmar o manifesto (Q11) e reauditar o pools privado existente
+1. Conferir o manifesto de 387 imagens (Q11 resolvida) e reauditar o pools privado existente
    (`cheap-hpo-pools-private.json`, SHA `d9976d7a…a75a`, segundo o Brain) com
    `audit_global_pools`; se ele não estiver no schema v1, gerar `pools v1` a
    partir das mesmas listas (sem novo sorteio) e aprovar o hash.
 2. Calibração de throughput: 1 job `smoke` sobre **imagens de D ou sintéticas**
    (nunca E), batch/workers da receita, para estimar o tempo por job.
 3. `seal_external_freeze` (receita de Q2) → âncora `recipe_freeze`.
-   Alternativa (Q1): HPO exploratório com 4 candidatos × 1 seed × 20 épocas.
+   Q1 decidida (19/10/2026): sem HPO no INbreast; a alternativa de HPO
+   exploratório foi descartada.
 4. `materialize_configs(final)` só para a seed[0]: 10 braços × 5 folds = 50
    configs → commit X → `seal_campaign` (`execution_stages` estágio 1) → âncora.
 5. `seed_final` dos 50 jobs → workers `phase=final` com o teto térmico vigente
@@ -992,23 +1011,23 @@ entre braços, com as ressalvas acima.
 
 ---
 
-## 12. Decisões em aberto para o Eduardo (com recomendação)
+## 12. Decisões do Eduardo (todas DECIDIDAS em 19/10/2026, com as recomendações)
 
-| # | Pergunta | Recomendação |
+| # | Pergunta | Decisão |
 |---|---|---|
-| Q1 | INbreast: receita externa fixa ou HPO exploratório? | **Receita externa fixa**; o produtor HPO é validado em fixture sintética e usado pela primeira vez no próximo dataset (mBRSET) |
-| Q2 | Qual receita externa e de que fonte? | AdamW lr 1e-4, wd 1e-4, cosine por época, 20 épocas, batch 16, 224 px, CE sem pesos, rotulada "convenção de fine-tuning, sem scores do INbreast"; não usar nada escolhido no piloto |
-| Q3 | Folds de E selados antes do HPO (v1 atual) servem como "nova seed"? | Sim (ADR-02); só exigir seed de avaliação distinta |
-| Q4 | Limiar das secundárias binárias | 0,5 fixo a priori com `ge`; F1/BA claramente secundárias; não ajustar em D_select com 4 positivas |
-| Q5 | Agregação primária | Média dos 5 folds e depois das seeds; E concatenado como sensibilidade |
-| Q6 | O mesmo commit para HPO e final? | Sim; qualquer exceção vira emenda explícita |
-| Q7 | Espaço de busca padrão (outros datasets) | 4 valores de lr log-espaçados, wd fixo, 1 seed, épocas fixas ≤ 20, `c00` = default |
-| Q8 | Tórax: labels e política | 5 labels de competição; treino `-1`→ignorar, blank→0; avaliação `-1`→excluir, blank→0; só frontais; mínimo de positivos por label/fold a fixar antes do split |
-| Q9 | Subamostrar CheXpert/ISIC2020 por paciente? | Sim, N fixado pelo orçamento e declarado antes do split |
-| Q10 | Plano de análise (contrastes/multiplicidade) | Selar no `campaign` antes de E (proposta de 4 contrastes em `protocol-draft.md`); sem plano, só descritivo |
-| Q11 | ~~Qual manifesto INbreast?~~ **Resolvido pelo maestro (19/10):** 1.024 é sintético; INbreast = 387 imagens | Conferir `records_sha256` no piloto |
-| Q12 | Pele: emenda ISIC2020 binária? | Decidir antes dos pools; se adotada, AUROC binária + AP como secundária principal (prevalência baixa) |
-| Q13 | Seeds no piloto | 1 seed (estágio 1) declarada como matriz incompleta; as 3 seeds só depois do piloto aceito |
+| Q1 | INbreast: receita externa fixa ou HPO exploratório? | **DECIDIDA (Eduardo, 19/10/2026):** receita externa fixa (sem HPO); o produtor HPO é validado em fixture sintética e usado pela primeira vez no próximo dataset (mBRSET) |
+| Q2 | Qual receita externa e de que fonte? | **DECIDIDA (Eduardo, 19/10/2026):** AdamW lr 1e-4, wd 1e-4, cosine por época, 20 épocas, batch 16, 224 px, CE sem pesos; rótulo "convenção de fine-tuning, sem scores do INbreast"; não usar nada escolhido no piloto |
+| Q3 | Folds de E selados antes do HPO (v1 atual) servem como "nova seed"? | **DECIDIDA (Eduardo, 19/10/2026):** sim (ADR-02), com seed de avaliação distinta das de desenvolvimento/seleção |
+| Q4 | Limiar das secundárias binárias | **DECIDIDA (Eduardo, 19/10/2026):** 0,5 fixo a priori com `ge`; F1/BA claramente secundárias; não ajustar em D_select |
+| Q5 | Agregação primária | **DECIDIDA (Eduardo, 19/10/2026):** média dos 5 folds e depois média das seeds; E concatenado como sensibilidade |
+| Q6 | O mesmo commit para HPO e final? | **DECIDIDA (Eduardo, 19/10/2026):** sim; qualquer exceção vira emenda explícita |
+| Q7 | Espaço de busca padrão (outros datasets) | **DECIDIDA (Eduardo, 19/10/2026):** 4 valores de lr log-espaçados, wd fixo, 1 seed, épocas fixas ≤ 20, `c00` = default |
+| Q8 | Tórax: labels e política | **DECIDIDA (Eduardo, 19/10/2026):** 5 labels de competição; treino `-1`→ignorar, blank→0; avaliação `-1`→excluir, blank→0; só frontais; mínimo de positivos por label/fold fixado antes do split |
+| Q9 | Subamostrar CheXpert/ISIC2020 por paciente? | **DECIDIDA (Eduardo, 19/10/2026):** sim, N declarado antes do split |
+| Q10 | Plano de análise (contrastes/multiplicidade) | **DECIDIDA (Eduardo, 19/10/2026):** plano selado no `campaign` antes de E (proposta de 4 contrastes em `protocol-draft.md`); sem plano ⇒ só descritivo |
+| Q11 | Qual manifesto INbreast? | **DECIDIDA (Eduardo, 19/10/2026):** resolvido; INbreast = 387 imagens (1.024 era o soak sintético). Conferir `records_sha256` no piloto |
+| Q12 | Pele: emenda ISIC2020 binária? | **DECIDIDA (Eduardo, 19/10/2026):** emenda ISIC2020 binária (melanoma vs demais); AUROC binária primária, AP secundária principal |
+| Q13 | Seeds no piloto | **DECIDIDA (Eduardo, 19/10/2026):** 1 seed (estágio 1) declarada como matriz incompleta; as 3 seeds só depois do piloto aceito |
 
 ---
 
