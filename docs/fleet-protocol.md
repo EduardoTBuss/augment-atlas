@@ -250,6 +250,18 @@ mounts:[nomes lógicos code/data/output/torch-cache], resume:false})`. Os caminh
 locais **não** entram no hash. O mesmo valor vai no label
 `org.augment-atlas.launch-plan` do container, e `reconcile` o confere.
 
+Regras do `claim` com `fleet{}` (F5, esclarecimento):
+- `fleet=None` grava exatamente o evento e os bytes de antes (sem a chave `fleet`).
+- O bloco passa por `fleet_schema.validate_claim_fleet`. Exige-se também `owner.node_id` e
+  `owner.worker`, `owner.server == owner.node_id` e
+  `heartbeat_ref == refs/heads/fleet-hb/<owner.node_id>/<owner.worker>`. Isso é checado antes
+  de qualquer I/O Git; uma falha gera `ValueError` e nada é escrito.
+- `requirements_sha256 = digest(fleet.job_requirements(spec))`: o `spec.requirements`
+  publicado ou, para job legado, `derive_legacy(spec)`. A comparação é feita contra o registro
+  buscado, antes do commit. Divergência gera `ValueError` e nada é escrito.
+- O bloco vai no mesmo evento `claim` (mesmo commit/CAS, `attempt_id`/`token`). A posse
+  só vale depois do refetch, como hoje.
+
 **(e) Eventos `update`**: campos novos dentro do evento, sem chave reservada.
 
 | Momento | `state` | Campos (além de `event_id`, `observed_at_utc`) |

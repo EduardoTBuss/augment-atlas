@@ -16,6 +16,8 @@ import threading
 import uuid
 
 from .schema import JOB_ID_RE, TERMINAL_STATES, canonical_json, digest, new_record, prepare_job, validate_record
+from . import fleet as fleet_rules
+from . import fleet_schema
 
 
 class QueueError(RuntimeError):
@@ -210,10 +212,33 @@ class GitQueue:
         record["history"].append(event)
         return validate_record(record)
 
-    def claim(self, job_id, owner):
+    @staticmethod
+    def _check_fleet_claim(owner, fleet):
+        """Pure validation of a fleet claim (docs/fleet-protocol.md 3.2c/d); no Git I/O.
+
+        Returns a private deep copy so later caller mutation cannot alter what is published.
+        """
+        try:
+            block = fleet_schema.validate_claim_fleet(copy.deepcopy(fleet))
+        except fleet_schema.SchemaError as exc:
+            raise ValueError(f"invalid fleet claim block: {exc}") from exc
+        node_id, worker = owner.get("node_id"), owner.get("worker")
+        if any(not isinstance(value, str) or not value for value in (node_id, worker)):
+            raise ValueError("fleet claim requires owner.node_id and owner.worker")
+        # reconcile_stopped_attempt compares owner.server with settings.server (3.2c).
+        if owner.get("server") != node_id:
+            raise ValueError("fleet claim requires owner.server == owner.node_id")
+        # Single writer per worker: the lease is read from this node's own ref (D3, 4.2).
+        if block["heartbeat_ref"] != f"refs/heads/fleet-hb/{node_id}/{worker}":
+            raise ValueError("fleet.heartbeat_ref does not belong to owner node/worker")
+        return block
+
+    def claim(self, job_id, owner, fleet=None):
         if not isinstance(owner, dict) or not owner:
             raise ValueError("owner must be a nonempty public alias object")
         canonical_json(owner)
+        if fleet is not None:
+            fleet = self._check_fleet_claim(owner, fleet)
         attempt_id, token = uuid.uuid4().hex, uuid.uuid4().hex
         with self._lock:
             for _ in range(self.max_retries):
@@ -224,9 +249,15 @@ class GitQueue:
                     return current
                 if current["state"] != "pending" or any(records[dependency]["state"] != "succeeded" for dependency in current["spec"]["dependencies"]):
                     return None
+                event = {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"}
+                if fleet is not None:
+                    # The claim binds the node's plan to this immutable spec (F5, 3.3): refuse before writing.
+                    if fleet["requirements_sha256"] != digest(fleet_rules.job_requirements(current["spec"])):
+                        raise ValueError("fleet.requirements_sha256 does not match the job requirements")
+                    event["fleet"] = copy.deepcopy(fleet)
                 record = copy.deepcopy(current)
                 record.update(state="claimed", attempt_id=attempt_id, token=token, owner=copy.deepcopy(owner))
-                self._append(record, {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"})
+                self._append(record, event)
                 confirmed = self._publish(head, [record], f"queue: claim {job_id}")
                 current = self._get(confirmed, job_id)
                 if current["attempt_id"] == attempt_id and current["token"] == token:
