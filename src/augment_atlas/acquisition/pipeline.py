@@ -22,11 +22,13 @@ import hashlib
 import io
 import json
 import multiprocessing
+import multiprocessing.connection
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 import time
 
 from ..contracts import atomic_json, canonical_hash, file_hash
@@ -288,6 +290,24 @@ class _Job:
     result: object = None
 
 
+def _exit_with_parent():
+    """Pool initializer: a derive worker ends as soon as the main process is gone.
+
+    After an abrupt death of the main process (SIGKILL, OOM, ``os._exit``) a pool worker
+    would block forever in the call queue (it holds both ends, so it never sees EOF),
+    keeping the CLI's stdout/stderr pipes and the resource tracker alive and possibly
+    still writing a ``.jpg.tmp``. The parent sentinel becomes ready only when the parent exits.
+    """
+    parent = multiprocessing.parent_process()
+    if parent is None:
+        return
+
+    def watch():
+        multiprocessing.connection.wait([parent.sentinel])
+        os._exit(1)
+    threading.Thread(target=watch, name="exit-with-parent", daemon=True).start()
+
+
 class _Deriver:
     """Inline (workers=0) or process-pool derivation; results are committed by the caller.
 
@@ -300,7 +320,8 @@ class _Deriver:
         self.fn = fn
         # spawn (not fork): workers inherit no sqlite connection, signal handler or thread state,
         # and behave the same on every platform and Python version.
-        self.pool = (ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"))
+        self.pool = (ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"),
+                                         initializer=_exit_with_parent)
                      if workers else None)
         self.capacity = 2 * workers if workers else 1
         self.jobs = deque()
