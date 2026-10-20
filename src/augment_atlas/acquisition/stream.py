@@ -183,12 +183,14 @@ def _extract_one(cursor, entry, sink, read_bytes):
 
 
 def stream_members(entries, opener, *, cd_offset, spool_dir, spool_cap_bytes, start=0, on_member=None,
-                   read_bytes=DEFAULT_READ_BYTES, spool_usage=None):
+                   read_bytes=DEFAULT_READ_BYTES, spool_usage=None, before_member=None):
     """Extract ``entries[start:]`` (offset-ordered, as from ``validate_entries``) to the spool.
 
     ``opener(first, last)`` returns a context-managed stream with ``read(n)`` over the
     inclusive byte range (``RangeClient.open_range`` fits). ``on_member(MemberResult)``
-    runs after the spool file is durable. Returns ``len(entries)`` on completion.
+    runs after the spool file is durable; ``before_member(position, entry)`` runs right before a
+    non-directory member is written to the spool (disk guard hook; its exceptions propagate).
+    Returns ``len(entries)`` on completion.
     Raises SpoolPaused(next_index) when the next member does not fit under the cap,
     and TransientError with ``next_index`` set when the transport fails.
     """
@@ -214,6 +216,8 @@ def stream_members(entries, opener, *, cd_offset, spool_dir, spool_cap_bytes, st
                     raise DivergenceError(f"{entry.name!r} ({entry.uncompressed_size} B) exceeds the spool cap")
                 if usage() + entry.uncompressed_size > spool_cap_bytes:
                     raise SpoolPaused(f"spool cap reached before {entry.name!r}", next_index=position)
+                if before_member is not None:
+                    before_member(position, entry)
                 result = _spool_member(cursor, entry, position, spool_dir, read_bytes)
                 if on_member is not None:
                     on_member(result)

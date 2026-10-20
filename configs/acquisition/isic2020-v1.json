@@ -1,0 +1,107 @@
+{
+  "schema": "augment-atlas/acquisition-config/v1",
+  "dataset": {
+    "name": "isic2020",
+    "release": "ISIC 2020 Challenge Training",
+    "doi": "10.34970/2020-ds01",
+    "license": "CC-BY-NC-4.0",
+    "task": "binary-melanoma-vs-rest",
+    "label_column": "target",
+    "patient_column": "patient_id",
+    "facts_source": "docs/dataset-acquisition-plan.md section 3.1.2 (verified 2026-10-19)"
+  },
+  "sources": {
+    "images_zip": {
+      "url": "https://isic-archive.s3.amazonaws.com/challenges/2020/ISIC_2020_Training_JPEG.zip",
+      "bytes": 24707698022,
+      "etag": "ebb879d3b9be0f5b4515e28dc8ebbb88-472"
+    },
+    "ground_truth_v1": {
+      "url": "https://isic-archive.s3.amazonaws.com/challenges/2020/ISIC_2020_Training_GroundTruth.csv",
+      "bytes": 2056020,
+      "etag": "86657c7009b003543b377b62a8745b4c",
+      "header": ["image_name", "patient_id", "sex", "age_approx", "anatom_site_general_challenge", "diagnosis",
+                 "benign_malignant", "target"]
+    },
+    "ground_truth_v2": {
+      "url": "https://isic-archive.s3.amazonaws.com/challenges/2020/ISIC_2020_Training_GroundTruth_v2.csv",
+      "bytes": 2387418,
+      "etag": "f894624ff25df80143501a2702d4d9fe",
+      "header": ["image_name", "patient_id", "lesion_id", "sex", "age_approx", "anatom_site_general_challenge",
+                 "diagnosis", "benign_malignant", "target"]
+    },
+    "duplicates": {
+      "url": "https://isic-archive.s3.amazonaws.com/challenges/2020/ISIC_2020_Training_Duplicates.csv",
+      "bytes": 11500,
+      "etag": "62992a2252b492095a54dbc5ce0d5b3e",
+      "header": ["image_name_1", "image_name_2"]
+    }
+  },
+  "names": {
+    "member_regex": "^(?:[A-Za-z0-9_.-]+/)*(?P<image>ISIC_\\d{7})\\.jpg$",
+    "image_name_regex": "^ISIC_\\d{7}$",
+    "ignored_member_regexes": ["(^|/)__MACOSX/", "(^|/)\\.DS_Store$", "(^|/)\\._[^/]*$"],
+    "group_prefix": "isic20-g-"
+  },
+  "documented_counts": {
+    "images": 33126,
+    "patients": 2056,
+    "melanoma_images": 584,
+    "duplicate_pairs": 425,
+    "duplicate_distinct_images": 850
+  },
+  "informational_counts": {
+    "lesions_archive": 32701
+  },
+  "preprocessing": {
+    "id": "isic2020-derived-512-v1",
+    "short_side": 512,
+    "upscale": false,
+    "resample": "LANCZOS",
+    "reducing_gap": null,
+    "exif_transpose": false,
+    "format": "JPEG",
+    "quality": 95,
+    "subsampling": "4:4:4",
+    "progressive": false,
+    "optimize": false,
+    "keep_icc": false,
+    "keep_exif": false
+  },
+  "duplicates": {
+    "policy": "keep-min-image-name-v1"
+  },
+  "splits": {
+    "algorithm": "global-dev-eval-v1",
+    "split_seed": 20261019,
+    "dev_fraction": 0.2,
+    "select_fraction": 0.3,
+    "eval_folds": 5,
+    "min_select_positive_groups": 15,
+    "min_eval_fold_positive_groups": 50
+  },
+  "privacy": {
+    "patterns": ["ISIC_\\d{7}", "IP_\\d{7}", "IL_\\d{7}"]
+  },
+  "disk": {
+    "reserve_gib": 20,
+    "derived_cap_gib": 8,
+    "spool_cap_gib": 2,
+    "precheck_margin_gib": 1.5,
+    "write_margin_gib": 1
+  },
+  "transfer": {
+    "max_rate_mib_s": 25,
+    "timeout_s": 60,
+    "max_attempts": 8,
+    "backoff_base_s": 1,
+    "backoff_max_s": 60,
+    "workers": 2
+  },
+  "canary": {
+    "limit": 500,
+    "projection_factor": 1.3,
+    "projection_every": 2000
+  },
+  "accepted_divergences": []
+}

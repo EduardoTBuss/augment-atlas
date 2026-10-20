@@ -116,7 +116,7 @@ class CentralDirectoryTests(unittest.TestCase):
         with zipfile.ZipFile(sink, "w") as archive:
             for index, (method, force) in enumerate(((zipfile.ZIP_STORED, True), (zipfile.ZIP_DEFLATED, True),
                                                      (zipfile.ZIP_DEFLATED, False))):
-                info = zipfile.ZipInfo(f"train/ISIC_000000{index}.jpg")
+                info = zipfile.ZipInfo(f"train/SYNTH_000000{index}.jpg")
                 info.compress_type = method
                 with archive.open(info, "w", force_zip64=force) as handle:
                     handle.write(payload(index, 4000))
@@ -283,7 +283,7 @@ class StreamTests(unittest.TestCase):
         with zipfile.ZipFile(sink, "w") as archive:
             for index, (method, force) in enumerate(((zipfile.ZIP_STORED, True), (zipfile.ZIP_DEFLATED, True),
                                                      (zipfile.ZIP_DEFLATED, False))):
-                info = zipfile.ZipInfo(f"train/ISIC_000000{index}.jpg")
+                info = zipfile.ZipInfo(f"train/SYNTH_000000{index}.jpg")
                 info.compress_type = method
                 originals[info.filename] = payload(index + 10, 8000)
                 with archive.open(info, "w", force_zip64=force) as handle:

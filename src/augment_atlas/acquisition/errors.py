@@ -42,3 +42,27 @@ class SpoolPaused(AcquisitionError):
     def __init__(self, message, next_index):
         super().__init__(message)
         self.next_index = next_index
+
+
+class DiskPaused(AcquisitionError):
+    """Free space would drop below reserve + margin; stopped cleanly, resumable later."""
+
+    exit_code = 75
+
+
+class LockBusy(AcquisitionError):
+    """Another instance holds the acquisition lock for this root."""
+
+    exit_code = 75
+
+
+class Incomplete(AcquisitionError):
+    """verify found members still PENDING/FETCHED: resume the run first."""
+
+    exit_code = 75
+
+
+class Interrupted(AcquisitionError):
+    """SIGTERM/SIGINT (e.g. ``docker stop``, Ctrl-C): the session stops cleanly and can be resumed."""
+
+    exit_code = 75
