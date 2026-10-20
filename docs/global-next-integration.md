@@ -694,6 +694,50 @@ config_sha256}`; `results` traz `test_evaluations`/`selection_evaluations` e o
 acesso é registrado no checkpoint antes da leitura; reavaliação após retomada
 precisa reproduzir o mesmo `content_sha256`.
 
+Runtime S1 parte C (`runtime.py`, ramo global explícito por `spec.phase ∈
+{hpo, final}` ou config sob `configs/global/`; legado/clínico intocados).
+Códigos novos: `config_identity_mismatch` (S1c) (bytes do config ≠
+`config_sha256` do job, ≠ entrada do `MANIFEST.json` selado da fase, bytes que
+não são a renderização determinística, ou `config.json` do attempt ≠ bytes
+fixados), `trainer_override_forbidden` (S1c) (`completed`, `environment` ou
+`results` sem `trainer_override` ou com valor não nulo; na reconciliação de
+attempt parado o análogo é `checkpoint_trainer_override_forbidden`),
+`global_artifacts_invalid` (S1c) (conjunto de artefatos ≠ exatamente os 9,
+checksum, identidade config/split/fase, épocas, `metrics.json` com chave de
+avaliação, `results`/`environment` fora do contrato do trainer). Reuso:
+`hpo_isolation_unproven` (sem `settings.views`, D-view ausente, listing
+recalculado divergente, arquivo extra/ausente/symlink, ou `runtime.json` sem a
+montagem D-view verificada), `campaign_anchor_missing` (fase final),
+`global_config_invalid` (spec de fila ≠ identidade recalculada do config, caminho
+fora de `configs/global/<ds>/<phase>/`, config global sob `configs/smoke/` ou
+passado ao `validate_artifacts` legado), `metric_recompute_mismatch`
+(`results.clinical_evaluation`/acurácia ≠ recálculo). Divergências S1c
+registradas: (a) `preflight`/`config_for` da fase `final` fazem todas as
+checagens S1 (bytes, MANIFEST, records, pools, freeze, view final, spec) e
+param em `campaign_anchor_missing`, porque a auditoria da âncora de campanha é
+S3; nenhum job final é reivindicado até lá (o `create` final, testado com o
+gate substituído, monta a raiz completa read-only e nada de `views`/runs). Com
+freeze `hpo_d`, a auditoria completa com evidence fica para S3 (hoje só
+checksum/vínculo, como no trainer). (b) A D-view fica em
+`settings.views/<pools_sha256>/D`; o listing é `canonical_hash` de
+`[[path, sha256], ...]` ordenado por path de todos os arquivos regulares,
+excluindo o próprio hpo-view (seu hash depende do listing) e um `LISTING.json`
+opcional, que precisa ser igual ao listing; os paths precisam ser exatamente
+os dos registros do hpo-view, os bytes iguais aos hashes do manifesto do host e
+o hpo-view interno igual ao do host. S2 (`materialize_d_view`) deve produzir
+esse mesmo listing (`runtime.d_view_listing`). (c) O `create` grava
+`runtime.json.data_mount = {kind: d_view|data_root, source, destination:
+/data, readonly, ...view_files_sha256}` antes do `docker create`;
+`validate_completion` exige essa montagem (é a evidência que o coletor S2 lê).
+O `runtime.json` está no diretório gravável pelo container, logo é evidência de
+auditoria, não prova. (d) HPO exige o plan ancorado em
+`global/<ds>/plan-<plan_sha256>.json` na raiz do host (`recipe_hash ==
+canonical_hash(candidate)`, `training == recipe_to_training`); a checagem de
+`search_space_sha256` contra o search-space é S2. (e) A validação de conclusão
+usa só checkout fixado + `settings.data`/`settings.views`; pools e records
+confiáveis vão para `validate_global_predictions`; não há fallback para o
+validador legado.
+
 ---
 
 ## 7. Fluxos
