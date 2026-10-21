@@ -835,6 +835,74 @@ pin/âncora/documento, job ligado a campanha não ancorada antes dele ou a outro
 freeze), `seed_reuse_forbidden`, `config_identity_mismatch` (MANIFEST commitado
 ≠ recálculo), `freeze_not_sealed`.
 
+Slice S2 (`global_hpo.py` + aditivo em `global_development.py`; divergências
+registradas). Códigos novos, aditivos: `search_space_invalid` (S2) (search-space
+fora do schema fechado/checksum, caminho fora do registro, valores
+não ordenados/duplicados/não finitos, produto > `max_candidates`, `default` fora
+da grade ou receita-base sem o valor default, orçamento acima dos tetos do v1:
+6 candidatos, 2 seeds, 20 épocas, seeds duplicadas/bool, `retry_policy` ou
+`failure_policy` fora do contrato),
+`d_view_materialization_failed` (S2) (hardlink negado por motivo que não seja
+"outro filesystem" ou cópia verificada que não completa, p. ex. sem espaço; nunca
+há degradação silenciosa) e `collection_invalid` (S2) (snapshot de fila com o
+mesmo job duas vezes). Reuso S2: `search_space_mismatch` (search-space de outros
+pools/dataset/task, ou job HPO destes pools na fila ligado a outro
+search-space/plan ou fora da expansão selada), `plan_not_from_search_space`,
+`plan_invalid` (produtor/runtime/política final/plan fora do v1),
+`seed_reuse_forbidden` (seeds HPO ∩ seeds finais, ou seed de avaliação igual a
+uma de desenvolvimento/seleção), `recipe_adapter_unsupported`,
+`hpo_view_contains_E`, `view_hash_mismatch`, `records_identity_mismatch`,
+`hpo_isolation_unproven`, `materialization_conflict`,
+`metric_recompute_mismatch`, `config_identity_mismatch`,
+`trainer_override_forbidden`, `global_artifacts_invalid`.
+
+- **Assinaturas (S2):** `derive_hpo_view(records, pools, *, expected_pools_sha256,
+  image_sha256)` recebe o mapa caminho→sha256 do manifesto do host, porque
+  `view_files_sha256` é o hash do listing `[[path, sha256], ...]` ordenado, igual
+  ao que `runtime.d_view_listing` recalcula. `audit_hpo_view` (nova) checa a visão
+  contra registros/pools confiáveis e relata ID/grupo de E **antes** de qualquer
+  outro vínculo (`hpo_view_contains_E` mesmo com a visão reassinada).
+  `materialize_d_view(data_root, views_root, view, *, records, pools, image_sha256)`
+  cria `<views_root>/<pools_sha256>/D` com hardlinks das imagens de D
+  (verificadas contra o hash do manifesto; origem com symlink recusada), o
+  hpo-view em `global/<ds>/hpo-view-<sha>.json` e `LISTING.json`, e só termina se
+  `runtime.d_view_listing` reproduzir `view_files_sha256`; o retorno traz a
+  contagem `methods` (`hardlink`/`copy`/`existing`). Sem hardlink por
+  `EXDEV/EPERM/EMLINK/ENOTSUP` há cópia verificada por hash (reportada em
+  `methods`); qualquer outra falha é erro.
+- **`collect_hpo_evidence`** recebe, além do spec, `records`, `pools` e
+  `dataset_source` (os configs são **reconstruídos** do plan com
+  `build_hpo_configs`, não lidos do disco) e opcionalmente `image_sha256`,
+  `views_root` (fixa a origem exata da montagem) e `settings` (roda também
+  `runtime.validate_global_completion`, a validação completa dos 9 artefatos).
+  Localiza cada job pela identidade 6.5 e compara o `spec` inteiro da fila com o
+  recalculado (`config_identity_mismatch`). Job `succeeded`: `completed.json`
+  (status, config, split, `trainer_override` nulo e checksum do
+  `predictions.json`), `runtime.json.data_mount` (D-view, `/data`, somente
+  leitura, hashes do view, `hpo_isolation_unproven` caso contrário),
+  `validate_global_predictions` por recálculo e `results.clinical_evaluation`
+  igual ao recálculo; defeito de artefato é **rejeição**, nunca linha
+  rebaixada. `failed/cancelled/interrupted` ⇒ linha `failed` (ou `timeout` se o
+  último evento da fila disser timeout); ausente ⇒ `missing`/`job_missing`; não
+  terminal ⇒ `missing`/`job_not_terminal:<estado>`. Linha sem `docker.log` usa um
+  placeholder estável em `log_sha256` (o campo é obrigatório no ledger v1) e
+  `docker_log_sha256: null` no manifesto. Tempo de GPU = do primeiro `running` ao
+  evento terminal da última tentativa (histórico da fila); na ordem canônica
+  (candidato, seed), a linha que estoura `budget.gpu_minutes_cap` vira `timeout`
+  `gpu_minutes_cap_exceeded` mesmo que tenha predição (nunca se escolhe nova
+  rodada depois de ver scores). `attempts` = eventos `claim`.
+- **Evidência `queue_collected_v1` (aditivo):** o plan precisa declarar o
+  produtor real (`id="augment-atlas-global-hpo-v1"`, `logs_sha256` = hash da
+  declaração `{"docker_log":"docker.log","per_row":true}`), senão "no real HPO
+  producer"; `scientific_reasons` do freeze = `["execution_unverified",
+  "runtime_isolation_unverified", "chronology_unverified", "queue_collected_v1"]`
+  (os kinds v1 mantêm as razões e os hashes anteriores). Flags continuam falsas.
+- **Limites do search-space (S2):** tetos duros do v1 (6 candidatos, 2 seeds, 20
+  épocas) validados em `validate_search_space`; `epochs` só varia se a receita-base
+  e a grade respeitarem `budget.max_epochs`. `build_selection_plan` exige que as
+  seeds HPO sejam disjuntas das finais e a seed de avaliação dos pools distinta das
+  de desenvolvimento/seleção.
+
 ---
 
 ## 7. Fluxos
