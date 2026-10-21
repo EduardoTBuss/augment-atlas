@@ -5,16 +5,14 @@ import os
 from pathlib import Path
 import tempfile
 
-from .contracts import load_config,canonical_hash
+from .contracts import load_config,canonical_hash,recipe_identity
 from .data import load_records,prepare_splits
 from .queue import GitQueue
 from .runtime import worker,command
 from .storage import digest
 
 
-def recipe_identity(cfg):
-    train={k:v for k,v in cfg['training'].items() if k!='seed'}
-    return canonical_hash(dict(recipe=cfg['recipe'],model=cfg['model'],input=cfg['input'],training=train))
+# recipe_identity is defined in contracts (stdlib-only) and re-exported here.
 
 
 def main():
