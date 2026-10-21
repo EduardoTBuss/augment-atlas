@@ -891,11 +891,12 @@ uma de desenvolvimento/seleção), `recipe_adapter_unsupported`,
   placeholder estável em `log_sha256` (o campo é obrigatório no ledger v1) e
   `docker_log_sha256: null` no manifesto. Tempo de GPU = do primeiro `running` ao
   evento terminal de **cada** tentativa, somadas (histórico da fila, em segundos
-  inteiros); na ordem canônica
+  inteiros arredondados **para cima**; duração negativa por relógio fora de
+  ordem é `collection_invalid`, nunca zero); na ordem canônica
   (candidato, seed), a linha que estoura `budget.gpu_minutes_cap` vira `timeout`
   `gpu_minutes_cap_exceeded` mesmo que tenha predição (nunca se escolhe nova
   rodada depois de ver scores). `attempts` = eventos `claim`.
-- **Auditoria do coletor (S2, revisão 1):** o manifesto grava
+- **Auditoria do coletor (S2, revisões 1–3):** o manifesto grava
   `host_validation` (`"full"` com `settings`, `"minimal"` sem; só `full` roda
   `validate_global_completion`), `mount_source_pinned` (`views_root` dado) e
   `listing_verified` (`image_sha256` dado), então o selo posterior sabe o nível
@@ -911,12 +912,16 @@ uma de desenvolvimento/seleção), `recipe_adapter_unsupported`,
   as seguintes viram `timeout`. `budget.job_timeout_s` é imposto pelo coletor,
   sem olhar scores: tentativa mais longa que o limite vira `timeout`
   `job_timeout_s_exceeded` mesmo com predição; `timeout` por texto do último
-  evento é só rótulo (ambos os estados são não definidos). Sem `views_root`, a origem da montagem só é conferida pelo
+  evento é só rótulo (ambos os estados são não definidos). O timeout vale por
+  tentativa e é checado depois do teto de GPU; um job estourado ainda consome o
+  teto (as linhas seguintes podem virar `gpu_minutes_cap_exceeded`). Em linha não
+  `succeeded`, um `runtime.json` presente também precisa registrar a montagem
+  D-view (`hpo_isolation_unproven`). Sem `views_root`, a origem da montagem só é conferida pelo
   sufixo `<pools_sha256>/D` (modo mais fraco; o operador deve passá-lo).
   `materialize_d_view` recusa diretório de destino ou subdiretório que seja
   symlink (antes de escrever), preserva o modo de arquivo na cópia e
-  `code_tree_sha256` hasheia todo arquivo regular (symlink é recusado), ordenado por
-  texto POSIX, na árvore de trabalho (rodar em checkout limpo do commit). Toda receita candidata expandida passa pelo
+  `code_tree_sha256` hasheia todo arquivo regular (symlink de arquivo ou de diretório é recusado;
+  `__pycache__` e `*.pyc` são ignorados), ordenado por texto POSIX, na árvore de trabalho (rodar em checkout limpo do commit). Toda receita candidata expandida passa pelo
   registro do trainer em `validate_search_space`.
 - **Evidência `queue_collected_v1` (aditivo):** o plan precisa declarar o
   produtor real (`id="augment-atlas-global-hpo-v1"`, `logs_sha256` = hash da
