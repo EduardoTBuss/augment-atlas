@@ -24,6 +24,11 @@ from .contracts import ARMS, atomic_json, canonical_hash
 
 PROTOCOL = "global-development-holdout-v1"
 FREEZE_PROTOCOL = "global-recipe-freeze-v1"
+# Evidence collected from the queue by the real HPO producer (slice S2, additive).
+QUEUE_COLLECTED_KIND = "queue_collected_v1"
+QUEUE_PRODUCER_ID = "augment-atlas-global-hpo-v1"
+# Hash of the DECLARATION of the log policy (lacuna L8), never of real logs.
+QUEUE_LOGS_DECLARATION = {"docker_log": "docker.log", "per_row": True}
 POOL_NAMES = ("D", "D_fit", "D_select", "E")
 _POOL_KEYS = {"schema_version", "protocol", "scientific_status", "dataset",
               "records_sha256", "source_sha256", "provenance", "grouping", "task",
@@ -481,17 +486,29 @@ def _plan(plan, pools, expected_plan_sha256):
     return candidates
 
 
+def _scientific_reasons(evidence):
+    """Reasons evidence cannot make a freeze scientifically eligible (always false)."""
+    if evidence["kind"] == QUEUE_COLLECTED_KIND:
+        return ["execution_unverified", "runtime_isolation_unverified", "chronology_unverified",
+                QUEUE_COLLECTED_KIND]
+    return ["no_integrated_evidence_producer", evidence["kind"]]
+
+
 def _evidence(evidence, plan, candidates, pools):
     _object(evidence, {"schema_version", "kind", "producer", "dataset", "pools_sha256", "plan_sha256",
                        "task", "rows", "sha256"}, "selection_evidence")
     _checksum(evidence)
     if type(evidence["schema_version"]) is not int or evidence["schema_version"] != 1:
         raise ValueError("evidence schema_version must be integer 1")
-    if evidence["kind"] not in ("synthetic_fixture", "external_unverified"):
+    if evidence["kind"] not in ("synthetic_fixture", "external_unverified", QUEUE_COLLECTED_KIND):
         raise ValueError("no integrated real evidence producer exists in v1")
     for key in ("producer", "dataset", "task", "pools_sha256"):
         if not _same(evidence[key], plan[key]):
             raise ValueError(f"evidence {key} mismatch")
+    if evidence["kind"] == QUEUE_COLLECTED_KIND and (
+            plan["producer"]["id"] != QUEUE_PRODUCER_ID
+            or plan["producer"]["logs_sha256"] != canonical_hash(QUEUE_LOGS_DECLARATION)):
+        raise ValueError("queue_collected_v1 evidence requires the real HPO producer id and log-policy declaration")
     if evidence["plan_sha256"] != canonical_hash(plan):
         raise ValueError("evidence plan identity mismatch")
     if type(evidence["rows"]) is not list:
@@ -594,7 +611,7 @@ def audit_recipe_freeze(records, pools, freeze, evidence, *, expected_pools_sha2
     if nondefined and plan["failure_policy"] == "require_all_defined":
         reasons.append("ledger_contains_nondefined_trials")
     eligibility = {"contract_eligible": not reasons, "scientific_eligible": False,
-                   "reasons": reasons, "scientific_reasons": ["no_integrated_evidence_producer", evidence["kind"]]}
+                   "reasons": reasons, "scientific_reasons": _scientific_reasons(evidence)}
     if not _same(freeze["eligibility"], eligibility):
         raise ValueError("eligibility must equal derived audit state")
     recipe = freeze["frozen_recipe"]
@@ -622,7 +639,7 @@ def seal_recipe_freeze(records, pools, candidate, evidence, *, expected_pools_sh
     if nondefined and plan["failure_policy"] == "require_all_defined":
         reasons.append("ledger_contains_nondefined_trials")
     document["eligibility"] = {"contract_eligible": not reasons, "scientific_eligible": False,
-                               "reasons": reasons, "scientific_reasons": ["no_integrated_evidence_producer", evidence["kind"]]}
+                               "reasons": reasons, "scientific_reasons": _scientific_reasons(evidence)}
     document = _signed(document)
     audit = lambda value: audit_recipe_freeze(records, pools, value, evidence,
                                              expected_pools_sha256=expected_pools_sha256,
