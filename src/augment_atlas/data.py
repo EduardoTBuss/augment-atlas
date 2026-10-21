@@ -27,13 +27,18 @@ def confined_path(root: Path, relative: str) -> Path:
     return result
 
 
-def load_records(cfg: dict, check_files: bool = True) -> list[dict]:
+def load_records(cfg: dict, check_files: bool = True, *, root: str | Path | None = None) -> list[dict]:
+    """Load the manifest; an explicit ``root`` bypasses ATLAS_DATA_ROOT and /data.
+
+    Host validators pass their operator-configured data directory explicitly so
+    that no process-global environment or container default is consulted.
+    """
     dataset = cfg["dataset"]
     if dataset["adapter"] == "synthetic":
         return [{"id": f"synthetic-{i:04d}", "path": f"synthetic-{i:04d}",
                  "group": f"synthetic-group-{i:04d}", "label": i % cfg["model"]["num_classes"]}
                 for i in range(dataset.get("synthetic_groups", 12))]
-    root = data_root(cfg)
+    root = data_root(cfg) if root is None else Path(root).resolve()
     manifest = confined_path(root, dataset["manifest"])
     if dataset.get("manifest_sha256") and file_hash(manifest) != dataset["manifest_sha256"]:
         raise ValueError("private manifest checksum mismatch")
@@ -109,12 +114,14 @@ def audit_splits(records: list[dict], splits: dict[str, list[str]]) -> None:
         raise ValueError("split lists must account for every manifest image")
 
 
-def prepare_splits(cfg: dict, records: list[dict], output: str | Path) -> dict:
+def prepare_splits(cfg: dict, records: list[dict], output: str | Path, *,
+                   root: str | Path | None = None) -> dict:
     """Persist actual lists; never regenerate on resume/library changes.
 
     group-hash-v1 is an unstratified 60/20/20 technical partition. The scientific
     outer-fold algorithm consumes pre-generated, audited private lists only;
     it must never silently fall back to the technical hash holdout.
+    An explicit ``root`` locates split_file without consulting the environment.
     """
     output = Path(output)
     target = output / "splits.json"
@@ -126,7 +133,8 @@ def prepare_splits(cfg: dict, records: list[dict], output: str | Path) -> dict:
                 "split_seed": spec["split_seed"], "fold": spec["fold"], "algorithm": spec["version"]}
     source = cfg["dataset"].get("split_file")
     if target.exists() or source:
-        source_path = target if target.exists() else confined_path(data_root(cfg), source)
+        source_root = data_root(cfg) if root is None else Path(root).resolve()
+        source_path = target if target.exists() else confined_path(source_root, source)
         document = json.loads(source_path.read_text(encoding="utf-8"))
         if any(document.get(key) != value for key, value in identity.items()):
             raise ValueError("persisted splits do not match manifest/version/seed/fold")
