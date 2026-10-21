@@ -688,6 +688,57 @@ registradas):**
   (fold, seed) e diferente entre seeds — prova operacional de ImageNet novo,
   cabeça semeada e ausência de warm start.
 
+**Implementação S4 (`global_report.py`; divergências registradas):**
+- **Assinatura (S4):** `build_report(campaign, collected_artifacts, pools,
+  records, *, expected_campaign_sha256, freeze, dataset_source,
+  augmentation_presets, evidence=None, chronology=None, output=None)`. Em vez de
+  `run_dirs`/`queue_snapshot`, recebe uma lista de entradas fechadas, uma por
+  job final, montadas pelo coletor (CLI futura): `{campaign_sha256, arm, fold,
+  seed, status ∈ {succeeded, failed, timeout, interrupted}, reason,
+  predictions, initial_state_sha256, telemetry_summary}`. A campanha é
+  re-auditada (`audit_campaign`, com o pin), configs/views finais são
+  re-derivados e cada `predictions.json` é recalculado por
+  `validate_global_predictions`; o vínculo (freeze/pools/`config_sha256`) é
+  checado antes do recálculo, para um artefato de outra campanha ter sempre o
+  mesmo código. Qualquer artefato contaminado derruba o relatório inteiro
+  (falha fechada). `chronology` opcional é o resultado de `audit_chronology`.
+- **Agregação (S4, Q5):** por (braço, seed) média dos 5 folds sem média parcial
+  (`metric_undefined:missing_folds` / `undefined_in_folds`, com as listas);
+  depois média das seeds autorizadas (`undefined_in_seeds`). Secundárias com a
+  mesma regra **e** `pooled_E` (E concatenado por seed) como sensibilidade,
+  para primária e secundárias. Desvio-padrão entre folds/seeds é dispersão
+  descritiva; IC sempre `null` (`no_inferential_interval_without_analysis_plan`
+  ou, com plano, `analysis_plan_execution_not_implemented_in_s4`). O relatório
+  é sempre `descriptive_only`.
+- **Matriz (S4):** todas as células declaradas aparecem (`succeeded`, `failed`/
+  `timeout`/`interrupted` com motivo, `missing` = `artifact_not_collected`,
+  `not_authorized` = `stage_not_authorized_by_this_campaign`).
+- **Sem IDs (S4):** o relatório privado não guarda linhas, IDs, grupos nem
+  caminhos (só contagens e hashes); `build_report` varre a própria saída contra
+  os registros (`identifier_leak`, igualdade exata). `public_summary` é uma
+  projeção por lista branca (sem hashes de artefato/config, telemetria nem
+  `records_sha256`).
+- **Duas campanhas (S4, emenda 20/10):** `compare_campaigns(a, b)` exige um
+  relatório `external_fixed` e um `hpo_d` dos mesmos pools/registros/task;
+  diferença `hpo_d − external_fixed` por braço (e por (seed, fold) comum),
+  descritiva, sem teste, sem IC, `superiority_claim=false`, com aviso das
+  contagens reais de D_select e do caveat INbreast (~4 grupos positivos).
+- **Exportação para o artigo (S4):** `export_article_variables(report,
+  campaign, out_dir, *, records=None, overwrite=False)` grava
+  `hyperparameters.json`, `seeds.json`, `hashes.json`, `metrics_by_fold.csv`,
+  `metrics_summary.csv`, `telemetry_summary.csv` e `README.md`
+  (`schema_version=1`; CSV com coluna `schema_version`, `null` explícito, LF).
+  Escrita atômica por arquivo (temp + fsync + replace), idempotente (mesmos
+  bytes ⇒ nada reescrito); bytes diferentes ⇒ `export_conflict` sem escrever
+  nada, salvo `overwrite=True`. `default_article_dir(campaign)` =
+  `~/projetos/augment-atlas/article/<dataset>/<freeze_kind>-<campaign[:12]>`.
+  `export_comparison` grava `campaign_comparison.{json,csv}`. A telemetria da
+  entrada é o próprio `telemetry/summary.json` do attempt
+  (`atlas.train_telemetry_summary.v1`, `docs/telemetry.md`), lido como dado e
+  projetado nas colunas escalares fixas `TELEMETRY_FIELDS` (sem `utc`/contexto;
+  `energy.coverage_fraction` vira `energy_coverage_fraction`); um teste de
+  contrato roda `train_telemetry.summarize` e acusa deriva de nomes.
+
 ### 6.11 Catálogo de erros (prefixo estável de `ValueError`)
 
 `records_identity_mismatch`, `pools_anchor_mismatch`, `view_hash_mismatch`,
@@ -834,6 +885,28 @@ o do freeze `hpo_d`), `freeze_anchor_missing`, `campaign_anchor_missing` (sem
 pin/âncora/documento, job ligado a campanha não ancorada antes dele ou a outro
 freeze), `seed_reuse_forbidden`, `config_identity_mismatch` (MANIFEST commitado
 ≠ recálculo), `freeze_not_sealed`.
+
+Códigos adicionados na fatia S4 (`global_report.py`, aditivos):
+`report_input_invalid` (S4) (entrada coletada fora do schema fechado, status
+desconhecido, `succeeded` sem predições ou com motivo, falha sem motivo,
+`initial_state_sha256` malformado, entrada duplicada que não seja dupla
+cobertura), `telemetry_summary_invalid` (S4) (chave fora de
+`TELEMETRY_FIELDS` ou valor não finito/tipo errado), `pairing_violation` (S4)
+(`initial_state_sha256` diferente entre braços do mesmo (fold, seed) ou igual
+entre seeds), `identifier_leak` (S4) (ID/grupo/caminho de registro em
+relatório ou exportação), `report_invalid` (S4) (relatório fora do schema,
+checksum, flags ≠ false, caveats, ou campanha que não é a do relatório na
+exportação), `campaign_comparison_invalid` (S4) (comparação sem exatamente uma
+campanha `external_fixed` e uma `hpo_d`, pools/registros/task/métrica
+diferentes, ou documento de comparação adulterado), `export_conflict` (S4)
+(arquivo existente com bytes diferentes sem `overwrite=True`, ou alvo que não é
+arquivo regular). Reuso S4: `D_in_test`, `E_coverage_violation` (também dois
+artefatos para a mesma célula), `prediction_identity_mismatch` (entrada ou
+artefato de outra campanha/freeze/config, braço/fold/seed fora da matriz),
+`campaign_invalid` (seed fora do estágio autorizado), `campaign_anchor_missing`
+(pin ≠ campanha), `chronology_invalid` (resultado de cronologia de outra
+campanha), `metric_recompute_mismatch`, `decision_recompute_mismatch`,
+`predictions_invalid`.
 
 ---
 
