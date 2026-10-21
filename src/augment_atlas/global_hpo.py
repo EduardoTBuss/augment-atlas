@@ -272,9 +272,13 @@ def code_tree_sha256(src_root):
     root = Path(src_root).resolve()
     files = []
     for path in root.rglob("*"):
-        if "__pycache__" in path.parts or path.suffix == ".pyc" or path.is_dir():
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
             continue
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink() or not (path.is_file() or path.is_dir()):
+            _fail("plan_invalid", "the source tree must contain only regular files")
+        if path.is_dir():
+            continue
+        if not path.is_file():
             _fail("plan_invalid", "the source tree must contain only regular files")
         files.append((path.relative_to(root).as_posix(), path))
     if not files:
@@ -555,9 +559,12 @@ def _attempt_seconds(record):
             return None
         start = next((event for event in history if event.get("state") == "running"), history[0])
         try:
-            seconds.append(max(0, round((_utc(history[-1]["at"]) - _utc(start["at"])).total_seconds())))
+            elapsed = (_utc(history[-1]["at"]) - _utc(start["at"])).total_seconds()
         except (KeyError, TypeError, ValueError):
             return None
+        if elapsed < 0:  # clock skew between queue writers: never clamp a duration to zero
+            return None
+        seconds.append(math.ceil(elapsed))  # round up: the cap and the timeout are never under-enforced
     return seconds
 
 
@@ -746,6 +753,8 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
         out = Path(runs_root) / job_id / record["attempt_id"]
         log_path = out / "docker.log"
         has_log = log_path.is_file() and not log_path.is_symlink()
+        if state != "succeeded" and (out / "runtime.json").is_file():  # a mis-mounted job that failed is still unproven
+            _check_mount(_read_json(out / "runtime.json", "runtime.json"), view, pools_sha, views_root)
         if over_cap or spent + seconds > cap * 60:
             over_cap = True  # monotone: once the cap is crossed every later row is a timeout
             reason = "gpu_minutes_cap_exceeded"

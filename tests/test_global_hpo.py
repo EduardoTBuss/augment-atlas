@@ -450,6 +450,14 @@ class PlanTests(Base):
         self.assertEqual(first, gh.code_tree_sha256(directory))
         (directory / "pkg" / "b.py").write_text("y = 3\n")
         self.assertNotEqual(first, gh.code_tree_sha256(directory))
+        second = gh.code_tree_sha256(directory)
+        (directory / "data.json").write_text('{"changed": true}\n')
+        self.assertNotEqual(second, gh.code_tree_sha256(directory))  # every regular file counts, not only *.py
+        other = self.temp()
+        (directory / "dirlink").symlink_to(other, target_is_directory=True)
+        with self.assertCode("plan_invalid"):
+            gh.code_tree_sha256(directory)
+        (directory / "dirlink").unlink()
         with self.assertCode("plan_invalid"):
             gh.code_tree_sha256(self.temp())
         (directory / "link.py").symlink_to(directory / "a.py")
@@ -1411,6 +1419,71 @@ class CollectorTests(Base):
         collected = signed({**collected, "producer": copy.deepcopy(plan["producer"]), "plan_sha256": H(plan)})
         candidates = gd._plan(plan, pools, H(plan))
         self.assertEqual(gd._evidence(collected, plan, candidates, pools)[0], "a")
+
+    # --- review iteration 3 ---------------------------------------------------
+
+    def test_timeout_boundary_per_attempt_rounding_and_negative_durations(self):
+        fx = self.fixture(budget={"max_candidates": 6, "max_seeds": 2, "max_epochs": 20, "job_timeout_s": 120,
+                                  "gpu_minutes_cap": 120})
+        for key in sorted(fx.jobs):
+            fx.write_attempt(key, DEFAULT_PROFILE[key[0]])
+        exact = [fx.record(key, "succeeded", minutes=2.0) for key in sorted(fx.jobs)]  # == job_timeout_s: allowed
+        self.assertEqual({r["status"] for r in fx.collect(exact)[0]["rows"]}, {"completed"})
+        over = [fx.record(key, "succeeded", minutes=2.0) for key in sorted(fx.jobs)]
+        over[0]["history"][-1]["at"] = "2026-10-20T10:03:01.200000+00:00"  # 120.2 s rounds UP to 121 s
+        rows = fx.collect(over)[0]["rows"]
+        self.assertEqual((rows[0]["status"], rows[0]["reason"]), ("timeout", "job_timeout_s_exceeded"))
+        skew = [fx.record(key, "succeeded", minutes=1.0) for key in sorted(fx.jobs)]
+        skew[0]["history"][-1]["at"] = "2026-10-20T10:00:30+00:00"  # terminal event before `running`
+        with self.assertCode("collection_invalid"):
+            fx.collect(skew)
+
+    def test_timeout_is_per_attempt_and_an_overlong_job_still_consumes_the_gpu_cap(self):
+        fx = self.fixture(budget={"max_candidates": 6, "max_seeds": 2, "max_epochs": 20, "job_timeout_s": 240,
+                                  "gpu_minutes_cap": 8})
+        key = ("c01", 101)
+        records = fx.snapshot({key: "absent"})
+        fx.write_attempt(key, "good")
+        evidence, manifest = fx.collect(records + [fx.retried_record(key, minutes=(3, 3))])
+        row = next(r for r in evidence["rows"] if r["candidate_id"] == "c01")
+        self.assertEqual(row["status"], "completed")  # two 3-minute attempts: each below the 4-minute timeout
+        item = next(r for r in manifest["rows"] if r["candidate_id"] == "c01")
+        self.assertAlmostEqual(item["minutes"], 6.0)
+        fx2 = self.fixture(budget={"max_candidates": 6, "max_seeds": 2, "max_epochs": 20, "job_timeout_s": 90,
+                                   "gpu_minutes_cap": 4})
+        for k in sorted(fx2.jobs):
+            fx2.write_attempt(k, DEFAULT_PROFILE[k[0]])
+        durations = {("c00", 101): 1.0, ("c01", 101): 3.0, ("c02", 101): 1.0, ("c03", 101): 1.0}
+        records = [fx2.record(k, "succeeded", minutes=durations[k]) for k in sorted(fx2.jobs)]
+        evidence, manifest = fx2.collect(records)
+        self.assertEqual([(r["status"], r["reason"]) for r in evidence["rows"]],
+                         [("completed", None), ("timeout", "job_timeout_s_exceeded"),
+                          ("timeout", "gpu_minutes_cap_exceeded"), ("timeout", "gpu_minutes_cap_exceeded")])
+        self.assertAlmostEqual(manifest["gpu_minutes_counted"], 4.0)  # the overlong job's 3 min were spent
+
+    def test_traversal_attempt_id_on_an_earlier_multi_event_attempt_is_refused(self):
+        fx = self.fx
+        key = ("c01", 101)
+        records = fx.snapshot({key: "absent"})
+        fx.write_attempt(key, "good")
+        retried = fx.retried_record(key)
+        for event in retried["history"][:3]:
+            event["attempt_id"] = "../" + "d" * 32
+        with self.assertCode("collection_invalid"):
+            fx.collect(records + [retried])
+
+    def test_a_failed_job_with_a_wrong_mount_is_still_isolation_unproven(self):
+        fx = self.fx
+        key = ("c02", 101)
+        records = fx.snapshot({key: "failed"})
+        out = fx.attempt_dir(key)
+        out.mkdir(parents=True)
+        (out / "runtime.json").write_text(json.dumps({"data_mount": dict(kind="data_root", source=str(fx.data),
+                                                                       destination="/data", readonly=True)}))
+        with self.assertCode("hpo_isolation_unproven"):
+            fx.collect(records)
+        (out / "runtime.json").write_text(json.dumps({"data_mount": fx.mount}))
+        self.assertEqual(next(r for r in fx.collect(records)[0]["rows"] if r["candidate_id"] == "c02")["status"], "failed")
 
     def test_collector_output_never_claims_execution_or_scientific_eligibility(self):
         evidence, manifest = self.fx.collect(self.fx.snapshot())
