@@ -16,6 +16,7 @@ import time
 from .contracts import (GLOBAL_PHASES, atomic_json, canonical_hash, file_hash, load_config, required_artifacts,
                         validate_config)
 from .data import confined_path, data_root, load_records, prepare_splits
+from . import train_telemetry
 
 
 def utc_now() -> str:
@@ -250,6 +251,16 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
         result = {"loss": loss_sum / count, "accuracy": correct / count, "samples": count}
         return (result, scores) if collect_scores else result
 
+    # Additive per-job telemetry (telemetry/, not a validated artifact); it
+    # never touches RNG, batch order, loss, checkpoints or metrics.json.
+    telemetry = train_telemetry.open_for_attempt(output, torch=torch, device=device, grad_clip_max_norm=1.0, context=lambda: {
+        "path": "legacy", "phase": cfg.get("phase", "smoke"), "resume": bool(resume),
+        "start_epoch": completed_epoch + 1, "epochs": training["epochs"], "device": str(device),
+        "batch_size": training["batch_size"], "accumulation_steps": training["accumulation_steps"],
+        "train_images": len(partition["train"]),
+        "batches_per_epoch": math.ceil(len(partition["train"]) / training["batch_size"]),
+        "config_sha256": config_hash, "splits_sha256": splits["sha256"],
+        "code_commit": environment["code_commit"], "image_id": environment["image_id"]})
     try:
         if not resume:
             save_checkpoint()
@@ -267,6 +278,7 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
             batches = [order[i:i + training["batch_size"]] for i in range(0, len(order), training["batch_size"])]
             loader = torch.utils.data.DataLoader(ClassificationDataset(cfg, partition["train"], epoch, True),
                                                 batch_sampler=batches, num_workers=training["workers"])
+            telemetry.epoch_start(epoch, batches=len(batches), images=len(order))
             optimizer.zero_grad(set_to_none=True)
             loss_sum, count = 0.0, 0
             accumulation = training["accumulation_steps"]
@@ -280,12 +292,16 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                 if not bool(torch.isfinite(loss)):
                     raise RuntimeError("non-finite training loss")
                 (loss * len(labels) / window_samples).backward()
+                grad_norm = None
                 if (index + 1) % accumulation == 0 or index + 1 == len(batches):
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
-                loss_sum += loss.item() * len(labels)
+                batch_loss = loss.item()
+                loss_sum += batch_loss * len(labels)
                 count += len(labels)
+                telemetry.batch(epoch, index, len(labels), batch_loss, optimizer.param_groups[0]["lr"], grad_norm)
+            telemetry.train_done(epoch)
             samples_processed += count
             selection = evaluate("selection")
             if not math.isfinite(selection["loss"]):
@@ -302,7 +318,9 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
             save_checkpoint()
             atomic_json(output / "metrics.json", history)
             progress("running")
+            telemetry.epoch_end(epoch, row, selection_per_epoch=True)
             if interrupted["signal"] is not None or (stop_after_epoch is not None and epoch >= stop_after_epoch):
+                telemetry.outcome("interrupted")
                 progress("interrupted")
                 return 128 + interrupted["signal"] if interrupted["signal"] else 75
         # Selection chooses the epoch. Technical HPO trials explicitly stop at
@@ -333,6 +351,7 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
         else:
             results["test"] = evaluate("test")
         if interrupted["signal"] is not None:
+            telemetry.outcome("interrupted")
             progress("interrupted")
             return 128 + interrupted["signal"]
         if clinical_artifact is not None:
@@ -348,8 +367,10 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
         atomic_json(output / "completed.json", {"schema_version": 1, "status": "completed", "utc": utc_now(),
                     "epoch": completed_epoch, "config_sha256": config_hash, "splits_sha256": splits["sha256"],
                     "artifacts": artifacts, "artifact_sizes": sizes})
+        telemetry.outcome("completed")
         return 0
     finally:
+        telemetry.close()
         for number, handler in previous.items():
             signal.signal(number, handler)
 
@@ -673,6 +694,19 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
             raise RuntimeError("evaluated partition was not covered exactly once")
         return {"loss": loss_sum / count, "accuracy": correct / count, "samples": count}, scores
 
+    # Additive per-job telemetry (telemetry/, not a validated artifact); it
+    # never touches RNG, batch order, loss, checkpoints or metrics.json and
+    # never receives evaluated-partition metrics (E_f/D_select open only once).
+    telemetry = train_telemetry.open_for_attempt(
+        output, torch=torch, device=device, grad_clip_max_norm=gj.TRAINER_CONSTANTS_V1["gradient_clip_max_norm"],
+        context=lambda: {"path": "global", "phase": phase, "resume": bool(resume), "start_epoch": completed_epoch + 1,
+                 "epochs": epochs, "device": str(device), "workers": workers, "trainer_override": override is not None,
+                 "batch_size": batch_size, "accumulation_steps": accumulation, "train_images": len(train_records),
+                 "batches_per_epoch": batches_per_epoch, "optimizer_updates_per_epoch": updates_per_epoch,
+                 "arm": data_cfg["augmentation"]["arm"], "fold": cfg["global"]["fold"],
+                 "candidate_id": cfg["global"]["candidate_id"], "config_sha256": config_hash,
+                 "splits_sha256": splits_hash, "code_commit": environment["code_commit"],
+                 "image_id": environment["image_id"]})
     try:
         if not resume:
             save_checkpoint()
@@ -688,6 +722,7 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
             batches = [order[i:i + batch_size] for i in range(0, len(order), batch_size)]
             loader = torch.utils.data.DataLoader(ClassificationDataset(data_cfg, train_records, epoch, True),
                                                  batch_sampler=batches, num_workers=workers)
+            telemetry.epoch_start(epoch, batches=len(batches), images=len(order))
             optimizer.zero_grad(set_to_none=True)
             loss_sum, count, updates = 0.0, 0, 0
             for index, (images, labels) in enumerate(loader):
@@ -700,14 +735,18 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
                 if not bool(torch.isfinite(loss)):
                     raise RuntimeError("non-finite training loss")
                 (loss * len(labels) / window_samples).backward()
+                grad_norm = None
                 if (index + 1) % accumulation == 0 or index + 1 == len(batches):
-                    torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                                   gj.TRAINER_CONSTANTS_V1["gradient_clip_max_norm"])
+                    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                                               gj.TRAINER_CONSTANTS_V1["gradient_clip_max_norm"])
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
                     updates += 1
-                loss_sum += loss.item() * len(labels)
+                batch_loss = loss.item()
+                loss_sum += batch_loss * len(labels)
                 count += len(labels)
+                telemetry.batch(epoch, index, len(labels), batch_loss, optimizer.param_groups[0]["lr"], grad_norm)
+            telemetry.train_done(epoch)
             if updates != updates_per_epoch or count != len(train_records):
                 raise RuntimeError("optimizer updates per epoch differ from ceil(ceil(n/batch)/accumulation)")
             samples_processed += count
@@ -720,7 +759,9 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
             save_checkpoint()
             atomic_json(output / "metrics.json", history)
             progress("running")
+            telemetry.epoch_end(epoch, history[-1], selection_per_epoch=False)
             if interrupted["signal"] is not None or (stop_after_epoch is not None and epoch >= stop_after_epoch):
+                telemetry.outcome("interrupted")
                 progress("interrupted")
                 return 128 + interrupted["signal"] if interrupted["signal"] else 75
         if completed_epoch != epochs:
@@ -755,6 +796,7 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
                                            "content_sha256": artifact["content_sha256"]},
                    "execution_verified": False, "scientific_eligible": False}
         if interrupted["signal"] is not None:
+            telemetry.outcome("interrupted")
             progress("interrupted")
             return 128 + interrupted["signal"]
         atomic_json(output / "predictions.json", artifact)
@@ -770,8 +812,10 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
                     "phase": phase, "epoch": completed_epoch, "config_sha256": config_hash,
                     "splits_sha256": splits_hash, "trainer_override": override,
                     "artifacts": artifacts, "artifact_sizes": sizes})
+        telemetry.outcome("completed")
         return 0
     finally:
+        telemetry.close()
         for number, handler in previous.items():
             signal.signal(number, handler)
 
