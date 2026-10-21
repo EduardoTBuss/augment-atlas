@@ -33,7 +33,12 @@ cp configs/worker.example.json /srv/atlas-private/worker.json
 python3 -m augment_atlas.cli seed --phase smoke \
   --config "$PWD/configs/smoke/synthetic.json" --code "$PWD" \
   --data /srv/atlas-data --checkout /srv/atlas-state/admin \
-  --remote git@github.com:OWNER/augment-atlas.git
+  --remote git@github.com:OWNER/augment-atlas.git \
+  --image-id "$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+# With --image-id the seed also writes spec.requirements (fleet v1, docs/fleet-protocol.md 3.2),
+# kept outside the job_id; without it (and no other fleet flag) the legacy spec is seeded. Read-only diagnosis of why a worker would (not) claim:
+# python3 -m augment_atlas.cli fleet explain --worker facts.json --profile node_profile.json \
+#   --card card.json --latest latest.json --jobs-dir jobs/
 
 ./scripts/worker.sh --settings /srv/atlas-private/worker.json --phase smoke --once
 ```
