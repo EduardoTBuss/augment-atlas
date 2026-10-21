@@ -243,27 +243,28 @@ class RuntimeProvenanceTests(unittest.TestCase):
                                   'cpu_isa_max'}, set(provenance))
 
 
-if __name__ == '__main__':
-    unittest.main()
+class ProbeContractTests(unittest.TestCase):
+    """The reviewed endurance controller V2 only permits the exact CUDA probe argv.
 
-
-class ProbeIsaTests(unittest.TestCase):
-    """The CUDA probe also initialises torch on the CPU, so it carries the same ISA cap."""
+    The ISA cap therefore applies to the training container (create) and NOT to the
+    sub-second probe; any extra probe argument would make every worker die before claim.
+    """
 
     def _probe_args(self, settings):
-        from unittest import mock
         rt = runtime.DockerRuntime.__new__(runtime.DockerRuntime)
         rt.s, rt.image = settings, "sha256:" + "0" * 64
         seen = []
-        with mock.patch.object(runtime, "command", side_effect=lambda args, **kw: seen.append(args) or "{}"):
+        with patch.object(runtime, "command", side_effect=lambda args, **kw: seen.append(args) or "{}"):
             rt.probe()
         return seen[0]
 
-    def test_probe_default_and_native(self):
-        base = {"gpu": 0}
-        default = self._probe_args(dict(base))
-        native = self._probe_args(dict(base, cpu_isa_max="native"))
-        isa = runtime.cpu_isa_env({})
-        i = default.index("--entrypoint")
-        self.assertEqual(isa, default[i - len(isa):i])
-        self.assertEqual(native, default[:i - len(isa)] + default[i:])
+    def test_probe_argv_is_exactly_the_controller_permitted_one(self):
+        image = "sha256:" + "0" * 64
+        expected = ["docker", "run", "--rm", "--network", "none", "--gpus", "device=0",
+                    "--entrypoint", "python", image, "-c", runtime.PROBE]
+        for settings in ({"gpu": 0}, {"gpu": 0, "cpu_isa_max": "avx2"}, {"gpu": 0, "cpu_isa_max": "native"}):
+            with self.subTest(settings=settings):
+                self.assertEqual(expected, self._probe_args(settings))
+
+if __name__ == '__main__':
+    unittest.main()

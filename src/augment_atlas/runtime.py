@@ -166,7 +166,7 @@ class DockerRuntime:
 
     def probe(self):
         self.environment=json.loads(command(['docker','run','--rm','--network','none','--gpus','device='+str(self.s['gpu']),
-                                            *cpu_isa_env(self.s),'--entrypoint','python',self.image,'-c',PROBE],timeout=120))
+                                            '--entrypoint','python',self.image,'-c',PROBE],timeout=120))
         return self.environment
 
     def weights_cache_for(self,cfg,spec):
