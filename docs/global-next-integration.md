@@ -845,7 +845,9 @@ da grade ou receita-base sem o valor default, orçamento acima dos tetos do v1:
 `d_view_materialization_failed` (S2) (hardlink negado por motivo que não seja
 "outro filesystem" ou cópia verificada que não completa, p. ex. sem espaço; nunca
 há degradação silenciosa) e `collection_invalid` (S2) (snapshot de fila com o
-mesmo job duas vezes). Reuso S2: `search_space_mismatch` (search-space de outros
+mesmo job duas vezes, registro de fila inválido, `attempt_id` fora do hex de 32
+caracteres, tentativa anterior com predição num job refeito, tempo de execução
+não derivável do histórico). Reuso S2: `search_space_mismatch` (search-space de outros
 pools/dataset/task, ou job HPO destes pools na fila ligado a outro
 search-space/plan ou fora da expansão selada), `plan_not_from_search_space`,
 `plan_invalid` (produtor/runtime/política final/plan fora do v1),
@@ -860,8 +862,9 @@ uma de desenvolvimento/seleção), `recipe_adapter_unsupported`,
   image_sha256)` recebe o mapa caminho→sha256 do manifesto do host, porque
   `view_files_sha256` é o hash do listing `[[path, sha256], ...]` ordenado, igual
   ao que `runtime.d_view_listing` recalcula. `audit_hpo_view` (nova) checa a visão
-  contra registros/pools confiáveis e relata ID/grupo de E **antes** de qualquer
-  outro vínculo (`hpo_view_contains_E` mesmo com a visão reassinada).
+  contra registros/pools confiáveis e relata ID/grupo de E logo depois do
+  checksum/schema fechado e da âncora dos pools, **antes** de qualquer outro
+  vínculo (`hpo_view_contains_E` mesmo com a visão reassinada).
   `materialize_d_view(data_root, views_root, view, *, records, pools, image_sha256)`
   cria `<views_root>/<pools_sha256>/D` com hardlinks das imagens de D
   (verificadas contra o hash do manifesto; origem com symlink recusada), o
@@ -887,27 +890,33 @@ uma de desenvolvimento/seleção), `recipe_adapter_unsupported`,
   terminal ⇒ `missing`/`job_not_terminal:<estado>`. Linha sem `docker.log` usa um
   placeholder estável em `log_sha256` (o campo é obrigatório no ledger v1) e
   `docker_log_sha256: null` no manifesto. Tempo de GPU = do primeiro `running` ao
-  evento terminal da última tentativa (histórico da fila); na ordem canônica
+  evento terminal de **cada** tentativa, somadas (histórico da fila, em segundos
+  inteiros); na ordem canônica
   (candidato, seed), a linha que estoura `budget.gpu_minutes_cap` vira `timeout`
   `gpu_minutes_cap_exceeded` mesmo que tenha predição (nunca se escolhe nova
   rodada depois de ver scores). `attempts` = eventos `claim`.
 - **Auditoria do coletor (S2, revisão 1):** o manifesto grava
   `host_validation` (`"full"` com `settings`, `"minimal"` sem; só `full` roda
-  `validate_global_completion`), então o selo posterior sabe o nível aplicado.
+  `validate_global_completion`), `mount_source_pinned` (`views_root` dado) e
+  `listing_verified` (`image_sha256` dado), então o selo posterior sabe o nível
+  aplicado; a evidência e o freeze não carregam essa distinção, por isso o S3 deve
+  exigir o manifesto e `host_validation="full"`. A checagem de retries (predição
+  em tentativa anterior) vale também para job ainda não terminal.
   `attempt_id` da fila precisa ser o hex de 32 caracteres que a fila atribui; se o
   job teve mais de uma tentativa, qualquer tentativa anterior com
   `predictions.json` é `collection_invalid` (política `retry_policy`: job com
   predição nunca é refeito) e o tempo de GPU soma **todas** as tentativas. Job
   terminal sem tempo derivável do histórico é `collection_invalid` (o teto nunca
   falha aberto). O teto é monótono: depois da primeira linha que o estoura, todas
-  as seguintes viram `timeout`. `budget.job_timeout_s` é imposto pelo worker, não
-  pelo coletor; `timeout` por texto do último evento é rótulo (ambos os estados
-  são não definidos). Sem `views_root`, a origem da montagem só é conferida pelo
+  as seguintes viram `timeout`. `budget.job_timeout_s` é imposto pelo coletor,
+  sem olhar scores: tentativa mais longa que o limite vira `timeout`
+  `job_timeout_s_exceeded` mesmo com predição; `timeout` por texto do último
+  evento é só rótulo (ambos os estados são não definidos). Sem `views_root`, a origem da montagem só é conferida pelo
   sufixo `<pools_sha256>/D` (modo mais fraco; o operador deve passá-lo).
   `materialize_d_view` recusa diretório de destino ou subdiretório que seja
   symlink (antes de escrever), preserva o modo de arquivo na cópia e
-  `code_tree_sha256` ordena por texto POSIX e hasheia a árvore de trabalho (rodar
-  em checkout limpo do commit). Toda receita candidata expandida passa pelo
+  `code_tree_sha256` hasheia todo arquivo regular (symlink é recusado), ordenado por
+  texto POSIX, na árvore de trabalho (rodar em checkout limpo do commit). Toda receita candidata expandida passa pelo
   registro do trainer em `validate_search_space`.
 - **Evidência `queue_collected_v1` (aditivo):** o plan precisa declarar o
   produtor real (`id="augment-atlas-global-hpo-v1"`, `logs_sha256` = hash da

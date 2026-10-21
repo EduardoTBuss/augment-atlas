@@ -263,17 +263,23 @@ def _expand(search_space):
 # --------------------------------------------------------------------------
 
 def code_tree_sha256(src_root):
-    """Canonical hash of ``[(relative path, sha256)]`` of the Python sources in ``src_root``.
+    """Canonical hash of ``[(relative path, sha256)]`` of every regular file in ``src_root``.
 
-    Hashes the working tree, sorted by POSIX path text (same on every OS); the caller must
-    run it on a clean checkout of ``runtime.commit``.
+    Symlinks are refused; ``__pycache__`` and ``*.pyc`` are skipped. Sorted by POSIX path text
+    (same on every OS). It hashes the working tree: the caller must run it on a clean checkout
+    of ``runtime.commit``.
     """
     root = Path(src_root).resolve()
-    files = sorted((path.relative_to(root).as_posix(), path) for path in root.rglob("*.py")
-                   if path.is_file() and "__pycache__" not in path.parts)
+    files = []
+    for path in root.rglob("*"):
+        if "__pycache__" in path.parts or path.suffix == ".pyc" or path.is_dir():
+            continue
+        if path.is_symlink() or not path.is_file():
+            _fail("plan_invalid", "the source tree must contain only regular files")
+        files.append((path.relative_to(root).as_posix(), path))
     if not files:
-        _fail("plan_invalid", "no Python sources found to hash")
-    return canonical_hash([[name, file_hash(path)] for name, path in files])
+        _fail("plan_invalid", "no source files found to hash")
+    return canonical_hash([[name, file_hash(path)] for name, path in sorted(files)])
 
 
 def environment_sha256(image_id, probe):
@@ -398,6 +404,9 @@ def audit_hpo_view(view, records, pools, *, expected_pools_sha256, image_sha256=
     e_ids = set(pools["lists"]["E"])
     e_groups = {lookup[item]["group"] for item in e_ids}
     shown = view["records"] if type(view["records"]) is list else []
+    if any(type(row) is not dict or type(row.get("id")) is not str or type(row.get("group")) is not str
+           for row in shown):
+        _fail("view_hash_mismatch", "hpo view records must be {id, path, group, label} objects with string identities")
     lists = view["lists"] if type(view["lists"]) is dict else {}
     ids = {row.get("id") for row in shown if type(row) is dict}
     groups = {row.get("group") for row in shown if type(row) is dict}
@@ -447,7 +456,7 @@ def _link_or_copy(source, target):
                   f"hardlink unavailable and verified copy failed ({error.strerror or error.errno}); no silent fallback")
         if file_hash(temporary) != file_hash(source):
             _fail("d_view_materialization_failed", "copied D image differs from its source")
-        shutil.copymode(source, temporary)  # mkstemp is 0600; the container may run as another uid
+        shutil.copymode(source, temporary)  # mkstemp creates 0600; keep the source mode like a hardlink would
         os.link(temporary, target)
     finally:
         Path(temporary).unlink(missing_ok=True)
@@ -455,10 +464,13 @@ def _link_or_copy(source, target):
 
 
 def _confined_parent(dest, target):
-    """Create ``target``'s directory and prove no symlinked directory leads outside ``dest``."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if not target.parent.resolve().is_relative_to(dest.resolve()):
-        _fail("hpo_isolation_unproven", "a D-view subdirectory is a symlink that escapes the view")
+    """Create ``target``'s directory one level at a time, refusing any symlinked component."""
+    current = dest
+    for part in target.parent.relative_to(dest).parts:
+        current = current / part
+        if current.is_symlink():
+            _fail("hpo_isolation_unproven", "a D-view subdirectory is a symlink; it could redirect writes outside the view")
+        current.mkdir(exist_ok=True)
 
 
 def materialize_d_view(data_root, views_root, view, *, records, pools, image_sha256):
@@ -531,19 +543,22 @@ def _attempt_ids(record):
     return seen
 
 
-def _attempt_minutes(record):
-    """Wall minutes over EVERY attempt from queue history, or None when not derivable."""
-    total = 0.0
-    for attempt in _attempt_ids(record):
+def _attempt_seconds(record):
+    """Wall seconds (integers) of EVERY attempt from queue history, or None when not derivable."""
+    ids = _attempt_ids(record)
+    if not ids or (record["attempt_id"] is not None and record["attempt_id"] not in ids):
+        return None
+    seconds = []
+    for attempt in ids:
         history = [event for event in record["history"] if event.get("attempt_id") == attempt]
         if len(history) < 2:
             return None
         start = next((event for event in history if event.get("state") == "running"), history[0])
         try:
-            total += max(0.0, (_utc(history[-1]["at"]) - _utc(start["at"])).total_seconds() / 60)
+            seconds.append(max(0, round((_utc(history[-1]["at"]) - _utc(start["at"])).total_seconds())))
         except (KeyError, TypeError, ValueError):
             return None
-    return total
+    return seconds
 
 
 def _attempts(record):
@@ -555,12 +570,13 @@ _ATTEMPT_ID = re.compile(r"[0-9a-f]{32}")
 
 def _check_retries(record, runs_root):
     """retry_policy: only an attempt WITHOUT predictions may be repeated (spec 6.1)."""
-    if not _ATTEMPT_ID.fullmatch(record["attempt_id"]):
+    current = record["attempt_id"]
+    if current is not None and not _ATTEMPT_ID.fullmatch(str(current)):
         _fail("collection_invalid", "queue attempt_id must be the 32-hex id the queue assigns")
     for attempt in _attempt_ids(record):
         if not _ATTEMPT_ID.fullmatch(attempt):
             _fail("collection_invalid", "queue history holds a malformed attempt id")
-        if attempt != record["attempt_id"] and (Path(runs_root) / record["job_id"] / attempt / ge.ARTIFACT_NAME).exists():
+        if attempt != current and (Path(runs_root) / record["job_id"] / attempt / ge.ARTIFACT_NAME).exists():
             _fail("collection_invalid", "a retried job already had a predictions.json in an earlier attempt")
 
 
@@ -622,7 +638,11 @@ def _read_attempt(out, record, cfg, config_sha, view, records, pools, views_root
     recomputed = {"artifact": ge.ARTIFACT_NAME,
                   **{key: summary[key] for key in ("partition", "samples", "primary_metric", "primary_value",
                                                    "primary_reason", "content_sha256")}}
-    if canonical_hash(declared) != canonical_hash(recomputed):
+    try:
+        same = canonical_hash(declared) == canonical_hash(recomputed)
+    except (TypeError, ValueError):  # NaN/inf or non-JSON values in a declared metric
+        same = False
+    if not same:
         _fail("metric_recompute_mismatch", "results.clinical_evaluation differs from the metric recomputed from the scores")
     log = out / "docker.log"
     if log.is_symlink() or not log.is_file():
@@ -663,7 +683,7 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
     runs the full host validation (``runtime.validate_global_completion``).
     """
     pools_sha = pools["sha256"]
-    validate_search_space(search_space, pools=pools, runtime=plan["runtime"] if type(plan) is dict else None)
+    validate_search_space(search_space, pools=pools, runtime=plan.get("runtime") if type(plan) is dict else None)
     audit_plan_from_search_space(plan, search_space)
     _guard("plan_invalid", gd._plan, plan, pools, plan_sha256)
     candidates = {c["id"]: c for c in plan["candidates"]}
@@ -696,7 +716,8 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
             _fail("search_space_mismatch", "the queue holds an HPO job of these pools outside the sealed search space/plan")
     endpoint = plan["endpoint"]
     cap = search_space["budget"]["gpu_minutes_cap"]
-    ledger, manifest_rows, spent, over_cap = [], [], 0.0, False
+    timeout_s = search_space["budget"]["job_timeout_s"]
+    ledger, manifest_rows, spent, over_cap = [], [], 0, False  # spent: integer seconds
     order = sorted(expected.items(), key=lambda item: (item[1][0], item[1][1]))
     for job_id, (candidate_id, seed, cfg, config_sha, spec) in order:
         candidate = candidates[candidate_id]
@@ -706,6 +727,8 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
             for key, value in spec.items():
                 if key not in record["spec"] or canonical_hash(record["spec"][key]) != canonical_hash(value):
                     _fail("config_identity_mismatch", f"queue job {key} differs from the candidate's materialized config")
+        if record is not None:
+            _check_retries(record, runs_root)  # also for non-terminal jobs: an earlier attempt with scores stays visible
         if record is None or state not in ("succeeded", "failed", "cancelled", "interrupted"):
             reason = "job_missing" if record is None else f"job_not_terminal:{state}"
             ledger.append(_row(candidate, seed, pools, endpoint, "missing", metric_state="unavailable", reason=reason,
@@ -714,15 +737,16 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                                                attempts=0 if record is None else _attempts(record),
                                                attempt_id=None if record is None else record["attempt_id"]))
             continue
-        _check_retries(record, runs_root)
-        minutes = _attempt_minutes(record)
-        if minutes is None:
+        attempt_seconds = _attempt_seconds(record)
+        if attempt_seconds is None:
             _fail("collection_invalid", f"cannot derive the wall time of terminal job {job_id[:12]} from the queue history")
-        common = dict(attempt_id=record["attempt_id"], attempts=_attempts(record), queue_state=state, minutes=minutes)
+        seconds = sum(attempt_seconds)
+        common = dict(attempt_id=record["attempt_id"], attempts=_attempts(record), queue_state=state,
+                      minutes=seconds / 60)
         out = Path(runs_root) / job_id / record["attempt_id"]
         log_path = out / "docker.log"
         has_log = log_path.is_file() and not log_path.is_symlink()
-        if over_cap or spent + minutes > cap:
+        if over_cap or spent + seconds > cap * 60:
             over_cap = True  # monotone: once the cap is crossed every later row is a timeout
             reason = "gpu_minutes_cap_exceeded"
             log = file_hash(log_path) if has_log else _unavailable_log(job_id, reason)
@@ -731,7 +755,14 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
             manifest_rows.append(_manifest_row(candidate_id, seed, job_id, "timeout",
                                                docker_log_sha256=file_hash(log_path) if has_log else None, **common))
             continue
-        spent += minutes
+        spent += seconds
+        if max(attempt_seconds) > timeout_s:  # score-independent: the pre-registered per-job timeout
+            reason = "job_timeout_s_exceeded"
+            ledger.append(_row(candidate, seed, pools, endpoint, "timeout", metric_state="unavailable", reason=reason,
+                               log=file_hash(log_path) if has_log else _unavailable_log(job_id, reason)))
+            manifest_rows.append(_manifest_row(candidate_id, seed, job_id, "timeout",
+                                               docker_log_sha256=file_hash(log_path) if has_log else None, **common))
+            continue
         if state != "succeeded":
             status = "timeout" if _timed_out(record) else "failed"
             reason = f"job_{'timeout' if status == 'timeout' else state}"
@@ -766,5 +797,6 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                          "plan_sha256": plan_sha256, "search_space_sha256": search_space["sha256"],
                          "evidence_sha256": evidence["sha256"], "hpo_view_sha256": view["sha256"],
                          "host_validation": "minimal" if settings is None else "full",
-                         "gpu_minutes_counted": spent, "gpu_minutes_cap": cap, "rows": manifest_rows})
+                         "mount_source_pinned": views_root is not None, "listing_verified": image_sha256 is not None,
+                         "gpu_minutes_counted": spent / 60, "gpu_minutes_cap": cap, "rows": manifest_rows})
     return evidence, manifest
