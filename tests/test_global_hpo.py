@@ -11,7 +11,6 @@ from itertools import permutations
 import json
 import os
 from pathlib import Path
-import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -34,6 +33,8 @@ PROFILES = {  # D_select scores -> AUROC: good = 1.0, tie = 0.5, bad = 0.0
 }
 DEFAULT_PROFILE = {"c00": "tie", "c01": "good", "c02": "tie", "c03": "bad"}
 T0 = "2026-10-20T10:00:00+00:00"
+ATTEMPT = "a" * 32
+RETRIED = "b" * 32
 
 
 def signed(value, key="sha256"):
@@ -95,10 +96,10 @@ class Fixture:
 
     # --- attempts and queue records ----------------------------------------
 
-    def attempt_dir(self, key, attempt="a1"):
+    def attempt_dir(self, key, attempt=ATTEMPT):
         return self.runs / self.jobs[key]["spec"]["job_id"] / attempt
 
-    def write_attempt(self, key, profile="tie", attempt="a1", scores=None, mount=None, tweak=None):
+    def write_attempt(self, key, profile="tie", attempt=ATTEMPT, scores=None, mount=None, tweak=None):
         job = self.jobs[key]
         cfg, out = job["cfg"], self.attempt_dir(key, attempt)
         out.mkdir(parents=True, exist_ok=True)
@@ -126,7 +127,7 @@ class Fixture:
         (out / "runtime.json").write_text(json.dumps({"data_mount": self.mount if mount is None else mount}),
                                           encoding="utf-8")
 
-    def record(self, key, state, attempt="a1", minutes=1.0, last=None):
+    def record(self, key, state, attempt=ATTEMPT, minutes=1.0, last=None):
         record = new_record(self.jobs[key]["spec"])
         if state == "pending":
             return record
@@ -141,6 +142,22 @@ class Fixture:
                            **(last or {})})
         record.update(state=state, attempt_id=attempt, token="token", owner={"gpu": "0"}, version=len(events),
                       seq=len(events), history=events)
+        return record
+
+    def retried_record(self, key, minutes=(3, 2)):
+        """Attempt RETRIED failed, an operator retried it, attempt ATTEMPT succeeded."""
+        record = new_record(self.jobs[key]["spec"])
+        stamp = lambda minute: f"2026-10-20T10:{minute:02d}:00+00:00"
+        first, second = minutes
+        events = [("claim", "claimed", RETRIED, 0), ("update", "running", RETRIED, 1),
+                  ("update", "failed", RETRIED, 1 + first), ("manual_retry", "pending", None, 2 + first),
+                  ("claim", "claimed", ATTEMPT, 3 + first), ("update", "running", ATTEMPT, 4 + first),
+                  ("update", "succeeded", ATTEMPT, 4 + first + second)]
+        history = [{"seq": n, "kind": kind, "state": state, "at": stamp(minute),
+                    **({"attempt_id": attempt} if attempt else {})}
+                   for n, (kind, state, attempt, minute) in enumerate(events, 1)]
+        record.update(state="succeeded", attempt_id=ATTEMPT, token="token", owner={"gpu": "0"}, version=len(history),
+                      seq=len(history), history=history)
         return record
 
     def snapshot(self, states=None, profile=None, **kwargs):
@@ -324,6 +341,17 @@ class SearchSpaceTests(Base):
         with self.assertCode("search_space_mismatch"):
             gh.validate_search_space(other, pools=self.pools)
 
+    def test_every_expanded_candidate_must_fit_the_trainer_registry_before_anchoring(self):
+        base = copy.deepcopy(self.fx.space["base_recipe"])
+        base["scheduler"]["parameters"]["eta_min"] = 0.0005  # a candidate with lr 3e-5 would sit below eta_min
+        base["optimizer"]["parameters"]["lr"] = 0.001
+        with self.assertCode("recipe_adapter_unsupported"):
+            self.build(base_recipe=base, default={"optimizer.parameters.lr": 0.001})
+
+    def test_numbers_beyond_float_range_are_a_coded_error(self):
+        with self.assertCode("search_space_invalid"):
+            self.build(grid=[{"path": "optimizer.parameters.lr", "values": [0.0001, 10 ** 400]}])
+
     def test_a_fixed_threshold_other_than_the_global_constant_is_refused(self):
         base = copy.deepcopy(self.fx.space["base_recipe"])
         base["prediction"]["thresholds"] = [0.3]
@@ -395,6 +423,11 @@ class PlanTests(Base):
             build(final_policy=policy)
         with self.assertCode("plan_invalid"):
             build(runtime={**self.fx.runtime, "commit": "short"})
+
+    def test_junk_runtime_is_a_coded_plan_error(self):
+        with self.assertCode("plan_invalid"):
+            gh.build_selection_plan(self.fx.space, self.fx.pools, producer=self.fx.producer, runtime={"commit": "x"},
+                                    final_policy=final_policy())
 
     def test_evaluation_seed_equal_to_a_development_seed_is_refused(self):
         rows, pools = binary_pools(evaluation=29)  # selection seed is 29
@@ -611,6 +644,64 @@ class ViewTests(Base):
         with self.assertCode("hpo_isolation_unproven"):
             self.materialize()
 
+    def test_a_symlinked_view_directory_never_receives_writes(self):
+        outside = self.temp()
+        base = self.fx.views / self.pools["sha256"]
+        base.mkdir(parents=True)
+        (base / "D").symlink_to(outside, target_is_directory=True)
+        with self.assertCode("hpo_isolation_unproven"):
+            self.materialize()
+        self.assertEqual(list(outside.iterdir()), [])
+        base.joinpath("D").unlink()
+        base.rmdir()
+        shutil_link = self.fx.views / self.pools["sha256"]
+        shutil_link.symlink_to(outside, target_is_directory=True)
+        with self.assertCode("hpo_isolation_unproven"):
+            self.materialize()
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_a_symlinked_subdirectory_inside_the_view_cannot_redirect_a_write(self):
+        outside = self.temp()
+        dest = self.fx.views / self.pools["sha256"] / "D"
+        dest.mkdir(parents=True)
+        first = Path(self.view["records"][0]["path"]).parts[0]
+        (dest / first).symlink_to(outside, target_is_directory=True)
+        with self.assertCode("hpo_isolation_unproven"):
+            self.materialize()
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_copy_fallback_keeps_the_source_permissions(self):
+        for record in self.view["records"]:
+            os.chmod(self.fx.data / record["path"], 0o644)
+        real_link = os.link
+        data_root = str(self.fx.data.resolve())
+
+        def link(source, target, *args, **kwargs):
+            if str(source).startswith(data_root):
+                raise OSError(errno.EXDEV, "Invalid cross-device link")
+            return real_link(source, target, *args, **kwargs)
+
+        with mock.patch.object(gh.os, "link", side_effect=link):
+            result = self.materialize()
+        for record in self.view["records"]:
+            self.assertEqual((Path(result["dest"]) / record["path"]).stat().st_mode & 0o777, 0o644)
+
+    def test_a_copy_that_differs_from_its_source_is_refused(self):
+        real_link = os.link
+        data_root = str(self.fx.data.resolve())
+
+        def link(source, target, *args, **kwargs):
+            if str(source).startswith(data_root):
+                raise OSError(errno.EXDEV, "Invalid cross-device link")
+            return real_link(source, target, *args, **kwargs)
+
+        def bad_copy(source, destination):
+            Path(destination).write_bytes(b"corrupted in transit")
+
+        with mock.patch.object(gh.os, "link", side_effect=link), mock.patch.object(gh.shutil, "copyfile", side_effect=bad_copy):
+            with self.assertCode("d_view_materialization_failed"):
+                self.materialize()
+
     def test_view_with_an_e_identity_is_never_materialized(self):
         e_row = next(r for r in self.rows if r["id"] in set(self.pools["lists"]["E"]))
         view = copy.deepcopy(self.view)
@@ -738,7 +829,7 @@ class CollectorTests(Base):
             shuffled_freeze = signed({**freeze, "selection_evidence_sha256": shuffled["sha256"]})
             self.assertEqual(fx.audit(shuffled, shuffled_freeze)["selected_candidate_id"], "c00", order)
 
-    def test_near_tie_summation_does_not_depend_on_row_order_with_two_seeds(self):
+    def test_two_seed_ledger_ranking_does_not_depend_on_row_order(self):
         fx = self.fixture(seeds=(101, 102))
         profile = {"c00": "tie", "c01": "tie", "c02": "good", "c03": "tie"}
         evidence, _ = fx.collect(fx.snapshot(profile=profile))
@@ -844,6 +935,7 @@ class CollectorTests(Base):
             "no mount recorded": {"missing": True},
             "full data root": dict(kind="data_root", source=str(fx.data), destination="/data", readonly=True),
             "writable": {**fx.mount, "readonly": False},
+            "readonly as integer": {**fx.mount, "readonly": 1},
             "other view hash": {**fx.mount, "view_files_sha256": H("another listing")},
             "other hpo-view": {**fx.mount, "hpo_view_sha256": H("another view")},
             "other pools": {**fx.mount, "pools_sha256": H("another pools")},
@@ -1089,6 +1181,106 @@ class CollectorTests(Base):
                                        expected_plan_sha256=H(freeze["selection_plan"]), output=self.temp() / "g.json")
         self.assertEqual(sealed["eligibility"]["scientific_reasons"],
                          ["no_integrated_evidence_producer", "synthetic_fixture"])
+
+    # --- review iteration 1 ---------------------------------------------------
+
+    def test_undefined_metric_is_a_completed_undefined_row_with_its_reason(self):
+        fx = self.fx
+        key = ("c01", 101)
+        reason = "metric_undefined:fixture_missing_class"
+
+        def undefine(artifact, results):
+            artifact["metrics"]["primary"].update(value=None, reason=reason)
+            artifact = signed(artifact, "content_sha256")
+            results["clinical_evaluation"].update(primary_value=None, primary_reason=reason,
+                                                  content_sha256=artifact["content_sha256"])
+            return artifact, results
+
+        for other in sorted(fx.jobs):
+            fx.write_attempt(other, DEFAULT_PROFILE[other[0]], tweak=undefine if other == key else None)
+
+        def trusted_summary(cfg, view, records, artifact, *, pools):  # the real recomputation would (rightly) refuse this edit
+            primary = artifact["metrics"]["primary"]
+            return {"partition": artifact["partition"], "samples": len(artifact["rows"]),
+                    "primary_metric": primary["metric"], "primary_value": primary["value"],
+                    "primary_reason": primary["reason"], "content_sha256": artifact["content_sha256"]}
+
+        with mock.patch.object(gh.ge, "validate_global_predictions", side_effect=trusted_summary):
+            evidence, manifest = fx.collect([fx.record(k, "succeeded") for k in sorted(fx.jobs)])
+        row = next(r for r in evidence["rows"] if r["candidate_id"] == "c01")
+        self.assertEqual((row["status"], row["metric"]["state"], row["metric"]["value"], row["reason"]),
+                         ("completed", "undefined", None, reason))
+        self.assertRegex(row["artifact_sha256"], r"^[0-9a-f]{64}$")
+        directory = self.temp()
+        freeze = fx.seal(evidence, "c00", directory / "freeze.json")
+        self.assertIn("ledger_contains_nondefined_trials", freeze["eligibility"]["reasons"])
+        self.assertNotIn("c01", fx.audit(evidence, freeze)["candidate_means"])
+
+    def test_retried_job_may_not_hide_an_earlier_attempt_with_predictions(self):
+        fx = self.fx
+        key = ("c01", 101)
+        records = fx.snapshot({key: "absent"})
+        fx.write_attempt(key, "good")
+        retried = fx.retried_record(key)
+        evidence, manifest = fx.collect(records + [retried])
+        item = next(r for r in manifest["rows"] if r["candidate_id"] == "c01")
+        self.assertEqual((item["attempts"], item["attempt_id"], item["status"]), (2, ATTEMPT, "completed"))
+        self.assertAlmostEqual(item["minutes"], 5.0)  # both attempts count against the GPU cap
+        fx.write_attempt(key, "bad", attempt=RETRIED)  # the failed attempt had scores: a prediction is never redone
+        with self.assertCode("collection_invalid"):
+            fx.collect(records + [retried])
+
+    def test_attempt_ids_must_be_the_ids_the_queue_assigns(self):
+        fx = self.fx
+        records = fx.snapshot()
+        records[0]["attempt_id"] = "../" + records[1]["job_id"] + "/" + ATTEMPT
+        with self.assertCode("collection_invalid"):
+            fx.collect(records)
+
+    def test_terminal_job_without_a_derivable_wall_time_is_rejected_not_exempted(self):
+        fx = self.fx
+        for mutate in (lambda e: e.update(at="garbage"), lambda e: e.update(at="2026-10-20T10:00:00")):
+            records = fx.snapshot()
+            mutate(records[0]["history"][-1])
+            with self.subTest(), self.assertCode("collection_invalid"):
+                fx.collect(records)
+        records = fx.snapshot()  # a terminal record whose attempt has a single event has no duration
+        only = records[0]["history"][-1]
+        only["seq"] = 1
+        records[0]["history"] = [only]
+        records[0]["version"] = records[0]["seq"] = 1
+        with self.assertCode("collection_invalid"):
+            fx.collect(records)
+
+    def test_gpu_cap_is_monotone_once_crossed_and_the_boundary_is_inclusive(self):
+        fx = self.fixture(budget={"max_candidates": 6, "max_seeds": 2, "max_epochs": 20, "job_timeout_s": 3600,
+                                  "gpu_minutes_cap": 5})
+        records = fx.snapshot()
+        durations = {("c00", 101): 2.0, ("c01", 101): 4.0, ("c02", 101): 1.0, ("c03", 101): 1.0}
+        records = [fx.record(key, "succeeded", minutes=durations[key]) for key in sorted(fx.jobs)]
+        evidence, manifest = fx.collect(records)
+        self.assertEqual([r["status"] for r in evidence["rows"]], ["completed", "timeout", "timeout", "timeout"])
+        self.assertAlmostEqual(manifest["gpu_minutes_counted"], 2.0)
+        exact = [fx.record(key, "succeeded", minutes=m) for key, m in
+                 zip(sorted(fx.jobs), (2.0, 1.5, 1.0, 0.5))]  # exactly 5.0 minutes: not an overrun
+        evidence, manifest = fx.collect(exact)
+        self.assertEqual({r["status"] for r in evidence["rows"]}, {"completed"})
+        self.assertAlmostEqual(manifest["gpu_minutes_counted"], 5.0)
+
+    def test_search_space_hash_alone_binds_the_queue_jobs(self):
+        fx = self.fx
+        records = fx.snapshot()
+        spec = copy.deepcopy(records[0]["spec"])
+        spec["global"]["search_space_sha256"] = H("same plan, altered budget or failure policy")
+        with self.assertCode("search_space_mismatch"):
+            fx.collect([new_record(spec)] + records[1:])
+
+    def test_manifest_records_whether_the_full_host_validation_ran(self):
+        fx = self.fx
+        records = fx.snapshot()
+        self.assertEqual(fx.collect(records)[1]["host_validation"], "minimal")
+        with mock.patch.object(runtime, "validate_global_completion"):
+            self.assertEqual(fx.collect(records, settings={"code": "c", "data": "d"})[1]["host_validation"], "full")
 
     def test_collector_output_never_claims_execution_or_scientific_eligibility(self):
         evidence, manifest = self.fx.collect(self.fx.snapshot())
