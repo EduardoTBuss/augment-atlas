@@ -441,6 +441,7 @@ class PlanTests(Base):
     def test_helpers_hash_code_and_environment_deterministically(self):
         directory = self.temp()
         (directory / "a.py").write_text("x = 1\n")
+        (directory / "data.json").write_text("{}\n")  # non-Python files are part of the code identity
         (directory / "pkg").mkdir()
         (directory / "pkg" / "b.py").write_text("y = 2\n")
         (directory / "__pycache__").mkdir()
@@ -451,6 +452,9 @@ class PlanTests(Base):
         self.assertNotEqual(first, gh.code_tree_sha256(directory))
         with self.assertCode("plan_invalid"):
             gh.code_tree_sha256(self.temp())
+        (directory / "link.py").symlink_to(directory / "a.py")
+        with self.assertCode("plan_invalid"):
+            gh.code_tree_sha256(directory)
         self.assertEqual(gh.environment_sha256("sha256:abc", {"python": "3.11"}),
                          H({"image_id": "sha256:abc", "probe": {"python": "3.11"}}))
 
@@ -564,6 +568,29 @@ class ViewTests(Base):
                 self.audit(view)
         with self.assertCode("view_hash_mismatch"):
             self.audit("not a view")
+
+    def test_deep_symlinked_subdirectory_creates_nothing_outside_the_view(self):
+        outside = self.temp()
+        dest = self.fx.views / self.pools["sha256"] / "D"
+        dest.mkdir(parents=True)
+        first = Path(self.view["records"][0]["path"]).parts[0]
+        (dest / first).symlink_to(outside, target_is_directory=True)
+        deep = {**self.view["records"][0], "path": f"{first}/sub/deep/img.png"}
+        rows = [deep if r["id"] == deep["id"] else r for r in self.rows]
+        with self.assertRaises(ValueError):  # the path is not in the trusted records either way
+            gh.materialize_d_view(self.fx.data, self.fx.views, self.view, records=rows, pools=self.pools,
+                                  image_sha256=self.fx.image_sha256)
+        self.assertEqual(list(outside.iterdir()), [])
+        with self.assertCode("hpo_isolation_unproven"):
+            gh._confined_parent(dest, dest / first / "sub" / "deep" / "img.png")
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_view_records_with_unhashable_identities_are_a_coded_error(self):
+        for field in ("id", "group"):
+            view = copy.deepcopy(self.view)
+            view["records"][0][field] = ["x"]
+            with self.subTest(field), self.assertCode("view_hash_mismatch"):
+                self.audit(signed(view))
 
     def test_ge_check_hpo_view_agrees_on_the_e_leak(self):
         e_row = next(r for r in self.rows if r["id"] in set(self.pools["lists"]["E"]))
@@ -1281,6 +1308,109 @@ class CollectorTests(Base):
         self.assertEqual(fx.collect(records)[1]["host_validation"], "minimal")
         with mock.patch.object(runtime, "validate_global_completion"):
             self.assertEqual(fx.collect(records, settings={"code": "c", "data": "d"})[1]["host_validation"], "full")
+
+    # --- review iteration 2 ---------------------------------------------------
+
+    def test_per_job_timeout_is_enforced_by_the_collector_independently_of_scores(self):
+        fx = self.fixture(budget={"max_candidates": 6, "max_seeds": 2, "max_epochs": 20, "job_timeout_s": 90,
+                                  "gpu_minutes_cap": 120})
+        records = [fx.record(key, "succeeded", minutes=2.0 if key[0] == "c01" else 1.0) for key in sorted(fx.jobs)]
+        for key in sorted(fx.jobs):
+            fx.write_attempt(key, DEFAULT_PROFILE[key[0]])
+        evidence, manifest = fx.collect(records)
+        rows = {r["candidate_id"]: r for r in evidence["rows"]}
+        self.assertEqual((rows["c01"]["status"], rows["c01"]["reason"], rows["c01"]["metric"]["value"]),
+                         ("timeout", "job_timeout_s_exceeded", None))  # the best scorer is NOT kept
+        self.assertEqual({rows[c]["status"] for c in ("c00", "c02", "c03")}, {"completed"})
+        directory = self.temp()
+        self.assertEqual(fx.audit(evidence, fx.seal(evidence, "c00", directory / "f.json"))["selected_candidate_id"], "c00")
+
+    def test_attempt_id_traversal_is_refused_wherever_it_appears(self):
+        fx = self.fx
+        traversal = "../" + "c" * 32
+        records = fx.snapshot()
+        record = records[0]
+        record["attempt_id"] = traversal
+        for event in record["history"]:
+            event["attempt_id"] = traversal  # consistent history, no earlier attempt to trip the retry rule
+        with self.assertCode("collection_invalid"):
+            fx.collect(records)
+        records = fx.snapshot()
+        records[0]["history"][0]["attempt_id"] = traversal  # only the history is malformed
+        with self.assertCode("collection_invalid"):
+            fx.collect(records)
+
+    def test_history_not_containing_the_current_attempt_has_no_derivable_wall_time(self):
+        fx = self.fx
+        records = fx.snapshot()
+        for event in records[0]["history"]:
+            event.pop("attempt_id")
+        with self.assertCode("collection_invalid"):
+            fx.collect(records)
+        records = fx.snapshot()
+        for event in records[0]["history"]:
+            event["attempt_id"] = RETRIED  # a different attempt than record.attempt_id
+        with self.assertCode("collection_invalid"):
+            fx.collect(records)
+
+    def test_unfinished_retry_cannot_hide_an_earlier_attempt_with_predictions(self):
+        fx = self.fx
+        key = ("c01", 101)
+        records = fx.snapshot({key: "absent"})
+        retried = fx.retried_record(key)
+        retried["state"] = "pending"
+        retried["attempt_id"] = retried["token"] = retried["owner"] = None
+        retried["history"] = retried["history"][:4]
+        retried["version"] = retried["seq"] = 4
+        fx.write_attempt(key, "good", attempt=RETRIED)
+        with self.assertCode("collection_invalid"):
+            fx.collect(records + [retried])
+        earlier_scores = fx.attempt_dir(key, RETRIED) / "predictions.json"
+        earlier_scores.unlink()
+        evidence, _ = fx.collect(records + [retried])
+        self.assertEqual(next(r for r in evidence["rows"] if r["candidate_id"] == "c01")["status"], "missing")
+
+    def test_results_declaring_a_non_finite_metric_is_a_metric_mismatch(self):
+        fx = self.fx
+        key = ("c00", 101)
+        for other in sorted(fx.jobs):
+            fx.write_attempt(other, DEFAULT_PROFILE[other[0]])
+        path = fx.attempt_dir(key) / "results.json"
+        results = json.loads(path.read_text())
+        results["clinical_evaluation"]["primary_value"] = float("nan")
+        path.write_text(json.dumps(results))  # JSON NaN: still parseable by Python
+        with self.assertCode("metric_recompute_mismatch"):
+            fx.collect([fx.record(k, "succeeded") for k in sorted(fx.jobs)])
+
+    def test_plan_without_runtime_is_a_coded_error_and_flags_describe_the_validation_level(self):
+        fx = self.fx
+        plan = copy.deepcopy(fx.plan)
+        del plan["runtime"]
+        with self.assertRaisesRegex(ValueError, "^[A-Za-z_]+: "):
+            fx.collect(fx.snapshot(), plan=plan, plan_sha256=H(plan))
+        records = fx.snapshot()
+        weak = fx.collect(records)[1]
+        self.assertEqual((weak["host_validation"], weak["mount_source_pinned"], weak["listing_verified"]),
+                         ("minimal", False, True))
+        with mock.patch.object(runtime, "validate_global_completion"):
+            strong = fx.collect(records, settings={"code": "c", "data": "d"}, views_root=fx.views,
+                                image_sha256=None)[1]
+        self.assertEqual((strong["host_validation"], strong["mount_source_pinned"], strong["listing_verified"]),
+                         ("full", True, False))
+
+    def test_queue_collected_evidence_also_requires_the_log_policy_declaration(self):
+        rows, pools, freeze, evidence = freeze_fixture()
+        plan = copy.deepcopy(freeze["selection_plan"])
+        plan["producer"]["id"] = gd.QUEUE_PRODUCER_ID
+        collected = signed({**evidence, "kind": "queue_collected_v1", "producer": copy.deepcopy(plan["producer"]),
+                            "plan_sha256": H(plan)})
+        candidates = gd._plan(plan, pools, H(plan))
+        with self.assertRaisesRegex(ValueError, "real HPO producer"):  # right id, logs hash of real logs
+            gd._evidence(collected, plan, candidates, pools)
+        plan["producer"]["logs_sha256"] = H(gd.QUEUE_LOGS_DECLARATION)
+        collected = signed({**collected, "producer": copy.deepcopy(plan["producer"]), "plan_sha256": H(plan)})
+        candidates = gd._plan(plan, pools, H(plan))
+        self.assertEqual(gd._evidence(collected, plan, candidates, pools)[0], "a")
 
     def test_collector_output_never_claims_execution_or_scientific_eligibility(self):
         evidence, manifest = self.fx.collect(self.fx.snapshot())
