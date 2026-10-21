@@ -731,7 +731,7 @@ registradas):**
   Escrita atômica por arquivo (temp + fsync + replace), idempotente (mesmos
   bytes ⇒ nada reescrito); bytes diferentes ⇒ `export_conflict` sem escrever
   nada, salvo `overwrite=True`. `default_article_dir(campaign, root)` =
-  `<root>/<dataset>/<freeze_kind>-<campaign[:12]>`; a raiz é sempre explícita e
+  `<root>/<dataset>/<freeze_kind>-<campaign[:12]>`; a raiz é sempre explícita, absoluta e
   fora do repositório (público; `article/` também está no `.gitignore`). Os
   JSON exportados carregam `scientific_status="provisional"` e as flags `false`;
   os CSV não (a proveniência deles está no `hashes.json`/`README.md`).
@@ -892,7 +892,9 @@ freeze), `seed_reuse_forbidden`, `config_identity_mismatch` (MANIFEST commitado
 Códigos adicionados na fatia S4 (`global_report.py`, aditivos):
 `report_input_invalid` (S4) (entrada coletada fora do schema fechado, status
 desconhecido, `succeeded` sem predições ou com motivo, falha sem motivo ou com
-motivo fora de `[a-z0-9][a-z0-9_:.-]{0,63}` — código curto, nunca texto livre;
+motivo fora de `[a-z0-9][a-z0-9_:-]{0,63}` — código curto, nunca texto livre (que não
+contenha hostname/ID é contrato do coletor; `build_report` só recusa códigos que
+embutem um ID de registro com ≥6 caracteres, `identifier_leak`);
 `initial_state_sha256` malformado — o valor é autenticado pelo coletor, não pelo
 relatório —, entrada duplicada que não seja dupla
 cobertura), `telemetry_summary_invalid` (S4) (valor não finito/tipo errado em uma chave de
@@ -902,7 +904,7 @@ entre seeds), `identifier_leak` (S4) (ID/grupo/caminho de registro em
 relatório ou exportação), `report_invalid` (S4) (relatório fora do schema,
 checksum, flags ≠ false, caveats, ou campanha que não é a do relatório na
 exportação), `campaign_comparison_invalid` (S4) (checksum/flags do documento de comparação
-(`check_comparison`) ou comparação sem exatamente uma
+(`check_comparison`: só checksum e flags fixas, não recalcula `arms`) ou comparação sem exatamente uma
 campanha `external_fixed` e uma `hpo_d`, pools/registros/task/métrica
 diferentes, ou documento de comparação adulterado), `export_conflict` (S4)
 (arquivo existente com bytes diferentes sem `overwrite=True`, ou alvo que não é

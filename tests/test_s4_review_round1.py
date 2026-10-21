@@ -18,18 +18,32 @@ class ReasonCodeTests(unittest.TestCase):
         return self.fx.entry("none", 0, status="failed", reason=reason, initial_state=None)
 
     def test_free_text_paths_and_hostnames_are_not_reason_codes(self):
-        for reason in ("timeout reading /data/x/img_001.png", "host-01.example.org down", "A" * 5, "x" * 65,
+        for reason in ("timeout reading /data/x/img_001.png", "host-01.example.org down", "A" * 5, "x" * 65, "gpu-node-3.lab.example.org", "10.0.0.5",
                        " leading", "trailing ", "", "with space", "../escape"):
             with self.subTest(reason=reason):
                 with self.assertRaisesRegex(ValueError, "^report_input_invalid:"):
                     self.fx.report(self.fx.entries(skip={("none", 0)}) + [self.failed(reason)])
 
-    def test_code_embedding_a_record_identifier_is_a_leak(self):
-        row = self.fx.rows[0]
-        needle = "".join(ch for ch in str(row["id"]).lower() if ch.isalnum())
-        reason = f"failed_on_{needle}"
+    def test_short_identifiers_do_not_flag_legitimate_codes(self):
+        rows = [{"id": "17", "group": "1", "path": "a/b/c.png"}]
+        report = {"matrix": {"cells": [{"reason": "docker_exit_17"}, {"reason": "exit_1"}]}}
+        gr._scan_reasons(report, rows)
+        long_rows = [{"id": "patient-000123", "group": "g", "path": "x/y/img-000123.png"}]
         with self.assertRaisesRegex(ValueError, "^identifier_leak:"):
-            self.fx.report(self.fx.entries(skip={("none", 0)}) + [self.failed(reason)])
+            gr._scan_reasons({"matrix": {"cells": [{"reason": "failed_on_patient-000123"}]}}, long_rows)
+
+    def test_resigned_report_with_free_text_reason_is_refused(self):
+        report = self.fx.report(self.fx.entries(skip={("none", 0)}) + [self.failed("docker_exit_1")])
+        for reason in ("read /data/x.png failed", "host-01.example.org", None, 7):
+            forged = copy.deepcopy(report)
+            cell = next(c for c in forged["matrix"]["cells"] if c["status"] == "failed")
+            cell["reason"] = reason
+            forged = gr._seal(forged)
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(ValueError, "^report_invalid:"):
+                    gr.check_report(forged)
+                with self.assertRaisesRegex(ValueError, "^report_invalid:"):
+                    gr.public_summary(forged)
 
     def test_short_machine_codes_are_accepted(self):
         report = self.fx.report(self.fx.entries(skip={("none", 0)}) + [self.failed("docker_exit_1")])
@@ -48,8 +62,10 @@ class ScoreMutationTests(unittest.TestCase):
         artifact["rows"][0]["scores"] = [0.5, 0.5]
         entries = [e for e in fx.entries() if (e["arm"], e["fold"]) != ("clahe_heavy", 3)]
         entries.append(fx.entry("clahe_heavy", 3, predictions=resign(artifact)))
-        with self.assertRaisesRegex(ValueError, "^(metric|decision)_recompute_mismatch:|^predictions_invalid:"):
+        with self.assertRaises(ValueError) as caught:
             fx.report(entries)
+        # Re-signed, so it is not the checksum: a recomputation layer rejects it.
+        self.assertRegex(str(caught.exception), "^(metric_recompute_mismatch|decision_recompute_mismatch):")
 
 
 class ComparisonFlagTests(unittest.TestCase):
@@ -74,6 +90,12 @@ class ComparisonFlagTests(unittest.TestCase):
                         gr.export_comparison(self.resigned(**changes), out)
                     self.assertEqual(list(Path(out).iterdir()), [])
 
+    def test_comparison_missing_a_fixed_key_is_refused(self):
+        value = {k: v for k, v in self.comparison.items() if k not in ("sha256", "hypothesis_test")}
+        value["sha256"] = H(value)
+        with self.assertRaisesRegex(ValueError, "^campaign_comparison_invalid:"):
+            gr.check_comparison(value)
+
     def test_untouched_comparison_passes(self):
         self.assertIs(gr.check_comparison(self.comparison), self.comparison)
 
@@ -81,7 +103,7 @@ class ComparisonFlagTests(unittest.TestCase):
 class ArticleExportRootTests(unittest.TestCase):
     def test_root_is_explicit(self):
         campaign = fixture().campaign
-        for root in (None, ""):
+        for root in (None, "", ".", "article", "relative/dir"):
             with self.assertRaisesRegex(ValueError, "^export_conflict:"):
                 gr.default_article_dir(campaign, root)
 
