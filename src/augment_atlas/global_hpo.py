@@ -33,6 +33,7 @@ import itertools
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
 
@@ -90,7 +91,11 @@ def _guard(code, function, *args, **kwargs):
 
 
 def _number(value, name, minimum=None, strict=False):
-    if type(value) not in (int, float) or not math.isfinite(value):
+    try:
+        finite = type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:  # ints beyond float range
+        finite = False
+    if not finite:
         _fail("search_space_invalid", f"{name}: finite number required")
     if minimum is not None and (value < minimum or (strict and value == minimum)):
         _fail("search_space_invalid", f"{name}: must be {'>' if strict else '>='} {minimum}")
@@ -197,6 +202,8 @@ def validate_search_space(search_space, *, pools=None, runtime=None):
     for axis in search_space["grid"]:
         if canonical_hash(_recipe_get(recipe, axis["path"])) != canonical_hash(search_space["default"][axis["path"]]):
             _fail("search_space_invalid", f"base_recipe must carry the default value at {axis['path']}")
+    for candidate in _expand(search_space):  # a candidate the trainer registry refuses must fail before anchoring
+        _guard("recipe_adapter_unsupported", gj._registry, candidate["recipe"])
     if pools is not None:
         if type(pools) is not dict or search_space["pools_sha256"] != pools.get("sha256"):
             _fail("search_space_mismatch", "search space is bound to other pools")
@@ -232,6 +239,10 @@ def expand_candidates(search_space):
     conservative). Every candidate augmentation is ``none`` with no operations.
     """
     validate_search_space(search_space)
+    return _expand(search_space)
+
+
+def _expand(search_space):
     axes = [(axis["path"], list(axis["values"])) for axis in search_space["grid"]]
     default = tuple(search_space["default"][path] for path, _ in axes)
     rest = [combo for combo in itertools.product(*(values for _, values in axes))
@@ -252,12 +263,17 @@ def expand_candidates(search_space):
 # --------------------------------------------------------------------------
 
 def code_tree_sha256(src_root):
-    """Canonical hash of ``[(relative path, sha256)]`` of the Python sources in ``src_root``."""
+    """Canonical hash of ``[(relative path, sha256)]`` of the Python sources in ``src_root``.
+
+    Hashes the working tree, sorted by POSIX path text (same on every OS); the caller must
+    run it on a clean checkout of ``runtime.commit``.
+    """
     root = Path(src_root).resolve()
-    files = sorted(path for path in root.rglob("*.py") if path.is_file() and "__pycache__" not in path.parts)
+    files = sorted((path.relative_to(root).as_posix(), path) for path in root.rglob("*.py")
+                   if path.is_file() and "__pycache__" not in path.parts)
     if not files:
         _fail("plan_invalid", "no Python sources found to hash")
-    return canonical_hash([[path.relative_to(root).as_posix(), file_hash(path)] for path in files])
+    return canonical_hash([[name, file_hash(path)] for name, path in files])
 
 
 def environment_sha256(image_id, probe):
@@ -277,8 +293,8 @@ def plan_hash(plan):
 def build_selection_plan(search_space, pools, *, producer, runtime, final_policy):
     """Plan v1 (existing schema) generated from a sealed search space."""
     _guard("pools_anchor_mismatch", gd._checksum, pools)
-    validate_search_space(search_space, pools=pools, runtime=runtime)
     _guard("plan_invalid", gd._runtime, runtime)
+    validate_search_space(search_space, pools=pools, runtime=runtime)
     _guard("plan_invalid", gd._producer, producer)
     if (producer["id"] != PRODUCER_ID or producer["logs_sha256"] != canonical_hash(LOGS_DECLARATION)
             or producer["environment_sha256"] != runtime["environment_sha256"]):
@@ -407,10 +423,6 @@ def audit_hpo_view(view, records, pools, *, expected_pools_sha256, image_sha256=
     return deepcopy(view)
 
 
-def _digest(path):
-    return file_hash(path)
-
-
 def _link_or_copy(source, target):
     """Hardlink; on a filesystem that cannot, a hash-verified copy. Returns the method.
 
@@ -433,12 +445,20 @@ def _link_or_copy(source, target):
         except OSError as error:
             _fail("d_view_materialization_failed",
                   f"hardlink unavailable and verified copy failed ({error.strerror or error.errno}); no silent fallback")
-        if _digest(temporary) != _digest(source):
+        if file_hash(temporary) != file_hash(source):
             _fail("d_view_materialization_failed", "copied D image differs from its source")
+        shutil.copymode(source, temporary)  # mkstemp is 0600; the container may run as another uid
         os.link(temporary, target)
     finally:
         Path(temporary).unlink(missing_ok=True)
     return "copy"
+
+
+def _confined_parent(dest, target):
+    """Create ``target``'s directory and prove no symlinked directory leads outside ``dest``."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.parent.resolve().is_relative_to(dest.resolve()):
+        _fail("hpo_isolation_unproven", "a D-view subdirectory is a symlink that escapes the view")
 
 
 def materialize_d_view(data_root, views_root, view, *, records, pools, image_sha256):
@@ -453,21 +473,28 @@ def materialize_d_view(data_root, views_root, view, *, records, pools, image_sha
     from . import runtime
     pools_sha = pools["sha256"]
     audit_hpo_view(view, records, pools, expected_pools_sha256=pools_sha, image_sha256=image_sha256)
+    gj._safe_name(view["dataset"]["id"], "dataset.id")
     root = Path(data_root).resolve()
-    dest = Path(views_root).resolve() / pools_sha / "D"
+    base = Path(views_root).resolve()
+    dest = base / pools_sha / "D"
+    for part in (base / pools_sha, dest):
+        if part.is_symlink():
+            _fail("hpo_isolation_unproven", "the D-view directory is a symlink; it could reach outside the views root")
     dest.mkdir(parents=True, exist_ok=True)
+    if not dest.resolve().is_relative_to(base):
+        _fail("hpo_isolation_unproven", "the D-view directory escapes the views root")
     methods = {"hardlink": 0, "copy": 0, "existing": 0}
     for row in view["records"]:
         relative = row["path"]
         source = confined_path(root, relative)
         if source != root.joinpath(*relative.split("/")) or not source.is_file():
             _fail("hpo_isolation_unproven", f"D image {row['id']!r} is missing or reached through a symlink")
-        if _digest(source) != image_sha256[relative]:
+        if file_hash(source) != image_sha256[relative]:
             _fail("records_identity_mismatch", f"D image {row['id']!r} bytes differ from the manifest sha256")
         target = dest.joinpath(*relative.split("/"))
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _confined_parent(dest, target)
         if target.exists() or target.is_symlink():
-            if target.is_symlink() or not target.is_file() or _digest(target) != image_sha256[relative]:
+            if target.is_symlink() or not target.is_file() or file_hash(target) != image_sha256[relative]:
                 _fail("materialization_conflict", f"{relative} exists in the D-view with different content")
             methods["existing"] += 1
         else:
@@ -476,7 +503,7 @@ def materialize_d_view(data_root, views_root, view, *, records, pools, image_sha
     listing = _listing(view["records"], image_sha256)
     for relative, data in ((view_file, gj.render_config_bytes(view)), (LISTING_NAME, gj.render_config_bytes(listing))):
         target = dest.joinpath(*relative.split("/"))
-        target.parent.mkdir(parents=True, exist_ok=True)
+        _confined_parent(dest, target)
         gj._write_exclusive(target, data)
     recomputed = runtime.d_view_listing(dest, view_file)
     if (recomputed != listing or [path for path, _ in recomputed] != sorted(row["path"] for row in view["records"])
@@ -494,20 +521,47 @@ def _utc(text):
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
+def _attempt_ids(record):
+    """Attempt IDs in claim order (the queue assigns uuid4 hex)."""
+    seen = []
+    for event in record["history"]:
+        attempt = event.get("attempt_id")
+        if attempt is not None and attempt not in seen:
+            seen.append(attempt)
+    return seen
+
+
 def _attempt_minutes(record):
-    """Wall minutes of the last attempt from queue history, or None when not derivable."""
-    history = [event for event in record["history"] if event.get("attempt_id") == record["attempt_id"]]
-    if len(history) < 2:
-        return None
-    start = next((event for event in history if event.get("state") == "running"), history[0])
-    try:
-        return max(0.0, (_utc(history[-1]["at"]) - _utc(start["at"])).total_seconds() / 60)
-    except (KeyError, TypeError, ValueError):
-        return None
+    """Wall minutes over EVERY attempt from queue history, or None when not derivable."""
+    total = 0.0
+    for attempt in _attempt_ids(record):
+        history = [event for event in record["history"] if event.get("attempt_id") == attempt]
+        if len(history) < 2:
+            return None
+        start = next((event for event in history if event.get("state") == "running"), history[0])
+        try:
+            total += max(0.0, (_utc(history[-1]["at"]) - _utc(start["at"])).total_seconds() / 60)
+        except (KeyError, TypeError, ValueError):
+            return None
+    return total
 
 
 def _attempts(record):
     return sum(1 for event in record["history"] if event.get("kind") == "claim")
+
+
+_ATTEMPT_ID = re.compile(r"[0-9a-f]{32}")
+
+
+def _check_retries(record, runs_root):
+    """retry_policy: only an attempt WITHOUT predictions may be repeated (spec 6.1)."""
+    if not _ATTEMPT_ID.fullmatch(record["attempt_id"]):
+        _fail("collection_invalid", "queue attempt_id must be the 32-hex id the queue assigns")
+    for attempt in _attempt_ids(record):
+        if not _ATTEMPT_ID.fullmatch(attempt):
+            _fail("collection_invalid", "queue history holds a malformed attempt id")
+        if attempt != record["attempt_id"] and (Path(runs_root) / record["job_id"] / attempt / ge.ARTIFACT_NAME).exists():
+            _fail("collection_invalid", "a retried job already had a predictions.json in an earlier attempt")
 
 
 def _timed_out(record):
@@ -533,7 +587,7 @@ def _check_mount(provenance, view, pools_sha, views_root):
                 "hpo_view_sha256": view["sha256"], "view_files_sha256": view["view_files_sha256"]}
     source = mount.get("source") if type(mount) is dict else None
     ok = (type(mount) is dict and isinstance(source, str)
-          and {k: v for k, v in mount.items() if k != "source"} == expected
+          and canonical_hash({k: v for k, v in mount.items() if k != "source"}) == canonical_hash(expected)
           and Path(source).parts[-2:] == (pools_sha, "D"))
     if ok and views_root is not None:
         ok = Path(source) == Path(views_root).resolve() / pools_sha / "D"
@@ -559,7 +613,7 @@ def _read_attempt(out, record, cfg, config_sha, view, records, pools, views_root
     prediction_path = out / ge.ARTIFACT_NAME
     files = completed.get("artifacts")
     if (type(files) is not dict or prediction_path.is_symlink() or not prediction_path.is_file()
-            or files.get(ge.ARTIFACT_NAME) != _digest(prediction_path)):
+            or files.get(ge.ARTIFACT_NAME) != file_hash(prediction_path)):
         _fail("global_artifacts_invalid", "predictions.json is not covered by the completion checksums")
     artifact = _read_json(prediction_path, "predictions.json")
     summary = ge.validate_global_predictions(cfg, view, records, artifact, pools=pools)
@@ -573,8 +627,8 @@ def _read_attempt(out, record, cfg, config_sha, view, records, pools, views_root
     log = out / "docker.log"
     if log.is_symlink() or not log.is_file():
         _fail("global_artifacts_invalid", "docker.log is missing from a succeeded attempt")
-    return artifact, summary, {"completed_sha256": _digest(out / "completed.json"),
-                               "predictions_sha256": _digest(prediction_path), "docker_log_sha256": _digest(log)}
+    return artifact, summary, {"completed_sha256": file_hash(out / "completed.json"),
+                               "predictions_sha256": file_hash(prediction_path), "docker_log_sha256": file_hash(log)}
 
 
 def _row(candidate, seed, pools, endpoint, status, *, metric_state, value=None, reason=None, artifact=None, log):
@@ -628,7 +682,7 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
         expected[spec["job_id"]] = (cfg["global"]["candidate_id"], cfg["training"]["seed"], cfg, sha, spec)
     by_id = {}
     for record in queue_snapshot:
-        validate_record(record)
+        _guard("collection_invalid", validate_record, record)
         if record["job_id"] in by_id:
             _fail("collection_invalid", "queue snapshot repeats a job")
         by_id[record["job_id"]] = record
@@ -642,7 +696,7 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
             _fail("search_space_mismatch", "the queue holds an HPO job of these pools outside the sealed search space/plan")
     endpoint = plan["endpoint"]
     cap = search_space["budget"]["gpu_minutes_cap"]
-    ledger, manifest_rows, spent = [], [], 0.0
+    ledger, manifest_rows, spent, over_cap = [], [], 0.0, False
     order = sorted(expected.items(), key=lambda item: (item[1][0], item[1][1]))
     for job_id, (candidate_id, seed, cfg, config_sha, spec) in order:
         candidate = candidates[candidate_id]
@@ -660,27 +714,31 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                                                attempts=0 if record is None else _attempts(record),
                                                attempt_id=None if record is None else record["attempt_id"]))
             continue
+        _check_retries(record, runs_root)
         minutes = _attempt_minutes(record)
+        if minutes is None:
+            _fail("collection_invalid", f"cannot derive the wall time of terminal job {job_id[:12]} from the queue history")
         common = dict(attempt_id=record["attempt_id"], attempts=_attempts(record), queue_state=state, minutes=minutes)
         out = Path(runs_root) / job_id / record["attempt_id"]
         log_path = out / "docker.log"
         has_log = log_path.is_file() and not log_path.is_symlink()
-        if minutes is not None and spent + minutes > cap:
+        if over_cap or spent + minutes > cap:
+            over_cap = True  # monotone: once the cap is crossed every later row is a timeout
             reason = "gpu_minutes_cap_exceeded"
-            log = _digest(log_path) if has_log else _unavailable_log(job_id, reason)
+            log = file_hash(log_path) if has_log else _unavailable_log(job_id, reason)
             ledger.append(_row(candidate, seed, pools, endpoint, "timeout", metric_state="unavailable",
                                reason=reason, log=log))
             manifest_rows.append(_manifest_row(candidate_id, seed, job_id, "timeout",
-                                               docker_log_sha256=_digest(log_path) if has_log else None, **common))
+                                               docker_log_sha256=file_hash(log_path) if has_log else None, **common))
             continue
-        spent += minutes or 0.0
+        spent += minutes
         if state != "succeeded":
             status = "timeout" if _timed_out(record) else "failed"
             reason = f"job_{'timeout' if status == 'timeout' else state}"
             ledger.append(_row(candidate, seed, pools, endpoint, status, metric_state="unavailable", reason=reason,
-                               log=_digest(log_path) if has_log else _unavailable_log(job_id, reason)))
+                               log=file_hash(log_path) if has_log else _unavailable_log(job_id, reason)))
             manifest_rows.append(_manifest_row(candidate_id, seed, job_id, status,
-                                               docker_log_sha256=_digest(log_path) if has_log else None, **common))
+                                               docker_log_sha256=file_hash(log_path) if has_log else None, **common))
             continue
         artifact, summary, shas = _read_attempt(out, record, cfg, config_sha, view, records, pools, views_root, settings)
         primary = artifact["metrics"]["primary"]
@@ -707,5 +765,6 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
     manifest = gj._seal({"schema_version": 1, "protocol": COLLECTION_PROTOCOL, "pools_sha256": pools_sha,
                          "plan_sha256": plan_sha256, "search_space_sha256": search_space["sha256"],
                          "evidence_sha256": evidence["sha256"], "hpo_view_sha256": view["sha256"],
+                         "host_validation": "minimal" if settings is None else "full",
                          "gpu_minutes_counted": spent, "gpu_minutes_cap": cap, "rows": manifest_rows})
     return evidence, manifest

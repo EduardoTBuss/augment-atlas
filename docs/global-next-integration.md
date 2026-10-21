@@ -891,6 +891,24 @@ uma de desenvolvimento/seleção), `recipe_adapter_unsupported`,
   (candidato, seed), a linha que estoura `budget.gpu_minutes_cap` vira `timeout`
   `gpu_minutes_cap_exceeded` mesmo que tenha predição (nunca se escolhe nova
   rodada depois de ver scores). `attempts` = eventos `claim`.
+- **Auditoria do coletor (S2, revisão 1):** o manifesto grava
+  `host_validation` (`"full"` com `settings`, `"minimal"` sem; só `full` roda
+  `validate_global_completion`), então o selo posterior sabe o nível aplicado.
+  `attempt_id` da fila precisa ser o hex de 32 caracteres que a fila atribui; se o
+  job teve mais de uma tentativa, qualquer tentativa anterior com
+  `predictions.json` é `collection_invalid` (política `retry_policy`: job com
+  predição nunca é refeito) e o tempo de GPU soma **todas** as tentativas. Job
+  terminal sem tempo derivável do histórico é `collection_invalid` (o teto nunca
+  falha aberto). O teto é monótono: depois da primeira linha que o estoura, todas
+  as seguintes viram `timeout`. `budget.job_timeout_s` é imposto pelo worker, não
+  pelo coletor; `timeout` por texto do último evento é rótulo (ambos os estados
+  são não definidos). Sem `views_root`, a origem da montagem só é conferida pelo
+  sufixo `<pools_sha256>/D` (modo mais fraco; o operador deve passá-lo).
+  `materialize_d_view` recusa diretório de destino ou subdiretório que seja
+  symlink (antes de escrever), preserva o modo de arquivo na cópia e
+  `code_tree_sha256` ordena por texto POSIX e hasheia a árvore de trabalho (rodar
+  em checkout limpo do commit). Toda receita candidata expandida passa pelo
+  registro do trainer em `validate_search_space`.
 - **Evidência `queue_collected_v1` (aditivo):** o plan precisa declarar o
   produtor real (`id="augment-atlas-global-hpo-v1"`, `logs_sha256` = hash da
   declaração `{"docker_log":"docker.log","per_row":true}`), senão "no real HPO
