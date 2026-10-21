@@ -1,0 +1,199 @@
+{
+  "datasets": [],
+  "grid": {
+    "g_co2_per_kwh": null,
+    "reference_period": null,
+    "region": null,
+    "retrieved_on": null,
+    "source": null
+  },
+  "guardian": null,
+  "hardware": {
+    "cpu": {
+      "cores": 10,
+      "model": "Intel(R) Core(TM) i9-7900X CPU @ 3.30GHz",
+      "sockets": 1,
+      "tdp_w": null,
+      "threads": 20
+    },
+    "gpus": [
+      {
+        "compute_capability": null,
+        "index": 0,
+        "name": "NVIDIA GeForce GTX TITAN X",
+        "uuid": "GPU-00000000-0000-0000-0000-000000000000",
+        "vram_mib": 12288
+      },
+      {
+        "compute_capability": null,
+        "index": 1,
+        "name": "NVIDIA GeForce GTX TITAN X",
+        "uuid": "GPU-00000000-0000-0000-0000-000000000001",
+        "vram_mib": 12288
+      }
+    ],
+    "ram_bytes": 33333411840,
+    "software": {
+      "docker": null,
+      "kernel": null,
+      "nvidia_container_toolkit": null,
+      "nvidia_driver": "580.178.04",
+      "os": null
+    },
+    "thermal_reference": {
+      "cpu_pkg": [
+        {
+          "crit_c": 95.0,
+          "high_c": 85.0,
+          "package": 0,
+          "source": "hwmon:coretemp"
+        }
+      ],
+      "gpus": [
+        {
+          "index": 0,
+          "shutdown_c": 97,
+          "slowdown_c": 92,
+          "source": "nvidia-smi -q",
+          "target_c": 83
+        },
+        {
+          "index": 1,
+          "shutdown_c": 97,
+          "slowdown_c": 92,
+          "source": "nvidia-smi -q",
+          "target_c": 83
+        }
+      ]
+    }
+  },
+  "hardware_class": null,
+  "images": [],
+  "limits": {
+    "allowed_gpus": null,
+    "container": null,
+    "forbidden_host_changes": [
+      "fan_control",
+      "power_limit",
+      "driver",
+      "bios",
+      "os_config"
+    ],
+    "max_concurrent_trainings": null,
+    "min_idle_seconds_between_jobs": null,
+    "thermal": null,
+    "training_retry": "never"
+  },
+  "liveness": {
+    "heartbeat_seconds": 900,
+    "lease_seconds": 3600,
+    "ntp_required": true
+  },
+  "node_id": "x299",
+  "null_reasons": {
+    "grid.g_co2_per_kwh": "requires_operator_decision",
+    "grid.reference_period": "requires_operator_decision",
+    "grid.region": "requires_operator_decision",
+    "grid.retrieved_on": "requires_operator_decision",
+    "grid.source": "requires_operator_decision",
+    "guardian": "requires_operator_decision",
+    "hardware.cpu.tdp_w": "requires_operator_decision",
+    "hardware.gpus[0].compute_capability": "not_captured",
+    "hardware.gpus[1].compute_capability": "not_captured",
+    "hardware.software.docker": "not_captured",
+    "hardware.software.kernel": "not_captured",
+    "hardware.software.nvidia_container_toolkit": "not_captured",
+    "hardware.software.os": "not_captured",
+    "hardware_class": "requires_operator_decision",
+    "limits.allowed_gpus": "requires_operator_decision",
+    "limits.container": "requires_operator_decision",
+    "limits.max_concurrent_trainings": "requires_operator_decision",
+    "limits.min_idle_seconds_between_jobs": "requires_operator_decision",
+    "limits.thermal": "requires_operator_decision",
+    "storage[0].reserve_bytes": "requires_operator_decision",
+    "storage[1].reserve_bytes": "requires_operator_decision"
+  },
+  "schema": "atlas.node-profile.v1",
+  "sensors": {
+    "acpi_zone.temp_c": "available",
+    "clock.ntp_synchronized": "available",
+    "cpu.freq_mhz": "unverified",
+    "cpu.temp_limits": "available",
+    "cpu_core.temp_c": "available",
+    "cpu_pkg.temp_c": "available",
+    "gpu.clock_event_reasons": "available",
+    "gpu.clocks_mhz": "available",
+    "gpu.ecc_errors": {
+      "evidence": "nvidia-smi -q ECC Mode Current",
+      "reason": "not_supported_by_device",
+      "status": "unavailable"
+    },
+    "gpu.energy_counter": {
+      "evidence": "total_energy_consumption absent from nvidia-smi --help-query-gpu",
+      "reason": "not_exposed",
+      "status": "unavailable"
+    },
+    "gpu.fan_pct": "available",
+    "gpu.mem_used_mib": "available",
+    "gpu.power_limit_w": "available",
+    "gpu.power_w": "available",
+    "gpu.pstate": "available",
+    "gpu.temp_c": "available",
+    "gpu.util_pct": "available",
+    "host.boot_id": "available",
+    "host.meminfo": "available",
+    "host.proc_stat": "available",
+    "host.var_crash_listing": "available",
+    "hwmon.fan_rpm": {
+      "reason": "not_exposed",
+      "status": "unavailable"
+    },
+    "hwmon.pwm": {
+      "reason": "not_exposed",
+      "status": "unavailable"
+    },
+    "kernel_log": "unverified",
+    "nvidia_smi_fields": [
+      "clocks.mem",
+      "clocks.sm",
+      "clocks_event_reasons.active",
+      "compute_cap",
+      "ecc.errors.uncorrected.volatile.total",
+      "fan.speed",
+      "index",
+      "memory.total",
+      "memory.used",
+      "name",
+      "pcie.link.gen.current",
+      "pcie.link.width.current",
+      "power.draw",
+      "power.draw.instant",
+      "power.limit",
+      "pstate",
+      "temperature.gpu",
+      "utilization.gpu",
+      "uuid"
+    ],
+    "rapl.dram": {
+      "reason": "permission_denied",
+      "status": "unavailable"
+    },
+    "rapl.package": {
+      "reason": "permission_denied",
+      "status": "unavailable"
+    }
+  },
+  "status": "draining",
+  "storage": [
+    {
+      "key": "runs",
+      "reserve_bytes": null
+    },
+    {
+      "key": "data",
+      "reserve_bytes": null
+    }
+  ],
+  "updated_at_utc": "2026-10-19T12:38:41Z",
+  "weights": []
+}

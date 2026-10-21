@@ -1,0 +1,200 @@
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Mon Oct 19 09:38:51 2026
+Driver Version                                         : 580.178.04
+CUDA Version                                           : 13.0
+
+Attached GPUs                                          : 2
+GPU 00000000:17:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : N/A
+            HW Power Brake Slowdown                    : N/A
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 0 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : N/A
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+    ECC Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Errors
+        Volatile
+            Single Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+            Double Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+        Aggregate
+            Single Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+            Double Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+    Temperature
+        GPU Current Temp                               : 34 C
+        GPU T.Limit Temp                               : N/A
+        GPU Shutdown Temp                              : 97 C
+        GPU Slowdown Temp                              : 92 C
+        GPU Max Operating Temp                         : N/A
+        GPU Target Temperature                         : 83 C
+        Memory Current Temp                            : N/A
+        Memory Max Operating Temp                      : N/A
+    GPU Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : 14.26 W
+        Current Power Limit                            : 250.00 W
+        Requested Power Limit                          : 250.00 W
+        Default Power Limit                            : 250.00 W
+        Min Power Limit                                : 150.00 W
+        Max Power Limit                                : 275.00 W
+    Power Samples
+        Duration                                       : 590.11 sec
+        Number of Samples                              : 119
+        Max                                            : 14.45 W
+        Min                                            : 14.26 W
+        Avg                                            : 14.38 W
+    GPU Memory Power Readings 
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+
+GPU 00000000:65:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : N/A
+            HW Power Brake Slowdown                    : N/A
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 0 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : N/A
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+    ECC Mode
+        Current                                        : N/A
+        Pending                                        : N/A
+    ECC Errors
+        Volatile
+            Single Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+            Double Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+        Aggregate
+            Single Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+            Double Bit            
+                Device Memory                          : N/A
+                Register File                          : N/A
+                L1 Cache                               : N/A
+                L2 Cache                               : N/A
+                Texture Memory                         : N/A
+                Texture Shared                         : N/A
+                CBU                                    : N/A
+                Total                                  : N/A
+    Temperature
+        GPU Current Temp                               : 31 C
+        GPU T.Limit Temp                               : N/A
+        GPU Shutdown Temp                              : 97 C
+        GPU Slowdown Temp                              : 92 C
+        GPU Max Operating Temp                         : N/A
+        GPU Target Temperature                         : 83 C
+        Memory Current Temp                            : N/A
+        Memory Max Operating Temp                      : N/A
+    GPU Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : 13.15 W
+        Current Power Limit                            : 250.00 W
+        Requested Power Limit                          : 250.00 W
+        Default Power Limit                            : 250.00 W
+        Min Power Limit                                : 150.00 W
+        Max Power Limit                                : 275.00 W
+    Power Samples
+        Duration                                       : 590.11 sec
+        Number of Samples                              : 119
+        Max                                            : 13.25 W
+        Min                                            : 12.88 W
+        Avg                                            : 13.02 W
+    GPU Memory Power Readings 
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+    Module Power Readings
+        Average Power Draw                             : N/A
+        Instantaneous Power Draw                       : N/A
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+

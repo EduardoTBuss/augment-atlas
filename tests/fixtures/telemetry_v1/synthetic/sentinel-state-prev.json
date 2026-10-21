@@ -1,0 +1,10 @@
+{
+  "boot_id": "aaaaaaaa-0000-4000-8000-00000000000a",
+  "final": false,
+  "last_fast_seq": 120443,
+  "last_sample_mono_s": 52200.512,
+  "last_sample_utc": "2026-10-18T02:15:30.512Z",
+  "node_id": "sim-a",
+  "schema": "atlas.sentinel-state.v1",
+  "updated_utc": "2026-10-18T02:15:31.000Z"
+}

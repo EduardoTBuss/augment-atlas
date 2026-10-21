@@ -17,6 +17,8 @@ import threading
 import uuid
 
 from .schema import JOB_ID_RE, TERMINAL_STATES, canonical_json, digest, new_record, prepare_job, validate_record
+from . import fleet as fleet_rules
+from . import fleet_schema
 
 
 class QueueError(RuntimeError):
@@ -33,6 +35,11 @@ class StaleAttempt(QueueConflict):
 
 class InvalidTransition(QueueConflict):
     pass
+
+
+#: Additive documents outside ``jobs/`` (3.2g): ``_records()`` never lists them.
+DOCUMENT_PATH = re.compile(r"^fleet/(?:[a-z0-9][a-z0-9_-]{0,63}/){0,3}[a-z0-9][a-z0-9_-]{0,63}\.json$")
+NODE_CARD_PATH = re.compile(r"^fleet/nodes/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\.json$")
 
 
 def utc_now():
@@ -184,7 +191,7 @@ class GitQueue:
         if self._git("check-ref-format", f"refs/heads/{branch}", check=False).returncode:
             raise ValueError("invalid queue branch")
 
-    def _git(self, *args, input=None, check=True, env=None):
+    def _git(self, *args, input=None, check=True, env=None, binary=False):
         settings = os.environ.copy()
         settings.update({"GIT_TERMINAL_PROMPT": "0", "GIT_AUTHOR_NAME": "AugmentAtlas queue",
                          "GIT_AUTHOR_EMAIL": "queue@example.invalid", "GIT_COMMITTER_NAME": "AugmentAtlas queue",
@@ -192,8 +199,10 @@ class GitQueue:
         if env:
             settings.update(env)
         try:
+            # ``binary`` (documents only): exact bytes, no newline translation on Windows.
+            text = {} if binary else {"text": True, "encoding": "utf-8"}
             result = subprocess.run(["git", "-C", str(self.checkout), *args], input=input,
-                                    capture_output=True, text=True, encoding="utf-8", env=settings, timeout=60)
+                                    capture_output=True, env=settings, timeout=60, **text)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise QueueError(f"Git operation unavailable: {type(exc).__name__}") from exc
         if check and result.returncode:
@@ -319,10 +328,33 @@ class GitQueue:
         record["history"].append(event)
         return validate_record(record)
 
-    def claim(self, job_id, owner):
+    @staticmethod
+    def _check_fleet_claim(owner, fleet):
+        """Pure validation of a fleet claim (docs/fleet-protocol.md 3.2c/d); no Git I/O.
+
+        Returns a private deep copy so later caller mutation cannot alter what is published.
+        """
+        try:
+            block = fleet_schema.validate_claim_fleet(copy.deepcopy(fleet))
+        except fleet_schema.SchemaError as exc:
+            raise ValueError(f"invalid fleet claim block: {exc}") from exc
+        node_id, worker = owner.get("node_id"), owner.get("worker")
+        if any(not isinstance(value, str) or not value for value in (node_id, worker)):
+            raise ValueError("fleet claim requires owner.node_id and owner.worker")
+        # reconcile_stopped_attempt compares owner.server with settings.server (3.2c).
+        if owner.get("server") != node_id:
+            raise ValueError("fleet claim requires owner.server == owner.node_id")
+        # Single writer per worker: the lease is read from this node's own ref (D3, 4.2).
+        if block["heartbeat_ref"] != f"refs/heads/fleet-hb/{node_id}/{worker}":
+            raise ValueError("fleet.heartbeat_ref does not belong to owner node/worker")
+        return block
+
+    def claim(self, job_id, owner, fleet=None):
         if not isinstance(owner, dict) or not owner:
             raise ValueError("owner must be a nonempty public alias object")
         canonical_json(owner)
+        if fleet is not None:
+            fleet = self._check_fleet_claim(owner, fleet)
         attempt_id, token = uuid.uuid4().hex, uuid.uuid4().hex
         with self._lock:
             for _ in range(self.max_retries):
@@ -333,9 +365,15 @@ class GitQueue:
                     return current
                 if current["state"] != "pending" or any(records[dependency]["state"] != "succeeded" for dependency in current["spec"]["dependencies"]):
                     return None
+                event = {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"}
+                if fleet is not None:
+                    # The claim binds the node's plan to this immutable spec (F5, 3.3): refuse before writing.
+                    if fleet["requirements_sha256"] != digest(fleet_rules.job_requirements(current["spec"])):
+                        raise ValueError("fleet.requirements_sha256 does not match the job requirements")
+                    event["fleet"] = copy.deepcopy(fleet)
                 record = copy.deepcopy(current)
                 record.update(state="claimed", attempt_id=attempt_id, token=token, owner=copy.deepcopy(owner))
-                self._append(record, {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"})
+                self._append(record, event)
                 confirmed = self._publish(head, [record], f"queue: claim {job_id}")
                 current = self._get(confirmed, job_id)
                 if current["attempt_id"] == attempt_id and current["token"] == token:
@@ -616,3 +654,83 @@ class GitQueue:
                         raise QueueConflict("concurrent seed changed immutable spec")
                     return [confirmed[spec["job_id"]] for spec in prepared]
             raise QueueConflict("seed_final exhausted concurrent retries")
+
+    # ------------------------------------------------------------ documents (F5, 3.2g/6.3)
+
+    @staticmethod
+    def _document_bytes(path, content):
+        if not isinstance(path, str) or not DOCUMENT_PATH.fullmatch(path):
+            raise ValueError("document path must be fleet/<name>.json (never jobs/)")
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        if not isinstance(content, (bytes, bytearray)) or not content:
+            raise ValueError("document content must be nonempty bytes or text")
+        content = bytes(content)
+        card = NODE_CARD_PATH.fullmatch(path)
+        if card:
+            # A public node card is validated before any Git I/O (6.3).
+            try:
+                document = json.loads(content.decode("utf-8"))
+                fleet_schema.validate_public_card(document)
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise ValueError(f"invalid node card: {exc}") from exc
+            if document.get("node_id") != card.group(1):
+                raise ValueError("node card path does not match its node_id")
+        return content
+
+    def _document_blob(self, head, path):
+        if head is None:
+            return None
+        listing = self._git("ls-tree", head, "--", path).stdout.strip()
+        if not listing:
+            return None
+        meta, _, name = listing.partition("\t")
+        _mode, kind, blob = meta.split()
+        if name != path or kind != "blob":
+            raise QueueError("document path is not a regular file")
+        return blob
+
+    def get_document(self, path):
+        """``(content bytes, blob sha)`` of ``path`` on the queue branch, or ``(None, None)``."""
+        if not isinstance(path, str) or not DOCUMENT_PATH.fullmatch(path):
+            raise ValueError("document path must be fleet/<name>.json (never jobs/)")
+        with self._lock:
+            head = self._fetch_head()
+            blob = self._document_blob(head, path)
+            if blob is None:
+                return None, None
+            return self._git("cat-file", "blob", blob, binary=True).stdout, blob
+
+    def put_document(self, path, content, expected_blob):
+        """CAS write of one document outside ``jobs/``; returns the confirmed blob sha.
+
+        ``expected_blob`` is the blob sha read with ``get_document`` (``None``: must not
+        exist yet). Writing the bytes already present is idempotent. The commit keeps the
+        rest of the tree (``jobs/`` included) exactly as observed.
+        """
+        data = self._document_bytes(path, content)
+        if expected_blob is not None and (not isinstance(expected_blob, str) or not re.fullmatch(r"[0-9a-f]{40}", expected_blob)):
+            raise ValueError("expected_blob must be a 40-hex blob sha or None")
+        with self._lock:
+            target = self._git("hash-object", "-w", "--stdin", input=data, binary=True).stdout.decode("ascii").strip()
+            for _ in range(self.max_retries):
+                head = self._fetch_head()
+                current = self._document_blob(head, path)
+                if current == target:
+                    return target
+                if current != expected_blob:
+                    raise QueueConflict("document changed; read it again before writing")
+                with tempfile.TemporaryDirectory(prefix="augment-atlas-index-") as directory:
+                    env = {"GIT_INDEX_FILE": str(Path(directory) / "index")}
+                    self._git("read-tree", head if head else "--empty", env=env)
+                    self._git("update-index", "--add", "--cacheinfo", f"100644,{target},{path}", env=env)
+                    tree = self._git("write-tree", env=env).stdout.strip()
+                args = ["commit-tree", tree] + (["-p", head] if head else [])
+                commit = self._git(*args, input=f"queue: put {path}\n").stdout.strip()
+                try:
+                    self._push(commit)
+                except QueueError:
+                    pass  # Only the refetch decides.
+                if self._document_blob(self._fetch_head(), path) == target:
+                    return target
+            raise QueueConflict("put_document exhausted concurrent retries")
