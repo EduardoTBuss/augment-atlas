@@ -295,6 +295,53 @@ def load_global_trusted_inputs(code,data,spec):
                                view=copy.deepcopy(view),recipe=copy.deepcopy(recipe))
 
 
+def _campaign_pin(settings):
+    """Operator pin of the S3 campaign plus the queue needed for its anchors."""
+    pin=settings.get('campaign_sha256')
+    if not isinstance(pin,str) or not re.fullmatch(r'[0-9a-f]{64}',pin):
+        _global_fail('campaign_anchor_missing','phase=final workers need settings.campaign_sha256 (the anchored '
+                     'campaign) and its queue; final jobs are never claimed without it')
+    if not isinstance(settings.get('campaign_commit'),str) or not re.fullmatch(r'[0-9a-f]{40}',settings['campaign_commit']):
+        _global_fail('campaign_anchor_missing','phase=final workers need settings.campaign_commit (C_campaign '
+                     'recorded when the campaign anchor was published) to detect a rewritten queue history')
+    for key in ('queue_checkout','remote'):
+        if not isinstance(settings.get(key),str) or not settings[key].strip():
+            _global_fail('campaign_anchor_missing',f'phase=final workers need settings.{key} to audit the anchors')
+    return pin
+
+
+def _final_manifest_presets(code,trusted):
+    """Final MANIFEST.json of the pinned checkout and the arm presets of its pinned configs."""
+    from . import global_jobs as gj
+    from .contracts import ARMS
+    root=Path(code).resolve()
+    try:
+        manifest=json.loads((root/gj.config_dir(trusted.cfg['dataset']['id'],'final')/'MANIFEST.json')
+                            .read_bytes().decode('ascii'))
+    except (OSError,UnicodeDecodeError,ValueError,RecursionError) as error:
+        _global_fail('config_identity_mismatch',f'final MANIFEST.json unreadable ({type(error).__name__})')
+    if type(manifest) is not dict or type(manifest.get('files')) is not list:
+        _global_fail('config_identity_mismatch','final MANIFEST.json malformed')
+    presets={}
+    for entry in manifest['files']:
+        name=entry.get('path') if type(entry) is dict else None
+        if not isinstance(name,str) or not name.startswith(gj.config_dir(trusted.cfg['dataset']['id'],'final')+'/'):
+            _global_fail('config_identity_mismatch','final MANIFEST.json entry outside the final config directory')
+        try:
+            data=root.joinpath(*name.split('/')).read_bytes()
+            cfg=json.loads(data.decode('ascii'))
+            arm,augmentation=cfg['augmentation']['arm'],cfg['augmentation']
+        except (OSError,UnicodeDecodeError,ValueError,RecursionError,KeyError,TypeError) as error:
+            _global_fail('config_identity_mismatch',f'final config of the MANIFEST unreadable ({type(error).__name__})')
+        if gj._bytes_sha256(data)!=entry.get('sha256'):
+            _global_fail('config_identity_mismatch','final config bytes differ from MANIFEST.json')
+        if presets.setdefault(arm,augmentation)!=augmentation:
+            _global_fail('config_identity_mismatch','one arm has two augmentation presets in the final MANIFEST')
+    if set(presets)!=set(ARMS):
+        _global_fail('config_identity_mismatch','final MANIFEST.json does not cover the ten arms')
+    return manifest,presets
+
+
 def d_view_listing(directory,view_file):
     """Recompute the D-view listing [[path, sha256], ...] sorted by path (spec 6.3).
 
@@ -391,10 +438,9 @@ class DockerRuntime:
 
     def preflight(self):
         if self.s['phase']=='final':
-            # Fails before any external command, exactly like the legacy refusal.
-            _global_fail('campaign_anchor_missing','phase=final workers need the S3 campaign anchor/chronology '
-                         'audit, which is not implemented in this slice; final jobs are never claimed')
-        if self.s['phase']=='hpo':
+            # Without an operator campaign pin and queue, fail before any external command.
+            _campaign_pin(self.s)
+        elif self.s['phase']=='hpo':
             _views_root(self.s)
         elif self.s['phase'] != 'smoke':
             raise ValueError('This prototype only executes explicitly selected smoke phase')
@@ -436,7 +482,7 @@ class DockerRuntime:
         Everything comes from the pinned checkout (materialized bytes + MANIFEST)
         and the operator-configured host data/views roots, before any claim.
         HPO: the D-view listing is recomputed and becomes the ONLY /data mount.
-        Final: refused at the campaign gate (S3) after all S1 checks.
+        Final: all S1 checks, then the S3 campaign gate (audit_campaign + audit_chronology).
         """
         if spec.get('phase')!=self.s.get('phase'):
             _global_fail('global_config_invalid','job phase differs from this worker phase')
@@ -454,10 +500,63 @@ class DockerRuntime:
             mount=dict(kind='data_root',source=str(self.data),destination='/data',readonly=True)
         return spec['config'],cfg,trusted,mount
 
+    def campaign_queue(self):
+        return GitQueue(self.s['queue_checkout'],self.s['remote'],self.s.get('branch','queue'))
+
     def campaign_gate(self,spec,trusted):
-        """Spec 6.5: a final job needs anchors/<ds>/campaign-<sha>.json audited in the queue HEAD (S3)."""
-        _global_fail('campaign_anchor_missing','final jobs require the S3 campaign anchor audit, '
-                     'which is not implemented in this slice')
+        """Spec 6.5/7.2 (S3): audited campaign + anchor chronology in the queue HEAD before any final claim.
+
+        The private campaign is re-derived from its declared inputs
+        (``global_campaign.audit_campaign``, including the Q6 code identity from
+        the pinned checkout's Git), bound to this job, checkout and image; then
+        ``audit_chronology`` must find C_freeze < C_campaign < every final job.
+        A missing pin, document or anchor stays ``campaign_anchor_missing``.
+        """
+        from . import global_campaign as gc
+        from . import global_jobs as gj
+        pin=_campaign_pin(self.s)
+        bound=spec.get('global') if isinstance(spec.get('global'),dict) else {}
+        if bound.get('campaign_sha256')!=pin:
+            _global_fail('campaign_anchor_missing','job campaign_sha256 differs from the worker campaign pin')
+        cfg=trusted.cfg; dataset=cfg['dataset']['id']
+        campaign=_read_host_json(self.data,gj._private_name('campaign',dataset,pin),'campaign_anchor_missing')
+        freeze=_read_host_json(self.data,cfg['global']['freeze_file'],'freeze_not_sealed')
+        evidence=None
+        if cfg['global']['freeze_kind']=='hpo_d' and isinstance(freeze,dict):
+            evidence=_read_host_json(self.data,gj._private_name('evidence',dataset,freeze.get('selection_evidence_sha256')),
+                                     'freeze_not_sealed')
+        manifest,presets=_final_manifest_presets(self.code,trusted)
+        key=(pin,manifest.get('sha256'))
+        cached=getattr(self,'_campaign_audits',{})
+        if key not in cached:
+            dataset_source={k:cfg['dataset'][k] for k in ('adapter','manifest','manifest_sha256')}
+            audited=gc.audit_campaign(trusted.records,trusted.pools,campaign,expected_campaign_sha256=pin,
+                                      freeze=freeze,dataset_source=dataset_source,augmentation_presets=presets,
+                                      evidence=evidence,expected_manifest_sha256=manifest.get('sha256'),
+                                      code_repo=self.code)
+            cached[key]=(audited,copy.deepcopy(campaign))
+            self._campaign_audits=cached
+        # Only the audited copy is used below (a host file edited later is never trusted).
+        audit,campaign=cached[key]
+        if (spec.get('code_commit')!=campaign['runtime']['code_commit']
+                or getattr(self,'commit',None)!=spec.get('code_commit')):
+            _global_fail('code_identity_mismatch','final job/checkout commit differs from the sealed campaign code_commit')
+        if getattr(self,'image',None)!=campaign['runtime']['image_id']:
+            _global_fail('code_identity_mismatch','worker image differs from the image pinned by the campaign')
+        if cfg['training']['seed'] not in audit['authorized_seeds']:
+            _global_fail('campaign_invalid','final seed is not in the stage authorized by the campaign')
+        queue=self.campaign_queue()
+        head=queue._fetch_head()
+        reports=getattr(self,'_chronology',{})
+        if (pin,head) not in reports:
+            # Recomputed whenever the queue HEAD moves; cached only for one HEAD.
+            reports={(pin,head):gc.audit_chronology(queue,campaign,freeze=freeze,head=head,
+                                                    recorded_campaign_commit=self.s['campaign_commit'])}
+            self._chronology=reports
+        job_id=spec.get('job_id')
+        if not isinstance(job_id,str) or not re.fullmatch(r'[0-9a-f]{64}',job_id) or queue.read_path(head,f'jobs/{job_id}.md') is None:
+            _global_fail('campaign_anchor_missing','final job is not in the audited queue HEAD')
+        return reports[(pin,head)]
 
     def config_for(self,spec):
         if is_global_spec(spec):

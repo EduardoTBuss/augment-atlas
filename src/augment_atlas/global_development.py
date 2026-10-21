@@ -2,6 +2,11 @@
 
 Checksums bind declarations; they cannot attest patient identity, chronology,
 historical exposure, or the actual files opened by an evidence producer.
+
+Caveat (``global_campaign.SELECTION_BIAS_CAVEAT``): reshuffling folds does not
+remove selection bias if patients used to choose hyperparameters fall into a
+test set (Bradshaw 2023, DOI 10.1148/ryai.220232); D therefore stays out of
+every test.
 """
 from __future__ import annotations
 

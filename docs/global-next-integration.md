@@ -52,6 +52,11 @@ PatientID e cronologia reais e revisados.
 **Caveat INbreast:** só 4 grupos/4 positivas em D_select ⇒ HPO instável.
 **Decidido (Q1, 19/10/2026):** receita externa fixa no INbreast (sem HPO). PatientID não comprovado ⇒ piloto, não confirmatório. Pools
 auditados: D 77 img/21 grupos, D_fit 59/17, D_select 18/4, E 310/82.
+**Emenda (Eduardo, 20/10/2026; implementada na S3):** o INbreast roda **duas
+campanhas** sobre os mesmos pools, ambas `exploratory`: (a) receita externa fixa
+(Q2) e (b) HPO **exploratório** em D (4 lr log-espaçados, 1 seed, D/E normal:
+HPO só em D). O relatório (S4) compara as duas. Identidades e cronologia
+separadas: ver §6.9 "(S3)" e §7.2 "(S3)".
 
 **Métricas primárias:** INbreast AUROC; DR ordinal QWK; pele: emenda ISIC2020
 binária (melanoma vs demais) com AUROC binária primária e AP secundária
@@ -597,6 +602,72 @@ de campanha **no `head` sobre o qual o commit será construído** (logo, o commi
 dos jobs é filho de um commit que contém a âncora) e `spec.global.campaign_sha256`
 igual. `_records` continua lendo só `jobs/`.
 
+**Implementação S3 (`global_campaign.py` + aditivo em `queue.py`; divergências
+registradas):**
+- **Chaves extras do `campaign.json` (S3):** `matrix` (matriz declarada ×
+  autorizada, abaixo), `code_identity` + `q6_policy` (Q6, abaixo) e
+  `runtime.environment_sha256` (copiado do freeze). `audit_campaign` re-sela o
+  documento a partir das entradas declaradas e exige o mesmo hash; nada é
+  aceito por declaração.
+- **`execution_stages` (S3, Q13):** a matriz completa é sempre declarada
+  (`seeds == final_policy.seeds`, estágios numerados 1..n particionando as seeds
+  na ordem da política). Uma campanha v1 **autoriza só o estágio 1**; os demais
+  ficam `declared_not_authorized` e aparecem explicitamente em
+  `matrix.missing` (`{stage, seeds, cells, reason:
+  "stage_not_authorized_by_this_campaign"}`), com `declared_cells = 10 × 5 ×
+  |seeds|`, `authorized_cells`, `missing_cells` e `complete`. Os configs
+  (`configs.count`, `manifest_sha256`) cobrem exatamente o estágio autorizado
+  (piloto: 1 seed ⇒ 50 jobs de 150 declarados). Executar o estágio 2 exige uma
+  campanha nova (com o mesmo freeze isso é `anchor_conflict`; ver o slot
+  abaixo) — decisão a tomar antes do estágio 2, não implementada aqui.
+  `audit_chronology` e o runtime recusam job final com seed fora do estágio
+  autorizado (`campaign_invalid`).
+- **Q6 `q6_policy="same_code_identity_v1"` (S3, PENDENTE de confirmação do
+  Eduardo):** literalmente "mesmo commit" é impossível, porque os configs
+  finais contêm `freeze_sha256` e só podem ser commitados depois do freeze.
+  Interpretação implementada, isolada em `_q6_same_code_identity_v1`
+  (`Q6_POLICY_STATUS="pending_eduardo_confirmation"`): o commit do freeze
+  (`freeze.runtime.commit`, = commit do HPO) é ancestral de
+  `runtime.code_commit`; entre os dois só mudam arquivos sob
+  `configs/global/**`; o hash da árvore Git de `src/`, `scripts/`, `docker/` e
+  `pyproject.toml` é igual nos dois; a imagem é a mesma (`image_id` pinado no
+  selo e conferido pelo worker). `derive_code_identity` deriva a evidência do
+  Git; `audit_campaign(code_repo=...)` a recalcula. Mudança de política = nova
+  função registrada em `Q6_POLICIES`.
+- **Âncora com `recipe_source` (S3):** chave nova `recipe_source ∈ {hpo_d,
+  external_fixed}` (derivada do `protocol` do freeze ou de `campaign.freeze.kind`;
+  `null` para `pools`). **Slot** = `(kind, pools_sha256, recipe_source)`: no
+  máximo um documento por slot (`anchor_conflict`), o que permite as duas
+  campanhas do INbreast (uma por fonte) e continua recusando reselo com
+  receita/seeds trocadas na mesma fonte.
+- **Pré-condições na fila (S3):** `publish_anchor` recusa freeze/campanha se já
+  houver job `final` dos pools (`final_job_before_seal`, de **qualquer**
+  campanha: as duas campanhas de um pools são seladas antes do primeiro job
+  final); freeze `external_fixed` se já houver job HPO dos pools
+  (`external_recipe_contaminated`: a receita externa é ancorada antes de existir
+  qualquer score HPO do dataset); freeze `hpo_d` com job HPO dos pools não
+  terminal (`hpo_job_after_freeze`); campanha sem a âncora do seu freeze no HEAD
+  (`freeze_anchor_missing`) ou com freeze de outra fonte (`anchor_conflict`).
+  `seed` recusa job HPO global depois de âncora `hpo_d` dos mesmos pools
+  (`hpo_job_after_freeze`) e job final global (só via `seed_final`).
+  `seed_final` exige, no `head` do commit, a âncora da campanha com o mesmo
+  dataset/pools/freeze/`freeze_kind` (`campaign_anchor_missing`) e o mesmo
+  `code_commit` (`code_identity_mismatch`). Caminho legado (smoke):
+  `IDENTITY_FIELDS`, envelope, estados, retry e bytes dos registros intocados.
+- **Rótulo (S3):** `label_reasons` derivadas (`prior_exposure_<valor>`,
+  `patient_identity_unproven`, `analysis_plan_missing`,
+  `external_freeze_on_exposed_dataset`, `inbreast_pilot_exploratory`);
+  `confirmatory_candidate` com qualquer razão ⇒ `campaign_label_forbidden`.
+  `caveats` ≠ conjunto fixo, na ordem ⇒ `campaign_caveat_missing`.
+- **Runtime fase `final` (S3):** o worker exige `settings.campaign_sha256`
+  (pin), `settings.campaign_commit` (C_campaign registrado ao publicar a
+  âncora), `queue_checkout` e `remote` já no `preflight` (antes de qualquer
+  comando externo); antes do claim, `campaign_gate` lê
+  `global/<ds>/campaign-<pin>.json` do host, roda `audit_campaign` (com Q6 do
+  Git do checkout fixado e o `MANIFEST.json` final do checkout), confere
+  commit/imagem do worker e seed autorizada, roda `audit_chronology` no HEAD
+  atual da fila (cache só para o mesmo HEAD) e exige o job no HEAD auditado.
+
 ### 6.10 Relatório final `report.json` (privado) + resumo público
 
 `build_report(campaign, pools, records, run_dirs, queue_snapshot)`:
@@ -738,6 +809,32 @@ usa só checkout fixado + `settings.data`/`settings.views`; pools e records
 confiáveis vão para `validate_global_predictions`; não há fallback para o
 validador legado.
 
+Códigos adicionados na fatia S3 (`global_campaign.py`/`queue.py`/`runtime.py`,
+aditivos): `campaign_invalid` (S3) (selo fora do schema fechado, checksum,
+estágios que não particionam as seeds, re-selo divergente das entradas
+declaradas, contagem de configs, job final com seed fora do estágio
+autorizado), `code_identity_mismatch` (S3) (evidência Q6 fora da política
+`same_code_identity_v1`, commit do job/checkout ou imagem do worker ≠ selo,
+`code_commit` do job ≠ âncora), `campaign_label_forbidden` (S3)
+(`confirmatory_candidate` com razão de exploratório, p. ex. INbreast, ou rótulo
+desconhecido), `campaign_caveat_missing` (S3) (caveats sem
+`bradshaw_2023_shuffle_does_not_remove_selection_bias` ou ≠ conjunto fixo),
+`anchor_invalid` (S3) (âncora fora do schema `global-anchor-v1`, caveat não
+literal, campos incoerentes com o `kind`/`recipe_source`, checksum, caminho ≠
+conteúdo), `chronology_invalid` (S3) (histórico da fila não linear/merge,
+registro de job removido ou com spec reescrita, `C_freeze` não estritamente
+antes de `C_campaign`, `C_campaign` ≠ commit registrado na selagem). Reuso S3:
+`anchor_conflict` (mesmo caminho com bytes diferentes, âncora alterada/removida
+depois de criada, segundo documento no mesmo slot), `final_job_before_seal`,
+`hpo_job_after_freeze` (job HPO criado/alterado em ou depois de `C_freeze`
+`hpo_d`, ou não terminal antes dele), `external_recipe_contaminated` (também:
+job HPO dos pools em ou antes do `C_freeze` externo),
+`search_space_mismatch` (job HPO dos pools ligado a outro plan/search-space que
+o do freeze `hpo_d`), `freeze_anchor_missing`, `campaign_anchor_missing` (sem
+pin/âncora/documento, job ligado a campanha não ancorada antes dele ou a outro
+freeze), `seed_reuse_forbidden`, `config_identity_mismatch` (MANIFEST commitado
+≠ recálculo), `freeze_not_sealed`.
+
 ---
 
 ## 7. Fluxos
@@ -801,6 +898,23 @@ Entram no hash, em camadas (cada camada referencia a anterior pelo hash):
 Resultado continua `execution_verified=false`: quem controla o repositório
 poderia, em tese, fabricar um histórico antes de publicá-lo. A âncora dá
 **auditabilidade**, não prova criptográfica.
+
+**Implementação S3 (`audit_chronology(queue, campaign, *, freeze,
+recorded_campaign_commit, head)`; divergências registradas):** a assinatura
+recebe o `GitQueue` e o próprio `campaign` (dataset/pools/freeze vêm dele). O
+histórico é lido com **um** `git log --raw` e os blobs com **um** `git cat-file
+--batch` (o worker repete a auditoria a cada HEAD novo). Por campanha (as duas
+do INbreast são auditadas separadamente): passo 3 vale para **todo** job final
+dos pools (de qualquer campanha) — nenhum em ou antes de `C_campaign` desta
+campanha — e cada job final precisa aparecer depois da âncora da campanha a que
+está ligado; os desta campanha precisam do mesmo freeze, `code_commit` e seed
+autorizada. Passo 4 depende de `recipe_source`: `hpo_d` como acima, mais
+plan/search-space iguais aos do freeze (uma busca por pools); `external_fixed`
+exige que todo job HPO dos pools apareça **estritamente depois** do `C_freeze`
+externo (por isso, no INbreast, a âncora da receita externa vem antes do
+primeiro job HPO da campanha (b)). O spec de cada job precisa ser idêntico na
+primeira e na última versão (registro reescrito ⇒ `chronology_invalid`).
+Snapshot da API de eventos do GitHub (passo 6): não implementado.
 
 ### 7.3 Consumidor do treino final (adapter D/E/final)
 
@@ -1062,7 +1176,13 @@ job real.
    (nunca E), batch/workers da receita, para estimar o tempo por job.
 3. `seal_external_freeze` (receita de Q2) → âncora `recipe_freeze`.
    Q1 decidida (19/10/2026): sem HPO no INbreast; a alternativa de HPO
-   exploratório foi descartada.
+   exploratório foi descartada. **Emenda 20/10/2026 (§1):** roda também a
+   campanha (b) de HPO exploratório; ordem obrigatória na fila: âncora da
+   receita externa → jobs HPO (D-view) → âncora do freeze `hpo_d` → as duas
+   campanhas → `seed_final` de cada uma (nenhum job final antes das duas
+   âncoras de campanha). Os configs finais das duas ficam em commits de código
+   distintos (o diretório `configs/global/inbreast/final/` comporta uma
+   materialização por commit).
 4. `materialize_configs(final)` só para a seed[0]: 10 braços × 5 folds = 50
    configs → commit X → `seal_campaign` (`execution_stages` estágio 1) → âncora.
 5. `seed_final` dos 50 jobs → workers `phase=final` com o teto térmico vigente
@@ -1114,19 +1234,19 @@ entre braços, com as ressalvas acima.
 
 | # | Pergunta | Decisão |
 |---|---|---|
-| Q1 | INbreast: receita externa fixa ou HPO exploratório? | **DECIDIDA (Eduardo, 19/10/2026):** receita externa fixa (sem HPO); o produtor HPO é validado em fixture sintética e usado pela primeira vez no próximo dataset (mBRSET) |
+| Q1 | INbreast: receita externa fixa ou HPO exploratório? | **DECIDIDA (Eduardo, 19/10/2026):** receita externa fixa (sem HPO); o produtor HPO é validado em fixture sintética e usado pela primeira vez no próximo dataset (mBRSET). **Emendada (Eduardo, 20/10/2026):** duas campanhas no INbreast, (a) receita externa fixa e (b) HPO exploratório (4 lr, 1 seed), ambas `exploratory`, comparadas no relatório (§1, §6.9 "(S3)") |
 | Q2 | Qual receita externa e de que fonte? | **DECIDIDA (Eduardo, 19/10/2026):** AdamW lr 1e-4, wd 1e-4, cosine por época, 20 épocas, batch 16, 224 px, CE sem pesos; rótulo "convenção de fine-tuning, sem scores do INbreast"; não usar nada escolhido no piloto |
 | Q3 | Folds de E selados antes do HPO (v1 atual) servem como "nova seed"? | **DECIDIDA (Eduardo, 19/10/2026):** sim (ADR-02), com seed de avaliação distinta das de desenvolvimento/seleção |
 | Q4 | Limiar das secundárias binárias | **DECIDIDA (Eduardo, 19/10/2026):** 0,5 fixo a priori com `ge`; F1/BA claramente secundárias; não ajustar em D_select |
 | Q5 | Agregação primária | **DECIDIDA (Eduardo, 19/10/2026):** média dos 5 folds e depois média das seeds; E concatenado como sensibilidade |
-| Q6 | O mesmo commit para HPO e final? | **DECIDIDA (Eduardo, 19/10/2026):** sim; qualquer exceção vira emenda explícita |
+| Q6 | O mesmo commit para HPO e final? | **DECIDIDA (Eduardo, 19/10/2026):** sim; qualquer exceção vira emenda explícita. **Interpretação PENDENTE (S3, 20/10/2026):** "mesmo commit" literal é impossível (configs finais contêm `freeze_sha256`); implementado `same_code_identity_v1` (mesma árvore de `src/`, `scripts/`, `docker/`, `pyproject.toml` + imagem pinada; só `configs/global/**` muda), isolado em `_q6_same_code_identity_v1` e marcado pendente no código (§6.9 "(S3)") |
 | Q7 | Espaço de busca padrão (outros datasets) | **DECIDIDA (Eduardo, 19/10/2026):** 4 valores de lr log-espaçados, wd fixo, 1 seed, épocas fixas ≤ 20, `c00` = default |
 | Q8 | Tórax: labels e política | **DECIDIDA (Eduardo, 19/10/2026):** 5 labels de competição; treino `-1`→ignorar, blank→0; avaliação `-1`→excluir, blank→0; só frontais; mínimo de positivos por label/fold fixado antes do split |
 | Q9 | Subamostrar CheXpert/ISIC2020 por paciente? | **DECIDIDA (Eduardo, 19/10/2026):** sim, N declarado antes do split |
 | Q10 | Plano de análise (contrastes/multiplicidade) | **DECIDIDA (Eduardo, 19/10/2026):** plano selado no `campaign` antes de E (proposta de 4 contrastes em `protocol-draft.md`); sem plano ⇒ só descritivo |
 | Q11 | Qual manifesto INbreast? | **DECIDIDA (Eduardo, 19/10/2026):** resolvido; INbreast = 387 imagens (1.024 era o soak sintético). Conferir `records_sha256` no piloto |
 | Q12 | Pele: emenda ISIC2020 binária? | **DECIDIDA (Eduardo, 19/10/2026):** emenda ISIC2020 binária (melanoma vs demais); AUROC binária primária, AP secundária principal |
-| Q13 | Seeds no piloto | **DECIDIDA (Eduardo, 19/10/2026):** 1 seed (estágio 1) declarada como matriz incompleta; as 3 seeds só depois do piloto aceito |
+| Q13 | Seeds no piloto | **DECIDIDA (Eduardo, 19/10/2026):** 1 seed (estágio 1) declarada como matriz incompleta; as 3 seeds só depois do piloto aceito. S3: `execution_stages` + `matrix` (§6.9 "(S3)"); a campanha autoriza só o estágio 1 (50 jobs) e lista os faltantes |
 
 ---
 
