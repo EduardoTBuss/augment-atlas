@@ -578,6 +578,8 @@ def open_for_attempt(output, *, torch, device, context, grad_clip_max_norm=None)
     if not ENABLED:
         return NullTelemetry()
     try:
+        # ``context`` may be a callable so that building it cannot raise in the trainer.
+        context = context() if callable(context) else context
         return TrainTelemetry(output, torch=torch, device=device, context=context,
                               grad_clip_max_norm=grad_clip_max_norm)
     except Exception:

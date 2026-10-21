@@ -59,6 +59,9 @@ COMPARISON_DIFFERENCE = "hpo_d_minus_external_fixed"
 INBREAST_D_SELECT_WARNING = (
     "INbreast D_select has only about 4 groups / 4 positive groups (spec 1): the exploratory HPO choice is "
     "unstable and the comparison with the external fixed recipe is descriptive only.")
+# The collector's failure reason is copied into the public summary: a short
+# machine code only, never free text (paths, hostnames, record identifiers).
+REASON_CODE = re.compile(r"[a-z0-9][a-z0-9_:.-]{0,63}")
 NO_INFERENCE_REASON = "no_inferential_interval_without_analysis_plan"
 PLAN_NOT_EXECUTED_REASON = "analysis_plan_execution_not_implemented_in_s4"
 
@@ -129,7 +132,7 @@ def _check_telemetry(value):
         item = source.get(name)
         if item is not None:
             if name == "status":
-                ok = item in _TELEMETRY_STATUSES
+                ok = type(item) is str and item in _TELEMETRY_STATUSES
             elif name in _TELEMETRY_INTEGERS:
                 ok = type(item) is int and item >= 0
             else:
@@ -149,9 +152,10 @@ def _check_entry(entry):
     if entry["status"] == "succeeded":
         if type(entry["predictions"]) is not dict or entry["reason"] is not None:
             _fail("report_input_invalid", "a succeeded entry carries its predictions.json and no reason")
-    elif (entry["predictions"] is not None or type(entry["reason"]) is not str or not entry["reason"]
-          or entry["reason"] != entry["reason"].strip()):
-        _fail("report_input_invalid", "a failed/timeout/interrupted entry has null predictions and a reason")
+    elif (entry["predictions"] is not None or type(entry["reason"]) is not str
+          or not REASON_CODE.fullmatch(entry["reason"])):
+        _fail("report_input_invalid", "a failed/timeout/interrupted entry has null predictions and a reason code "
+              f"matching {REASON_CODE.pattern} (no free text, paths or identifiers)")
     if entry["initial_state_sha256"] is not None and not _hex64(entry["initial_state_sha256"]):
         _fail("report_input_invalid", "initial_state_sha256 must be null or a lowercase hex64")
     _check_telemetry(entry["telemetry_summary"])
@@ -320,6 +324,21 @@ def _scan_identifiers(document, records, where):
         elif type(value) is str and value in forbidden:
             _fail("identifier_leak", f"{where} contains a record identifier")
     walk(document)
+
+
+def _scan_reasons(report, records):
+    """Failure reasons are collector text: refuse any that embeds a record ID, group or path (substring)."""
+    needles = set()
+    for row in records:
+        for value in (row.get("id"), row.get("group"), row.get("path")):
+            if type(value) is str and value:
+                needles.add(value.lower())
+                needles.add(Path(value).name.lower())
+    needles.discard("")
+    for cell in report["matrix"]["cells"]:
+        reason = cell["reason"]
+        if type(reason) is str and any(needle in reason.lower() for needle in needles):
+            _fail("identifier_leak", "a failure reason embeds a record identifier or path")
 
 
 # --------------------------------------------------------------------------
@@ -570,6 +589,7 @@ def build_report(campaign, collected_artifacts, pools, records, *, expected_camp
         "chronology": _chronology_block(chronology, campaign)}
     report = _seal(report)
     _scan_identifiers(report, records, "report")
+    _scan_reasons(report, records)
     check_report(report)
     if output is not None:
         gd._publish(output, report, check_report)
@@ -659,6 +679,24 @@ def public_summary(report):
 # Comparison of the two campaigns of one dataset (descriptive only)
 # --------------------------------------------------------------------------
 
+def check_comparison(comparison):
+    """Checksum and fixed flags of a comparison document (``campaign_comparison_invalid``)."""
+    if type(comparison) is not dict or comparison.get("protocol") != COMPARISON_PROTOCOL:
+        _fail("campaign_comparison_invalid", f"comparison must be a {COMPARISON_PROTOCOL} document")
+    try:
+        body = canonical_hash({k: v for k, v in comparison.items() if k != "sha256"})
+    except (TypeError, ValueError) as error:
+        _fail("campaign_comparison_invalid", f"comparison is not canonical JSON ({error})")
+    if comparison.get("sha256") != body:
+        _fail("campaign_comparison_invalid", "comparison checksum mismatch")
+    if (comparison.get("scientific_status") != "provisional" or comparison.get("execution_verified") is not False
+            or comparison.get("scientific_eligible") is not False or comparison.get("superiority_claim") is not False
+            or comparison.get("hypothesis_test") is not None or comparison.get("inference") != "descriptive_only"
+            or comparison.get("visibility") != "private"):
+        _fail("campaign_comparison_invalid", "comparison flags must be provisional/false/descriptive_only")
+    return comparison
+
+
 def compare_campaigns(report_a, report_b):
     """Per arm, primary of the HPO-exploratory campaign minus the external fixed recipe.
 
@@ -717,6 +755,10 @@ def compare_campaigns(report_a, report_b):
         "measurements on one partition, not independent clinical replicates.",
         "Descriptive only: no hypothesis test, interval or multiplicity correction; no superiority claim.",
     ]
+    if set(external["seeds"]["authorized"]) != set(hpo["seeds"]["authorized"]):
+        warnings.append("The campaigns authorize different seed sets: the per-arm difference compares each "
+                        "campaign's own seed aggregate and is not paired; only per_cell is restricted to "
+                        "common_seeds.")
     if not (external["matrix"]["complete"] and hpo["matrix"]["complete"]):
         warnings.append("At least one campaign matrix is incomplete (stage 1 only); seed variability is not "
                         "estimable.")
@@ -741,9 +783,11 @@ def compare_campaigns(report_a, report_b):
 # Article export (stable, versioned, ID-free, atomic and idempotent)
 # --------------------------------------------------------------------------
 
-def default_article_dir(campaign, root=None):
-    """``<root>/<dataset>/<freeze_kind>-<campaign_sha256[:12]>`` (root: ~/projetos/augment-atlas/article)."""
-    base = Path(root) if root is not None else Path.home() / "projetos" / "augment-atlas" / "article"
+def default_article_dir(campaign, root):
+    """``<root>/<dataset>/<freeze_kind>-<campaign_sha256[:12]>``; the root is explicit and kept outside the repo."""
+    if root is None or not str(root):
+        _fail("export_conflict", "an explicit article root outside the repository is required")
+    base = Path(root)
     dataset_id = campaign["dataset"]["id"]
     gj._safe_name(dataset_id, "dataset id")
     return base / dataset_id / f"{campaign['freeze']['kind']}-{campaign['sha256'][:12]}"
@@ -945,7 +989,8 @@ def export_article_variables(report, campaign, out_dir, *, records=None, overwri
     _check_campaign_of(report, campaign)
     base = {"schema_version": ARTICLE_SCHEMA_VERSION, "dataset": deepcopy(report["dataset"]),
             "campaign_sha256": report["hashes"]["campaign_sha256"], "recipe_source": report["recipe_source"],
-            "label": report["label"]}
+            "label": report["label"], "scientific_status": "provisional", "execution_verified": False,
+            "scientific_eligible": False}
     recipe = report["recipe"]
     if recipe["source"] == "external_fixed":
         origin = {"kind": "external_fixed", "source": deepcopy(recipe["external_source"]),
@@ -991,10 +1036,7 @@ def _scan_export(files, records):
 
 def export_comparison(comparison, out_dir, *, records=None, overwrite=False):
     """Write ``campaign_comparison.json`` and ``.csv`` (descriptive, ID-free) into ``out_dir``."""
-    if type(comparison) is not dict or comparison.get("protocol") != COMPARISON_PROTOCOL:
-        _fail("campaign_comparison_invalid", f"comparison must be a {COMPARISON_PROTOCOL} document")
-    if comparison.get("sha256") != canonical_hash({k: v for k, v in comparison.items() if k != "sha256"}):
-        _fail("campaign_comparison_invalid", "comparison checksum mismatch")
+    check_comparison(comparison)
     header = ["schema_version", "arm", "seed", "fold", "metric", "external_fixed", "external_fixed_reason", "hpo_d",
               "hpo_d_reason", "difference_hpo_d_minus_external_fixed", "reason", "inference"]
     rows = []

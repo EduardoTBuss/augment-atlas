@@ -75,7 +75,8 @@ the whole JSONL at the end of every session (so it covers resumes): `status`,
 `throughput_img_s_mean`, VRAM peaks, `gpu_temp_max_c`, `gpu_power_max_w`,
 `machine_samples`, and `energy_kwh`: trapezoid over `power_w` with monotonic
 dt, gaps above 2.5 × 30 s not integrated (`energy.coverage_fraction`), status
-`measured_integrated`, GPU board only, coarse 30 s sampling, not wall-plug energy.
+`measured_integrated`, GPU boards only (the sum of every GPU visible to the process, not a per-job share),
+coarse 30 s sampling, not wall-plug energy.
 Without power readings `energy_kwh` is `null` with the reason. On CPU/no
 `nvidia-smi` (toy tests) VRAM is `device_not_cuda`, GPU fields and energy are
 `tool_absent`; on Windows hosts `/proc` fields are `not_exposed`.

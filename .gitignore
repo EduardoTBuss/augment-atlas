@@ -12,3 +12,4 @@ private/
 *.pth
 *.log
 .env*
+article/
