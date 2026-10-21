@@ -45,6 +45,26 @@ class ReasonCodeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "^report_invalid:"):
                     gr.public_summary(forged)
 
+    def test_resigned_report_with_malformed_matrix_is_a_typed_error(self):
+        report = self.fx.report(self.fx.entries(skip={("none", 0)}) + [self.failed("docker_exit_1")])
+
+        def forged(edit):
+            value = copy.deepcopy(report)
+            edit(value)
+            return gr._seal(value)
+
+        def failed_cell(value):
+            return next(c for c in value["matrix"]["cells"] if c["status"] == "failed")
+
+        cases = [forged(lambda v: v["matrix"].pop("cells")),
+                 forged(lambda v: v.__setitem__("matrix", [])),
+                 forged(lambda v: failed_cell(v).pop("reason")),
+                 forged(lambda v: failed_cell(v).__setitem__("status", "bogus")),
+                 forged(lambda v: failed_cell(v).__setitem__("status", []))]
+        for case in cases:
+            with self.assertRaisesRegex(ValueError, "^report_invalid:"):
+                gr.check_report(case)
+
     def test_short_machine_codes_are_accepted(self):
         report = self.fx.report(self.fx.entries(skip={("none", 0)}) + [self.failed("docker_exit_1")])
         self.assertEqual(report["matrix"]["failed_cells"], 1)

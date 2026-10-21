@@ -623,16 +623,24 @@ def check_report(report):
         _fail("report_invalid", "report header must carry the Bradshaw 2023 caveat and the fixed caveats")
     if report["recipe_source"] not in gj.FREEZE_KINDS or list(report["arms"]) != list(ARMS):
         _fail("report_invalid", "report recipe source/arms malformed")
-    for cell in report["matrix"]["cells"]:
-        reason = cell["reason"]
-        if cell["status"] == "succeeded":
+    matrix = report["matrix"]
+    cells = matrix.get("cells") if type(matrix) is dict else None
+    if type(cells) is not list:
+        _fail("report_invalid", "report matrix must carry a list of cells")
+    for cell in cells:
+        if type(cell) is not dict or "status" not in cell or "reason" not in cell:
+            _fail("report_invalid", "a matrix cell needs a status and a reason")
+        status, reason = cell["status"], cell["reason"]
+        if status == "succeeded":
             ok = reason is None
-        elif cell["status"] == "missing":
+        elif status == "missing":
             ok = reason == "artifact_not_collected"
-        elif cell["status"] == "not_authorized":
+        elif status == "not_authorized":
             ok = reason == "stage_not_authorized_by_this_campaign"
-        else:
+        elif type(status) is str and status in ENTRY_STATUSES:
             ok = type(reason) is str and REASON_CODE.fullmatch(reason) is not None
+        else:
+            _fail("report_invalid", "a matrix cell status is not part of the closed set")
         if not ok:
             _fail("report_invalid", "a matrix cell reason is not a closed code")
     return report
