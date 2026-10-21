@@ -253,7 +253,7 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
 
     # Additive per-job telemetry (telemetry/, not a validated artifact); it
     # never touches RNG, batch order, loss, checkpoints or metrics.json.
-    telemetry = train_telemetry.open_for_attempt(output, torch=torch, device=device, grad_clip_max_norm=1.0, context={
+    telemetry = train_telemetry.open_for_attempt(output, torch=torch, device=device, grad_clip_max_norm=1.0, context=lambda: {
         "path": "legacy", "phase": cfg.get("phase", "smoke"), "resume": bool(resume),
         "start_epoch": completed_epoch + 1, "epochs": training["epochs"], "device": str(device),
         "batch_size": training["batch_size"], "accumulation_steps": training["accumulation_steps"],
@@ -699,7 +699,7 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
     # never receives evaluated-partition metrics (E_f/D_select open only once).
     telemetry = train_telemetry.open_for_attempt(
         output, torch=torch, device=device, grad_clip_max_norm=gj.TRAINER_CONSTANTS_V1["gradient_clip_max_norm"],
-        context={"path": "global", "phase": phase, "resume": bool(resume), "start_epoch": completed_epoch + 1,
+        context=lambda: {"path": "global", "phase": phase, "resume": bool(resume), "start_epoch": completed_epoch + 1,
                  "epochs": epochs, "device": str(device), "workers": workers, "trainer_override": override is not None,
                  "batch_size": batch_size, "accumulation_steps": accumulation, "train_images": len(train_records),
                  "batches_per_epoch": batches_per_epoch, "optimizer_updates_per_epoch": updates_per_epoch,
