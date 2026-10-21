@@ -217,6 +217,10 @@ Consequências para o protocolo:
 
 ### 3.4 Algoritmo da ferramenta de aquisição (pseudocódigo de interface)
 
+> **Implementado em 20/10/2026.** A CLI real (`probe | canary --limit N | full | verify`),
+> os comandos exatos para o x299 e as diferenças deliberadas em relação a esta seção estão em
+> [isic-acquisition.md](isic-acquisition.md).
+
 CLI proposta (stdlib, exceto `derive`):
 `python -I -m augment_atlas.acquisition isic2020 {probe|run|verify|summarize} --config <json> --root <dir>`
 
