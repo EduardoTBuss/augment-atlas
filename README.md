@@ -45,6 +45,13 @@ no privileges, dropped capabilities, read-only code/data mounts and a writable
 attempt output. Git credentials stay on the host. Use a service or tmux to keep
 the foreground worker running after SSH disconnects.
 
+Training containers cap CPU kernels at AVX2 by default (`ATEN_CPU_CAPABILITY`,
+`MKL_ENABLE_INSTRUCTIONS`, `ONEDNN_MAX_CPU_ISA`/`DNNL_MAX_CPU_ISA`, OpenBLAS,
+NumPy and OpenCV variables): on 13 and 20 October the x299 host (i9-7900X) reset
+15-30 s into torch CPU work with AVX-512 kernels, and ran stably with them off.
+A settings file without `cpu_isa_max` gets this cap; `"cpu_isa_max": "native"`
+opts a node out, any other value fails preflight. `runtime.json` records the value.
+
 Send SIGTERM to the worker to request a checkpoint at the end of the current epoch.
 After confirming the container stopped, resume with the same settings and explicit
 `--resume`. The same attempt, token, directory and checkpoint are preserved.

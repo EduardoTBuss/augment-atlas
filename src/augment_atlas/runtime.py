@@ -94,6 +94,32 @@ print(json.dumps(dict(torch=torch.__version__,torchvision=torchvision.__version_
 IMAGENET_V2_CHECKPOINT = 'resnet50-11ad3fa6.pth'
 
 
+# Training containers cap CPU kernels at AVX2 unless a node opts out with
+# settings.cpu_isa_max="native": AVX-512 torch/MKL/oneDNN CPU kernels reset the
+# x299 host (i9-7900X) within seconds. A missing key means the safe default.
+CPU_ISA_ENV = {
+    'avx2': ('ATEN_CPU_CAPABILITY=avx2','MKL_ENABLE_INSTRUCTIONS=AVX2',
+             'ONEDNN_MAX_CPU_ISA=AVX2','DNNL_MAX_CPU_ISA=AVX2',
+             'OPENBLAS_CORETYPE=Haswell',
+             'NPY_DISABLE_CPU_FEATURES=AVX512F AVX512CD AVX512_SKX',
+             'OPENCV_CPU_DISABLE=AVX512_SKX'),
+    'native': (),
+}
+
+
+def cpu_isa_max(settings):
+    """Effective CPU ISA cap; unknown values fail closed."""
+    value=settings.get('cpu_isa_max','avx2')
+    if not isinstance(value,str) or value not in CPU_ISA_ENV:
+        raise ValueError("settings.cpu_isa_max must be 'avx2' (default) or 'native'")
+    return value
+
+
+def cpu_isa_env(settings):
+    """Deterministic docker '-e' arguments limiting the container CPU ISA."""
+    return [arg for pair in CPU_ISA_ENV[cpu_isa_max(settings)] for arg in ('-e',pair)]
+
+
 def expected_weights_sha256(cfg,spec=None):
     """Reconcile immutable config/spec weight identity without importing torch."""
     expected=cfg['model'].get('weights_sha256') if cfg['model']['weights']!='none' else None
@@ -446,6 +472,7 @@ class DockerRuntime:
             raise ValueError('This prototype only executes explicitly selected smoke phase')
         if not self.code.is_dir() or not self.data.is_dir():
             raise ValueError('code and local data directories must exist')
+        cpu_isa_max(self.s) # invalid ISA setting fails before any external command
         if command(['git','-C',self.code,'status','--porcelain']):
             raise ValueError('Training checkout must be clean and fixed to a commit')
         self.commit=command(['git','-C',self.code,'rev-parse','HEAD'])
@@ -610,6 +637,7 @@ class DockerRuntime:
                 and c.get('gpu_uuid',self.gpu_uuid)==self.gpu_uuid)
 
     def create(self,name,spec,out,resume=False):
+        isa=cpu_isa_env(self.s) # fail closed before any validation or Docker call
         mount=None
         if is_global_spec(spec):
             # Revalidate config, inputs, cache and D-view listing immediately before create.
@@ -634,6 +662,7 @@ class DockerRuntime:
         if cfg['model']['weights']!='none':
             cache=Path(self.s['torch_cache']).expanduser().resolve()
             args+=['--mount',f'type=bind,src={cache},dst=/torch-cache,readonly','-e','TORCH_HOME=/torch-cache']
+        args+=isa
         args+=['--workdir','/code','--entrypoint','python',self.image,
               '-m','augment_atlas.train','--config','/code/'+config,'--output','/output','--resume-if-exists']
         if resume: args+=['--resume','/output/checkpoint.pt']
@@ -1265,7 +1294,8 @@ def worker(settings,once=False):
                     local=dict(record=record,output=str(out),container=name,image=runtime.image,stage='prepared')
                     atomic_json(active,local)
                     atomic_json(out/'runtime.json',dict(job_id=record['job_id'],attempt_id=record['attempt_id'],
-                                code_commit=runtime.commit,image_id=runtime.image,owner=owner,environment=runtime.environment))
+                                code_commit=runtime.commit,image_id=runtime.image,owner=owner,environment=runtime.environment,
+                                cpu_isa_max=cpu_isa_max(settings)))
                 spool=Spool(out/'events-pending.json',record)
                 record=spool.record
                 container=runtime.inspect(name)
