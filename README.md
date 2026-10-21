@@ -33,7 +33,12 @@ cp configs/worker.example.json /srv/atlas-private/worker.json
 python3 -m augment_atlas.cli seed --phase smoke \
   --config "$PWD/configs/smoke/synthetic.json" --code "$PWD" \
   --data /srv/atlas-data --checkout /srv/atlas-state/admin \
-  --remote git@github.com:OWNER/augment-atlas.git
+  --remote git@github.com:OWNER/augment-atlas.git \
+  --image-id "$(docker image inspect --format '{{.Id}}' "$IMAGE")"
+# With --image-id the seed also writes spec.requirements (fleet v1, docs/fleet-protocol.md 3.2),
+# kept outside the job_id; without it (and no other fleet flag) the legacy spec is seeded. Read-only diagnosis of why a worker would (not) claim:
+# python3 -m augment_atlas.cli fleet explain --worker facts.json --profile node_profile.json \
+#   --card card.json --latest latest.json --jobs-dir jobs/
 
 ./scripts/worker.sh --settings /srv/atlas-private/worker.json --phase smoke --once
 ```
@@ -44,6 +49,13 @@ Do not run other training on the selected GPU. Training containers use no networ
 no privileges, dropped capabilities, read-only code/data mounts and a writable
 attempt output. Git credentials stay on the host. Use a service or tmux to keep
 the foreground worker running after SSH disconnects.
+
+Training containers cap CPU kernels at AVX2 by default (`ATEN_CPU_CAPABILITY`,
+`MKL_ENABLE_INSTRUCTIONS`, `ONEDNN_MAX_CPU_ISA`/`DNNL_MAX_CPU_ISA`, OpenBLAS,
+NumPy and OpenCV variables): on 13 and 20 October the x299 host (i9-7900X) reset
+15-30 s into torch CPU work with AVX-512 kernels, and ran stably with them off.
+A settings file without `cpu_isa_max` gets this cap; `"cpu_isa_max": "native"`
+opts a node out, any other value fails preflight. `runtime.json` records the value.
 
 Send SIGTERM to the worker to request a checkpoint at the end of the current epoch.
 After confirming the container stopped, resume with the same settings and explicit

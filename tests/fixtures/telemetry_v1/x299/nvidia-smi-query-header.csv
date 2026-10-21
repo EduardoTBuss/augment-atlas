@@ -1,0 +1,3 @@
+index, uuid, name, temperature.gpu, power.draw [W], power.limit [W], fan.speed [%], utilization.gpu [%], memory.used [MiB], memory.total [MiB], clocks.current.sm [MHz], clocks.current.memory [MHz], pstate
+0, GPU-00000000-0000-0000-0000-000000000000, NVIDIA GeForce GTX TITAN X, 34, 14.35 W, 250.00 W, 22 %, 0 %, 8 MiB, 12288 MiB, 135 MHz, 405 MHz, P8
+1, GPU-00000000-0000-0000-0000-000000000001, NVIDIA GeForce GTX TITAN X, 31, 12.98 W, 250.00 W, 22 %, 0 %, 41 MiB, 12288 MiB, 135 MHz, 405 MHz, P8

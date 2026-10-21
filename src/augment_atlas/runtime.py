@@ -7,6 +7,8 @@ Random-initialization jobs need no cache. No weight downloads are performed.
 """
 from __future__ import annotations
 import contextlib
+import copy
+from dataclasses import dataclass
 import datetime as dt
 import json
 import math
@@ -15,6 +17,7 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import tempfile
 import time
 import uuid
 import zipfile
@@ -91,6 +94,32 @@ print(json.dumps(dict(torch=torch.__version__,torchvision=torchvision.__version_
 IMAGENET_V2_CHECKPOINT = 'resnet50-11ad3fa6.pth'
 
 
+# Training containers cap CPU kernels at AVX2 unless a node opts out with
+# settings.cpu_isa_max="native": AVX-512 torch/MKL/oneDNN CPU kernels reset the
+# x299 host (i9-7900X) within seconds. A missing key means the safe default.
+CPU_ISA_ENV = {
+    'avx2': ('ATEN_CPU_CAPABILITY=avx2','MKL_ENABLE_INSTRUCTIONS=AVX2',
+             'ONEDNN_MAX_CPU_ISA=AVX2','DNNL_MAX_CPU_ISA=AVX2',
+             'OPENBLAS_CORETYPE=Haswell',
+             'NPY_DISABLE_CPU_FEATURES=AVX512F AVX512CD AVX512_SKX',
+             'OPENCV_CPU_DISABLE=AVX512_SKX'),
+    'native': (),
+}
+
+
+def cpu_isa_max(settings):
+    """Effective CPU ISA cap; unknown values fail closed."""
+    value=settings.get('cpu_isa_max','avx2')
+    if not isinstance(value,str) or value not in CPU_ISA_ENV:
+        raise ValueError("settings.cpu_isa_max must be 'avx2' (default) or 'native'")
+    return value
+
+
+def cpu_isa_env(settings):
+    """Deterministic docker '-e' arguments limiting the container CPU ISA."""
+    return [arg for pair in CPU_ISA_ENV[cpu_isa_max(settings)] for arg in ('-e',pair)]
+
+
 def expected_weights_sha256(cfg,spec=None):
     """Reconcile immutable config/spec weight identity without importing torch."""
     expected=cfg['model'].get('weights_sha256') if cfg['model']['weights']!='none' else None
@@ -105,6 +134,317 @@ def expected_weights_sha256(cfg,spec=None):
         if any(value!=expected for value in declared):
             raise ValueError('Job/config pretrained weights checksum mismatch')
     return expected
+
+
+# --------------------------------------------------------------------------
+# Global hpo/final branch (slice S1, part C). Errors are ValueError("<code>: ...")
+# with the codes of section 6.11 of docs/global-next-integration.md.
+# --------------------------------------------------------------------------
+
+GLOBAL_RUNTIME_PHASES = ('hpo','final')
+D_VIEW_LISTING = 'LISTING.json'
+
+
+def _global_fail(code,message):
+    raise ValueError(f'{code}: {message}')
+
+
+def is_global_spec(spec):
+    """A queue spec belongs to the global branch by phase OR by config location."""
+    return isinstance(spec,dict) and (spec.get('phase') in GLOBAL_RUNTIME_PHASES or
+                                      (isinstance(spec.get('config'),str) and spec['config'].startswith('configs/global/')))
+
+
+def _views_root(settings):
+    setting=settings.get('views')
+    if not isinstance(setting,str) or not setting.strip():
+        _global_fail('hpo_isolation_unproven','HPO workers require settings.views (host root of views/<pools>/D); '
+                     'the full data root is never mounted for HPO')
+    root=Path(setting).expanduser().resolve()
+    if not root.is_dir():
+        _global_fail('hpo_isolation_unproven','settings.views is not an existing host directory')
+    return root
+
+
+def _read_host_json(root,relative,code):
+    from .data import confined_path
+    try:
+        path=confined_path(Path(root),relative)
+        if not path.is_file():
+            _global_fail(code,'a private global document is missing from the host data root')
+        with path.open(encoding='utf-8') as stream:
+            return json.load(stream)
+    except (OSError,ValueError,RecursionError) as error:
+        if str(error).startswith(code+':'):raise
+        _global_fail(code,f'private global document cannot be read ({type(error).__name__})')
+
+
+@dataclass(frozen=True)
+class GlobalTrustedInputs:
+    """Host-derived inputs of ONE global job; nothing comes from the attempt output.
+
+    ``config_bytes`` are the materialized bytes pinned by the job (sha ==
+    spec.config_sha256 == MANIFEST entry); ``records`` are the manifest records
+    projected to {id, path, group, label}; ``image_sha256`` maps path -> sha256
+    from the host manifest; ``view`` is the hpo-view (hpo) or the re-derived
+    ``global-final-view-v1`` document (final), whose sha256 is the split_hash.
+    """
+    cfg: dict
+    config_name: str
+    config_bytes: bytes
+    config_sha256: str
+    records: list
+    image_sha256: dict
+    pools: dict
+    view: dict
+    recipe: dict
+
+
+def _global_config_bytes(code,spec):
+    """Only the expected materialized path; bytes, MANIFEST and canonical rendering agree."""
+    from . import global_jobs as gj
+    from .contracts import canonical_hash
+    name=spec.get('config'); phase=spec.get('phase'); dataset=spec.get('dataset')
+    if phase not in GLOBAL_RUNTIME_PHASES or not isinstance(dataset,str):
+        _global_fail('global_config_invalid','global jobs require phase hpo|final and a dataset id')
+    directory=gj.config_dir(dataset,phase)
+    if (not isinstance(name,str) or not name.startswith(directory+'/') or '/' in name[len(directory)+1:]
+            or not name.endswith('.json') or name.endswith('/MANIFEST.json')):
+        _global_fail('global_config_invalid',f'global job config must be a materialized file under {directory}/')
+    code=Path(code).resolve()
+    path=(code/name).resolve()
+    if path!=code.joinpath(*name.split('/')) or not path.is_relative_to(code) or not path.is_file():
+        _global_fail('global_config_invalid','invalid or indirect global config path')
+    data=path.read_bytes()
+    sha=gj._bytes_sha256(data)
+    if sha!=spec.get('config_sha256'):
+        _global_fail('config_identity_mismatch','config bytes differ from the job config_sha256')
+    try:
+        cfg=json.loads(data.decode('ascii'))
+    except (UnicodeDecodeError,ValueError,RecursionError) as error:
+        _global_fail('config_identity_mismatch',f'materialized config cannot be parsed ({type(error).__name__})')
+    gj.validate_global_config(cfg)
+    if gj.render_config_bytes(cfg)!=data:
+        _global_fail('config_identity_mismatch','config bytes are not the deterministic materialized rendering')
+    manifest_path=path.parent/'MANIFEST.json'
+    try:
+        manifest_bytes=manifest_path.read_bytes()
+        manifest=json.loads(manifest_bytes.decode('ascii'))
+    except (OSError,UnicodeDecodeError,ValueError,RecursionError) as error:
+        _global_fail('config_identity_mismatch',f'MANIFEST.json of the phase directory is unreadable ({type(error).__name__})')
+    keys={'schema_version','protocol','phase','dataset','pools_sha256','plan_sha256','freeze_sha256','files','sha256'}
+    if type(manifest) is not dict or set(manifest)!=keys or gj.render_config_bytes(manifest)!=manifest_bytes:
+        _global_fail('config_identity_mismatch','MANIFEST.json is not a materialized global manifest')
+    bound=('plan_sha256','freeze_sha256') if phase=='hpo' else ('freeze_sha256','plan_sha256')
+    if (manifest['sha256']!=canonical_hash({k:v for k,v in manifest.items() if k!='sha256'}) or
+            manifest['protocol']!=gj.MANIFEST_PROTOCOL or manifest['phase']!=phase or
+            manifest['dataset']!={'id':cfg['dataset']['id'],'version':cfg['dataset']['version']} or
+            manifest['pools_sha256']!=cfg['global']['pools_sha256'] or
+            manifest[bound[0]]!=cfg['global'][bound[0]] or manifest[bound[1]] is not None):
+        _global_fail('config_identity_mismatch','MANIFEST.json is not bound to this config phase/pools/plan|freeze')
+    if type(manifest['files']) is not list or [f for f in manifest['files'] if type(f) is dict and f.get('path')==name]!=[{'path':name,'sha256':sha}]:
+        _global_fail('config_identity_mismatch','MANIFEST.json does not pin these config bytes')
+    return name,data,sha,cfg
+
+
+def load_global_trusted_inputs(code,data,spec):
+    """Trusted inputs of a global job from the pinned checkout and host data root only."""
+    from . import global_development as gd
+    from . import global_evaluation as ge
+    from . import global_jobs as gj
+    from .contracts import canonical_hash
+    from .data import load_records
+    from .schema import IDENTITY_FIELDS
+    name,config_bytes,sha,cfg=_global_config_bytes(code,spec)
+    if not isinstance(data,(str,os.PathLike)) or not str(data).strip():
+        _global_fail('records_identity_mismatch','global jobs require settings.data; no default data root is assumed')
+    root=Path(data).expanduser().resolve()
+    if not root.is_dir():
+        _global_fail('records_identity_mismatch','global data root must be an existing host directory')
+    bound=cfg['global']
+    try:
+        loaded=load_records({'dataset':dict(cfg['dataset']),'model':{'num_classes':cfg['model']['num_outputs']}},
+                            check_files=True,root=root)
+    except (OSError,ValueError) as error:
+        _global_fail('records_identity_mismatch',f'host manifest: {error}')
+    records=sorted(({k:row[k] for k in ('id','path','group','label')} for row in loaded),key=lambda row:row['id'])
+    images={row['path']:row.get('sha256') for row in loaded}
+    pools=_read_host_json(root,bound['pools_file'],'pools_anchor_mismatch')
+    if type(pools) is not dict or pools.get('records_sha256')!=canonical_hash(records):
+        _global_fail('records_identity_mismatch','host manifest records differ from pools.records_sha256')
+    gj._anchored(records,pools,bound['pools_sha256'],global_task=True)
+    if cfg['phase']=='hpo':
+        plan=_read_host_json(root,gj._private_name('plan',cfg['dataset']['id'],bound['plan_sha256']),'plan_invalid')
+        try:
+            candidates=gd._plan(plan,pools,bound['plan_sha256'])
+        except ValueError as error:
+            _global_fail('plan_invalid',str(error))
+        candidate=candidates.get(bound['candidate_id'])
+        if candidate is None or canonical_hash(candidate)!=bound['candidate_config_sha256']:
+            _global_fail('recipe_mismatch','config candidate is not the anchored plan candidate')
+        if cfg['training']['seed'] not in plan['seeds']:
+            _global_fail('global_config_invalid','HPO seed is not a selection seed of the anchored plan')
+        recipe=candidate['recipe']
+        gj.validate_global_config(cfg,recipe=recipe)
+        view=_read_host_json(root,bound['hpo_view_file'],'view_hash_mismatch')
+        ge.check_hpo_view(view,cfg,records,pools)
+        expected=gj.hpo_job_spec(cfg,config_path=name,config_sha256=sha,code_commit=spec.get('code_commit'))
+    else:
+        freeze=_read_host_json(root,bound['freeze_file'],'freeze_not_sealed')
+        if type(freeze) is not dict or freeze.get('sha256')!=bound['freeze_sha256']:
+            _global_fail('freeze_not_sealed','freeze document is not the anchored freeze of this config')
+        if bound['freeze_kind']=='external_fixed':
+            gj.audit_external_freeze(records,pools,freeze,expected_pools_sha256=bound['pools_sha256'])
+            recipe=freeze['recipe']
+        else:
+            # Full hpo_d audit needs the anchored evidence/plan (S3 campaign seal);
+            # the campaign gate refuses final claims until then.
+            try:
+                gd._checksum(freeze)
+            except ValueError as error:
+                _global_fail('freeze_not_sealed',str(error))
+            if freeze.get('pools_sha256')!=bound['pools_sha256']:
+                _global_fail('freeze_not_sealed','freeze bound to other pools')
+            recipe=freeze.get('frozen_recipe')
+        gj.validate_global_config(cfg,recipe=recipe)
+        view=gj.derive_final_view_doc(records,pools,bound['fold'],expected_pools_sha256=bound['pools_sha256'],
+                                      freeze_sha256=bound['freeze_sha256'])
+        ge.check_final_view(view,cfg,records,pools)
+        campaign=(spec.get('global') or {}).get('campaign_sha256') if isinstance(spec.get('global'),dict) else None
+        expected=gj.final_job_spec(cfg,view,config_path=name,config_sha256=sha,code_commit=spec.get('code_commit'),
+                                   campaign_sha256=campaign)
+    for key in tuple(IDENTITY_FIELDS)+('job_id','config','config_sha256','global','dependencies'):
+        if key not in spec or canonical_hash(spec[key])!=canonical_hash(expected[key]):
+            _global_fail('global_config_invalid',f'job spec {key} differs from the materialized config identity')
+    return GlobalTrustedInputs(cfg=copy.deepcopy(cfg),config_name=name,config_bytes=config_bytes,config_sha256=sha,
+                               records=copy.deepcopy(records),image_sha256=dict(images),pools=copy.deepcopy(pools),
+                               view=copy.deepcopy(view),recipe=copy.deepcopy(recipe))
+
+
+def _campaign_pin(settings):
+    """Operator pin of the S3 campaign plus the queue needed for its anchors."""
+    pin=settings.get('campaign_sha256')
+    if not isinstance(pin,str) or not re.fullmatch(r'[0-9a-f]{64}',pin):
+        _global_fail('campaign_anchor_missing','phase=final workers need settings.campaign_sha256 (the anchored '
+                     'campaign) and its queue; final jobs are never claimed without it')
+    if not isinstance(settings.get('campaign_commit'),str) or not re.fullmatch(r'[0-9a-f]{40}',settings['campaign_commit']):
+        _global_fail('campaign_anchor_missing','phase=final workers need settings.campaign_commit (C_campaign '
+                     'recorded when the campaign anchor was published) to detect a rewritten queue history')
+    for key in ('queue_checkout','remote'):
+        if not isinstance(settings.get(key),str) or not settings[key].strip():
+            _global_fail('campaign_anchor_missing',f'phase=final workers need settings.{key} to audit the anchors')
+    return pin
+
+
+def _final_manifest_presets(code,trusted):
+    """Final MANIFEST.json of the pinned checkout and the arm presets of its pinned configs."""
+    from . import global_jobs as gj
+    from .contracts import ARMS
+    root=Path(code).resolve()
+    try:
+        manifest=json.loads((root/gj.config_dir(trusted.cfg['dataset']['id'],'final')/'MANIFEST.json')
+                            .read_bytes().decode('ascii'))
+    except (OSError,UnicodeDecodeError,ValueError,RecursionError) as error:
+        _global_fail('config_identity_mismatch',f'final MANIFEST.json unreadable ({type(error).__name__})')
+    if type(manifest) is not dict or type(manifest.get('files')) is not list:
+        _global_fail('config_identity_mismatch','final MANIFEST.json malformed')
+    presets={}
+    for entry in manifest['files']:
+        name=entry.get('path') if type(entry) is dict else None
+        if not isinstance(name,str) or not name.startswith(gj.config_dir(trusted.cfg['dataset']['id'],'final')+'/'):
+            _global_fail('config_identity_mismatch','final MANIFEST.json entry outside the final config directory')
+        try:
+            data=root.joinpath(*name.split('/')).read_bytes()
+            cfg=json.loads(data.decode('ascii'))
+            arm,augmentation=cfg['augmentation']['arm'],cfg['augmentation']
+        except (OSError,UnicodeDecodeError,ValueError,RecursionError,KeyError,TypeError) as error:
+            _global_fail('config_identity_mismatch',f'final config of the MANIFEST unreadable ({type(error).__name__})')
+        if gj._bytes_sha256(data)!=entry.get('sha256'):
+            _global_fail('config_identity_mismatch','final config bytes differ from MANIFEST.json')
+        if presets.setdefault(arm,augmentation)!=augmentation:
+            _global_fail('config_identity_mismatch','one arm has two augmentation presets in the final MANIFEST')
+    if set(presets)!=set(ARMS):
+        _global_fail('config_identity_mismatch','final MANIFEST.json does not cover the ten arms')
+    return manifest,presets
+
+
+def d_view_listing(directory,view_file):
+    """Recompute the D-view listing [[path, sha256], ...] sorted by path (spec 6.3).
+
+    Excluded: the hpo-view document itself (its hash depends on this listing)
+    and an optional LISTING.json, which must then equal the listing. Symlinks
+    and non-regular files are refused: they could reach E outside the view.
+    """
+    from .contracts import canonical_hash
+    directory=Path(directory)
+    if directory.is_symlink() or not directory.is_dir():
+        _global_fail('hpo_isolation_unproven','D-view is not a real directory')
+    listing=[]; extra=None
+    for base,folders,files in os.walk(directory,followlinks=False):
+        for folder in folders:
+            if (Path(base)/folder).is_symlink():
+                _global_fail('hpo_isolation_unproven','D-view contains a symlinked directory')
+        for file in files:
+            path=Path(base)/file
+            relative=path.relative_to(directory).as_posix()
+            if path.is_symlink() or not path.is_file():
+                _global_fail('hpo_isolation_unproven','D-view contains a symlink or non-regular file')
+            if relative==view_file:continue
+            if relative==D_VIEW_LISTING:
+                extra=path;continue
+            listing.append([relative,digest(path)])
+    listing.sort()
+    if extra is not None:
+        try:
+            same=canonical_hash(json.loads(extra.read_text(encoding='utf-8')))==canonical_hash(listing)
+        except (OSError,TypeError,ValueError,RecursionError):
+            same=False
+        if not same:
+            _global_fail('hpo_isolation_unproven','D-view LISTING.json differs from the recomputed listing')
+    return listing
+
+
+def expected_d_view(settings,pools_sha256):
+    return _views_root(settings)/pools_sha256/'D'
+
+
+def verify_d_view(settings,trusted):
+    """Recompute the D-view of an HPO job; return the ONLY data mount allowed.
+
+    Files present == hpo-view record paths, bytes == host manifest hashes,
+    listing hash == view.view_files_sha256, the hpo-view inside == host view.
+    """
+    from .contracts import canonical_hash
+    cfg,view=trusted.cfg,trusted.view
+    directory=expected_d_view(settings,cfg['global']['pools_sha256'])
+    if not directory.resolve().is_relative_to(_views_root(settings)) or not directory.is_dir():
+        _global_fail('hpo_isolation_unproven','materialized D-view views/<pools_sha256>/D is missing')
+    view_file=cfg['global']['hpo_view_file']
+    try:
+        inside=json.loads((directory/view_file).read_text(encoding='utf-8'))
+    except (OSError,ValueError,RecursionError):
+        _global_fail('hpo_isolation_unproven','D-view lacks the hpo-view document read by the container')
+    if canonical_hash(inside)!=canonical_hash(view):
+        _global_fail('view_hash_mismatch','hpo-view inside the D-view differs from the host hpo-view')
+    listing=d_view_listing(directory,view_file)
+    paths=[path for path,_ in listing]
+    if paths!=sorted(row['path'] for row in view['records']):
+        _global_fail('hpo_isolation_unproven','D-view files are not exactly the hpo-view (D) images')
+    if any(trusted.image_sha256.get(path)!=sha for path,sha in listing):
+        _global_fail('records_identity_mismatch','D-view image bytes differ from the host manifest hashes')
+    if canonical_hash(listing)!=view['view_files_sha256']:
+        _global_fail('hpo_isolation_unproven','recomputed D-view listing differs from view_files_sha256')
+    return dict(kind='d_view',source=str(directory.resolve()),destination='/data',readonly=True,
+                pools_sha256=cfg['global']['pools_sha256'],hpo_view_sha256=view['sha256'],
+                view_files_sha256=view['view_files_sha256'])
+
+
+def record_data_mount(out,mount):
+    """Add the verified /data mount to the attempt's runtime.json before docker create."""
+    path=Path(out)/'runtime.json'
+    provenance=json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+    provenance['data_mount']=dict(mount)
+    atomic_json(path,provenance)
 
 
 class DockerRuntime:
@@ -123,10 +463,16 @@ class DockerRuntime:
         return json.loads(r.stdout)[0]
 
     def preflight(self):
-        if self.s['phase'] != 'smoke':
+        if self.s['phase']=='final':
+            # Without an operator campaign pin and queue, fail before any external command.
+            _campaign_pin(self.s)
+        elif self.s['phase']=='hpo':
+            _views_root(self.s)
+        elif self.s['phase'] != 'smoke':
             raise ValueError('This prototype only executes explicitly selected smoke phase')
         if not self.code.is_dir() or not self.data.is_dir():
             raise ValueError('code and local data directories must exist')
+        cpu_isa_max(self.s) # invalid ISA setting fails before any external command
         if command(['git','-C',self.code,'status','--porcelain']):
             raise ValueError('Training checkout must be clean and fixed to a commit')
         self.commit=command(['git','-C',self.code,'rev-parse','HEAD'])
@@ -157,7 +503,92 @@ class DockerRuntime:
             raise ValueError('Cached IMAGENET1K_V2 checkpoint checksum mismatch')
         return root
 
+    def global_config_for(self,spec):
+        """Global hpo/final claim check; returns (config name, cfg, trusted inputs, data mount).
+
+        Everything comes from the pinned checkout (materialized bytes + MANIFEST)
+        and the operator-configured host data/views roots, before any claim.
+        HPO: the D-view listing is recomputed and becomes the ONLY /data mount.
+        Final: all S1 checks, then the S3 campaign gate (audit_campaign + audit_chronology).
+        """
+        if spec.get('phase')!=self.s.get('phase'):
+            _global_fail('global_config_invalid','job phase differs from this worker phase')
+        trusted=load_global_trusted_inputs(self.code,self.s.get('data'),spec)
+        cfg=trusted.cfg
+        if cfg['augmentation']['ops']:
+            environment=getattr(self,'environment',{})
+            if environment.get('opencv')!='4.12.0' or environment.get('opencv_distribution')!='4.12.0.88':
+                raise ValueError('candidate-opencv-v2 requires cv2=4.12.0 and opencv-python-headless=4.12.0.88 before claim')
+        self.weights_cache_for(cfg,spec) # streaming hash before a worker may claim
+        if cfg['phase']=='hpo':
+            mount=verify_d_view(self.s,trusted)
+        else:
+            self.campaign_gate(spec,trusted)
+            mount=dict(kind='data_root',source=str(self.data),destination='/data',readonly=True)
+        return spec['config'],cfg,trusted,mount
+
+    def campaign_queue(self):
+        return GitQueue(self.s['queue_checkout'],self.s['remote'],self.s.get('branch','queue'))
+
+    def campaign_gate(self,spec,trusted):
+        """Spec 6.5/7.2 (S3): audited campaign + anchor chronology in the queue HEAD before any final claim.
+
+        The private campaign is re-derived from its declared inputs
+        (``global_campaign.audit_campaign``, including the Q6 code identity from
+        the pinned checkout's Git), bound to this job, checkout and image; then
+        ``audit_chronology`` must find C_freeze < C_campaign < every final job.
+        A missing pin, document or anchor stays ``campaign_anchor_missing``.
+        """
+        from . import global_campaign as gc
+        from . import global_jobs as gj
+        pin=_campaign_pin(self.s)
+        bound=spec.get('global') if isinstance(spec.get('global'),dict) else {}
+        if bound.get('campaign_sha256')!=pin:
+            _global_fail('campaign_anchor_missing','job campaign_sha256 differs from the worker campaign pin')
+        cfg=trusted.cfg; dataset=cfg['dataset']['id']
+        campaign=_read_host_json(self.data,gj._private_name('campaign',dataset,pin),'campaign_anchor_missing')
+        freeze=_read_host_json(self.data,cfg['global']['freeze_file'],'freeze_not_sealed')
+        evidence=None
+        if cfg['global']['freeze_kind']=='hpo_d' and isinstance(freeze,dict):
+            evidence=_read_host_json(self.data,gj._private_name('evidence',dataset,freeze.get('selection_evidence_sha256')),
+                                     'freeze_not_sealed')
+        manifest,presets=_final_manifest_presets(self.code,trusted)
+        key=(pin,manifest.get('sha256'))
+        cached=getattr(self,'_campaign_audits',{})
+        if key not in cached:
+            dataset_source={k:cfg['dataset'][k] for k in ('adapter','manifest','manifest_sha256')}
+            audited=gc.audit_campaign(trusted.records,trusted.pools,campaign,expected_campaign_sha256=pin,
+                                      freeze=freeze,dataset_source=dataset_source,augmentation_presets=presets,
+                                      evidence=evidence,expected_manifest_sha256=manifest.get('sha256'),
+                                      code_repo=self.code)
+            cached[key]=(audited,copy.deepcopy(campaign))
+            self._campaign_audits=cached
+        # Only the audited copy is used below (a host file edited later is never trusted).
+        audit,campaign=cached[key]
+        if (spec.get('code_commit')!=campaign['runtime']['code_commit']
+                or getattr(self,'commit',None)!=spec.get('code_commit')):
+            _global_fail('code_identity_mismatch','final job/checkout commit differs from the sealed campaign code_commit')
+        if getattr(self,'image',None)!=campaign['runtime']['image_id']:
+            _global_fail('code_identity_mismatch','worker image differs from the image pinned by the campaign')
+        if cfg['training']['seed'] not in audit['authorized_seeds']:
+            _global_fail('campaign_invalid','final seed is not in the stage authorized by the campaign')
+        queue=self.campaign_queue()
+        head=queue._fetch_head()
+        reports=getattr(self,'_chronology',{})
+        if (pin,head) not in reports:
+            # Recomputed whenever the queue HEAD moves; cached only for one HEAD.
+            reports={(pin,head):gc.audit_chronology(queue,campaign,freeze=freeze,head=head,
+                                                    recorded_campaign_commit=self.s['campaign_commit'])}
+            self._chronology=reports
+        job_id=spec.get('job_id')
+        if not isinstance(job_id,str) or not re.fullmatch(r'[0-9a-f]{64}',job_id) or queue.read_path(head,f'jobs/{job_id}.md') is None:
+            _global_fail('campaign_anchor_missing','final job is not in the audited queue HEAD')
+        return reports[(pin,head)]
+
     def config_for(self,spec):
+        if is_global_spec(spec):
+            name,cfg,_,_=self.global_config_for(spec)
+            return name,cfg
         name=spec.get('config')
         if not isinstance(name,str) or not name.startswith('configs/smoke/'):
             raise ValueError('Job requires a config under configs/smoke/')
@@ -169,6 +600,8 @@ class DockerRuntime:
         from .cli import recipe_identity
         import tempfile
         cfg=load_config(path)
+        if cfg['phase'] in GLOBAL_RUNTIME_PHASES:
+            _global_fail('global_config_invalid','global configs are executable only from configs/global/<dataset>/<phase>/')
         if cfg['augmentation'].get('backend')==CANDIDATE_BACKEND:
             environment=getattr(self,'environment',{})
             if environment.get('opencv')!='4.12.0' or environment.get('opencv_distribution')!='4.12.0.88':
@@ -204,7 +637,16 @@ class DockerRuntime:
                 and c.get('gpu_uuid',self.gpu_uuid)==self.gpu_uuid)
 
     def create(self,name,spec,out,resume=False):
-        config,cfg=self.config_for(spec) # revalidate cache immediately before create
+        isa=cpu_isa_env(self.s) # fail closed before any validation or Docker call
+        mount=None
+        if is_global_spec(spec):
+            # Revalidate config, inputs, cache and D-view listing immediately before create.
+            config,cfg,_,mount=self.global_config_for(spec)
+            record_data_mount(out,mount)
+            data_source=mount['source']
+        else:
+            config,cfg=self.config_for(spec) # revalidate cache immediately before create
+            data_source=self.data
         args=['docker','create','--name',name,'--label','org.augment-atlas.attempt='+name,
               '--network','none','--gpus','device='+str(self.s['gpu']),
               '--user',f'{os.getuid()}:{os.getgid()}','--cpus',str(self.s.get('cpus',2)),
@@ -215,11 +657,12 @@ class DockerRuntime:
               '-e','ATLAS_CODE_COMMIT='+self.commit,'-e','ATLAS_IMAGE_ID='+self.image,
               '-e','CUBLAS_WORKSPACE_CONFIG=:4096:8',
               '--mount',f'type=bind,src={self.code},dst=/code,readonly',
-              '--mount',f'type=bind,src={self.data},dst=/data,readonly',
+              '--mount',f'type=bind,src={data_source},dst=/data,readonly',
               '--mount',f'type=bind,src={out},dst=/output']
         if cfg['model']['weights']!='none':
             cache=Path(self.s['torch_cache']).expanduser().resolve()
             args+=['--mount',f'type=bind,src={cache},dst=/torch-cache,readonly','-e','TORCH_HOME=/torch-cache']
+        args+=isa
         args+=['--workdir','/code','--entrypoint','python',self.image,
               '-m','augment_atlas.train','--config','/code/'+config,'--output','/output','--resume-if-exists']
         if resume: args+=['--resume','/output/checkpoint.pt']
@@ -262,6 +705,8 @@ def _stopped_checkpoint(out,spec,code):
     checkpoint load in the pinned training environment is a separate acceptance
     check before an operator explicitly resumes the attempt.
     """
+    if is_global_spec(spec):
+        return _stopped_global_checkpoint(out,spec,code)
     from .contracts import load_config,canonical_hash
     out=Path(out)
     source=(Path(code)/spec['config']).resolve()
@@ -299,6 +744,55 @@ def _stopped_checkpoint(out,spec,code):
             dict(sha256=digest(checkpoint),size_bytes=checkpoint.stat().st_size,
                  validation='zip-crc-and-job-artifact-identity',
                  config_sha256=canonical_hash(cfg),splits_sha256=splits['sha256']))
+
+
+def _stopped_global_checkpoint(out,spec,code):
+    """Global analogue of _stopped_checkpoint: identity by materialized bytes, no pickle/torch.
+
+    config_sha256 is the hash of the pinned bytes (not canonical_hash(cfg)); an
+    attempt that recorded a non-null trainer_override is never resumable.
+    """
+    from .contracts import canonical_hash
+    out=Path(out)
+    try:
+        _,config_bytes,config_sha,cfg=_global_config_bytes(code,spec)
+    except ValueError as exc:
+        raise ValueError('checkpoint_config_identity') from exc
+    if (out/'config.json').read_bytes()!=config_bytes:
+        raise ValueError('checkpoint_config_identity')
+    splits=json.loads((out/'splits.json').read_text(encoding='utf-8'))
+    if (splits.get('sha256')!=spec['split_hash'] or
+            splits['sha256']!=canonical_hash({k:v for k,v in splits.items() if k!='sha256'})):
+        raise ValueError('checkpoint_split_identity')
+    progress=json.loads((out/'progress.json').read_text(encoding='utf-8'))
+    environment=json.loads((out/'environment.json').read_text(encoding='utf-8'))
+    if 'trainer_override' not in environment or environment['trainer_override'] is not None:
+        raise ValueError('checkpoint_trainer_override_forbidden')
+    for record in (progress,environment):
+        if record.get('config_sha256')!=config_sha or record.get('splits_sha256')!=splits['sha256']:
+            raise ValueError('checkpoint_progress_identity')
+    if progress.get('checkpoint')!='checkpoint.pt' or progress.get('phase')!=cfg['phase']:
+        raise ValueError('checkpoint_progress_identity')
+    epoch,epochs,samples=(progress.get(k) for k in ('epoch','epochs','samples_processed'))
+    if (type(epoch) is not int or type(epochs) is not int or type(samples) is not int or
+            epochs!=cfg['training']['epochs'] or not 0<=epoch<=epochs or samples<0):
+        raise ValueError('checkpoint_progress_invalid')
+    checkpoint=out/'checkpoint.pt'
+    if checkpoint.is_symlink() or not checkpoint.is_file() or checkpoint.stat().st_size==0:
+        raise ValueError('checkpoint_missing')
+    try:
+        with zipfile.ZipFile(checkpoint) as archive:
+            names=archive.namelist()
+            if (len(names)!=len(set(names)) or
+                    sum(name.endswith('/data.pkl') for name in names)!=1 or
+                    not any('/data/' in name for name in names) or archive.testzip() is not None):
+                raise ValueError('checkpoint_archive_invalid')
+    except (zipfile.BadZipFile,RuntimeError) as exc:
+        raise ValueError('checkpoint_archive_invalid') from exc
+    return (dict(epoch=epoch,epochs=epochs,samples_processed=samples),
+            dict(sha256=digest(checkpoint),size_bytes=checkpoint.stat().st_size,
+                 validation='zip-crc-and-global-job-artifact-identity',
+                 config_sha256=config_sha,splits_sha256=splits['sha256']))
 
 
 def reconcile_stopped_attempt(settings,active_path,*,reason,runtime=None,queue=None):
@@ -362,7 +856,7 @@ def reconcile_stopped_attempt(settings,active_path,*,reason,runtime=None,queue=N
         completed=False
         try:
             if state['ExitCode']==0 and (out/'completed.json').exists():
-                numbers=validate_artifacts(out,record['spec'])
+                numbers=validate_completion(settings,out,record['spec'])
                 completed=True
             else:
                 numbers,checkpoint=_stopped_checkpoint(out,record['spec'],settings['code'])
@@ -409,14 +903,154 @@ def reconcile_stopped_attempt(settings,active_path,*,reason,runtime=None,queue=N
                 remote_confirmed=confirmed,active=str(active),checkpoint=checkpoint)
 
 
-def validate_artifacts(out,spec=None):
+@dataclass(frozen=True)
+class TrustedEvaluationInputs:
+    """Host-derived expectations for ONE clinical opt-in job.
+
+    Built only from the pinned code checkout config (checked against the job's
+    config_sha256) and the operator-configured host data directory. Nothing in
+    it comes from the container-writable attempt output: the complete manifest
+    records provide the ID->group->truth mapping that splits.json lacks.
+    """
+    cfg: dict
+    config_file_sha256: str
+    splits: dict
+    records: list
+
+
+def load_trusted_evaluation_inputs(config_path,data,*,expected_config_sha256):
+    """Load trusted inputs from explicit paths; never consults ATLAS_DATA_ROOT or /data."""
+    from .contracts import load_config
+    from .data import load_records,prepare_splits
+    path=Path(config_path).resolve()
+    if not path.is_file() or digest(path)!=expected_config_sha256:
+        raise ValueError('Trusted clinical config checksum mismatch')
+    cfg=load_config(path)
+    if cfg['phase'] in GLOBAL_RUNTIME_PHASES:
+        _global_fail('global_config_invalid','global configs use load_global_trusted_inputs, never the clinical opt-in')
+    if 'evaluation' not in cfg:
+        raise ValueError('Trusted inputs are only defined for clinical evaluation opt-in')
+    if not isinstance(data,(str,os.PathLike)) or not str(data).strip():
+        raise ValueError('Clinical evaluation requires settings.data; no default data root is assumed')
+    root=Path(data).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError('Clinical evaluation data root must be an existing host directory')
+    records=load_records(cfg,check_files=True,root=root)
+    with tempfile.TemporaryDirectory(prefix='atlas-clinical-trust-') as directory:
+        splits=prepare_splits(cfg,records,directory,root=root)
+    return TrustedEvaluationInputs(cfg=copy.deepcopy(cfg),config_file_sha256=expected_config_sha256,
+                                   splits=copy.deepcopy(splits),records=copy.deepcopy(records))
+
+
+def trusted_evaluation_inputs(settings,spec):
+    """Resolve the job config inside settings.code; None means a legacy config.
+
+    The opt-in decision comes from the pinned checkout, never from the attempt's
+    own config.json. Specs without a config path cannot have been claimed by
+    config_for; they keep the legacy call and validate_artifacts still rejects an
+    output config that declares evaluation without trusted inputs.
+    """
+    if not isinstance(spec,dict) or 'config' not in spec:
+        return None
+    code=Path(settings['code']).resolve()
+    name=spec['config']
+    if not isinstance(name,str) or not name.startswith('configs/smoke/'):
+        raise ValueError('Job requires a config under configs/smoke/')
+    path=(code/name).resolve()
+    if not path.is_relative_to(code) or not path.is_file():
+        raise ValueError('Invalid training config path')
+    # The opt-in decision must be made on the exact bytes the job pinned: a
+    # checkout moved after claim fails closed for legacy and clinical jobs alike.
+    if digest(path)!=spec.get('config_sha256'):
+        raise ValueError('Pinned job config checksum mismatch; settings.code differs from the job')
+    if 'evaluation' not in json.loads(path.read_text(encoding='utf-8')):
+        return None
+    return load_trusted_evaluation_inputs(path,settings.get('data'),expected_config_sha256=spec.get('config_sha256'))
+
+
+def validate_completion(settings,out,spec):
+    """Worker/reconciliation entry: legacy jobs keep the exact legacy call.
+
+    Parser failures (deeply nested JSON, oversized CSV fields) are validation
+    failures of this attempt, never exceptions that escape the worker loop.
+    """
+    import csv
     try:
-        return _validate_artifacts(out,spec)
+        if is_global_spec(spec):
+            try:
+                return validate_global_completion(settings,out,spec)
+            except (TypeError,AttributeError,KeyError,IndexError) as exc:
+                raise ValueError('global_artifacts_invalid: malformed global completion artifacts') from exc
+        try:
+            trusted=trusted_evaluation_inputs(settings,spec)
+        except (TypeError,AttributeError,KeyError) as exc:
+            raise ValueError('Malformed trusted clinical evaluation inputs') from exc
+        if trusted is None:
+            return validate_artifacts(out,spec)
+        return validate_artifacts(out,spec,trusted=trusted)
+    except (RecursionError,csv.Error) as exc:
+        raise ValueError('Completion artifacts or host manifest cannot be parsed') from exc
+
+
+def validate_artifacts(out,spec=None,*,trusted=None):
+    """Validate a completed attempt. ``trusted`` is required iff config opts in.
+
+    Without ``evaluation`` in the attempt config and with trusted=None this is
+    the unchanged legacy eight-artifact validation.
+    """
+    try:
+        return _validate_artifacts(out,spec,trusted)
     except (TypeError,AttributeError,KeyError) as exc:
         raise ValueError('Malformed completion artifacts') from exc
 
 
-def _validate_artifacts(out,spec=None):
+def _validate_clinical(out,cfg,splits,results,metrics,environment,files,spec,trusted):
+    """Revalidate predictions.json against host-trusted config/split/manifest."""
+    from .contracts import canonical_hash,recipe_identity,required_artifacts
+    from .evaluation import (PREDICTION_ARTIFACT,evaluation_partition,partition_accuracy_bounds,
+                             selected_epoch,validate_prediction_artifact)
+    if not isinstance(trusted,TrustedEvaluationInputs) or 'evaluation' not in trusted.cfg:
+        raise ValueError('Clinical evaluation opt-in requires trusted host config/manifest inputs')
+    if 'evaluation' not in cfg or canonical_hash(cfg)!=canonical_hash(trusted.cfg):
+        raise ValueError('Attempt config differs from the trusted clinical job config')
+    if canonical_hash(splits)!=canonical_hash(trusted.splits):
+        raise ValueError('Attempt splits differ from host-derived clinical splits')
+    if not set(required_artifacts(cfg)).issubset(files):
+        raise ValueError('Completion checksums must cover the clinical prediction artifact')
+    if (not isinstance(spec,dict) or spec.get('config_sha256')!=trusted.config_file_sha256 or
+            spec.get('recipe_hash')!=recipe_identity(trusted.cfg) or
+            spec.get('split_hash')!=trusted.splits['sha256'] or
+            not isinstance(spec.get('code_commit'),str) or not spec['code_commit']):
+        raise ValueError('Clinical job spec config/recipe/split/code identity mismatch')
+    if environment.get('code_commit')!=spec['code_commit']:
+        raise ValueError('Clinical environment code commit differs from job')
+    # Top-level results carry exactly the trainer's keys: no extra claims
+    # (e.g. scientifically_eligible) can ride along outside clinical_evaluation.
+    allowed={'schema_version','phase','scientific_status','best_epoch','selection_loss','config_sha256',
+             'splits_sha256','inbreast_previously_examined_in_pilot','clinical_evaluation',
+             'evaluation_scope',evaluation_partition(cfg)}
+    pilot=results.get('inbreast_previously_examined_in_pilot',cfg['dataset']['adapter']=='inbreast_csv')
+    if (not set(results)<=allowed or results.get('phase')!='smoke' or
+            results.get('scientific_status')!='provisional' or
+            pilot is not (cfg['dataset']['adapter']=='inbreast_csv')):
+        raise ValueError('Clinical results.json declares keys or status outside the trainer contract')
+    best_epoch,best_loss=selected_epoch(metrics)
+    if (type(results.get('best_epoch')) is not int or results['best_epoch']!=best_epoch or
+            results.get('selection_loss')!=best_loss):
+        raise ValueError('Selected epoch differs from the selection-loss journal')
+    artifact=json.loads((out/PREDICTION_ARTIFACT).read_text(encoding='utf-8'))
+    validate_prediction_artifact(trusted.cfg,trusted.splits,trusted.records,artifact,
+                                 results.get('clinical_evaluation'),expected_best_epoch=best_epoch,
+                                 environment=environment)
+    summary=results[evaluation_partition(cfg)]
+    lower,upper=partition_accuracy_bounds(artifact)
+    correct=summary['accuracy']*summary['samples']
+    if (summary['samples']!=len(artifact['rows']) or abs(correct-round(correct))>1e-6 or
+            not lower<=round(correct)<=upper):
+        raise ValueError('Partition accuracy is inconsistent with stored probabilities')
+
+
+def _validate_artifacts(out,spec=None,trusted=None):
     out=Path(out)
     p=out/'completed.json'
     if not p.is_file(): raise ValueError('Missing completed.json')
@@ -434,6 +1068,9 @@ def _validate_artifacts(out,spec=None):
         if not (out/name).is_file(): raise ValueError('Missing required result')
     from .contracts import load_config,canonical_hash
     cfg=load_config(out/'config.json')
+    if cfg['phase'] in GLOBAL_RUNTIME_PHASES:
+        _global_fail('global_config_invalid','global attempts are validated only by validate_completion '
+                     'with host-trusted inputs (validate_global_completion)')
     config_hash=canonical_hash(cfg)
     splits=json.loads((out/'splits.json').read_text())
     if splits.get('sha256')!=canonical_hash({k:v for k,v in splits.items() if k!='sha256'}):
@@ -472,10 +1109,150 @@ def _validate_artifacts(out,spec=None):
         raise ValueError('Invalid evaluation artifact')
     if spec and (spec['split_hash']!=splits['sha256'] or cfg['training']['seed']!=spec['train_seed'] or cfg['augmentation']['arm']!=spec['arm']):
         raise ValueError('Result belongs to another job')
+    if 'evaluation' in cfg or trusted is not None:
+        _validate_clinical(out,cfg,splits,results,metrics,environment,files,spec,trusted)
     summary=dict(completed_sha256=digest(p),artifact_count=len(files),epoch=progress['epoch'],epochs=cfg['training']['epochs'])
     samples=progress.get('samples_processed')
     if type(samples) is int and samples>=0:summary['samples_processed']=samples
     return summary
+
+
+_GLOBAL_METRIC_KEYS={'epoch','utc','train_loss','samples_processed','optimizer_updates','learning_rate'}
+
+
+def _accuracy_bounds(rows):
+    """Correct-count bounds from stored probabilities (ties may go either way)."""
+    lower=upper=0
+    for row in rows:
+        scores=row['scores']; best=max(scores)
+        tied=[index for index,value in enumerate(scores) if value==best]
+        if row['target'] in tied:
+            upper+=1
+            lower+=len(tied)==1
+    return lower,upper
+
+
+def validate_global_completion(settings,out,spec):
+    """Completed global attempt vs host-trusted inputs (9 artifacts, spec 6.6/7.3).
+
+    Trust comes only from the pinned checkout and settings.data/settings.views.
+    The prediction artifact is recomputed by global_evaluation with the host
+    records and anchored pools; a non-null trainer_override is always refused.
+    """
+    trusted=load_global_trusted_inputs(settings['code'],settings.get('data'),spec)
+    return _validate_global_artifacts(settings,Path(out),spec,trusted)
+
+
+def _validate_global_artifacts(settings,out,spec,trusted):
+    from . import global_evaluation as ge
+    from . import global_jobs as gj
+    from .contracts import canonical_hash,required_artifacts
+
+    def bad(message):
+        _global_fail('global_artifacts_invalid',message)
+
+    def read(name):
+        return json.loads((out/name).read_text(encoding='utf-8'))
+
+    cfg,view=trusted.cfg,trusted.view
+    phase,epochs=cfg['phase'],cfg['training']['epochs']
+    config_sha,split=trusted.config_sha256,view['sha256']
+    p=out/'completed.json'
+    if not p.is_file():bad('missing completed.json')
+    completed=read('completed.json')
+    files=completed.get('artifacts')
+    required=set(required_artifacts(cfg))
+    if type(files) is not dict or set(files)!=required:
+        bad('completion checksums must cover exactly the nine global artifacts')
+    for name,wanted in files.items():
+        path=out/name
+        if (path.is_symlink() or not path.resolve().is_relative_to(out.resolve()) or not path.is_file() or
+                path.stat().st_size==0 or digest(path)!=wanted):
+            bad('invalid completed artifact')
+    environment,results,progress,metrics=(read(n) for n in ('environment.json','results.json','progress.json','metrics.json'))
+    for label,document in (('completed',completed),('environment',environment),('results',results)):
+        if type(document) is not dict or 'trainer_override' not in document or document['trainer_override'] is not None:
+            _global_fail('trainer_override_forbidden',f'{label} records a trainer_override; toy/CPU attempts are never accepted')
+    if (out/'config.json').read_bytes()!=trusted.config_bytes:
+        _global_fail('config_identity_mismatch','attempt config.json differs from the pinned materialized bytes')
+    if canonical_hash(read('splits.json'))!=canonical_hash(view):
+        _global_fail('view_hash_mismatch','attempt splits.json differs from the host-derived view')
+    if spec.get('split_hash')!=split:
+        _global_fail('view_hash_mismatch','job split_hash differs from the host-derived view')
+    for document in (completed,progress,results,environment):
+        if (type(document) is not dict or document.get('config_sha256')!=config_sha or
+                document.get('splits_sha256')!=split or document.get('phase')!=phase):
+            bad('completion config/split/phase identity mismatch')
+    if (completed.get('status')!='completed' or progress.get('status')!='completed' or
+            type(progress.get('epoch')) is not int or progress['epoch']!=epochs or
+            type(completed.get('epoch')) is not int or completed['epoch']!=epochs or progress.get('epochs')!=epochs):
+        bad('training did not complete every fixed epoch')
+    if (type(metrics) is not list or len(metrics)!=epochs or
+            any(type(row) is not dict or set(row)!=_GLOBAL_METRIC_KEYS or row['epoch']!=index+1
+                for index,row in enumerate(metrics))):
+        bad('metrics.json must journal exactly the fixed epochs, without per-epoch evaluation')
+    evaluated='test' if phase=='final' else 'selection'
+    keys={'schema_version','phase','scientific_status','protocol_version','checkpoint_selection','best_epoch','epochs',
+          'config_sha256','splits_sha256','initial_state_sha256','trainer_override',evaluated,f'{evaluated}_evaluations',
+          'clinical_evaluation','execution_verified','scientific_eligible'}
+    count=results.get(f'{evaluated}_evaluations')
+    if (set(results)!=keys or results['scientific_status']!='provisional' or
+            results['protocol_version']!=cfg['protocol_version'] or results['checkpoint_selection']!='last_epoch' or
+            type(results['best_epoch']) is not int or results['best_epoch']!=epochs or results['epochs']!=epochs or
+            results['execution_verified'] is not False or results['scientific_eligible'] is not False or
+            type(count) is not int or count<1):
+        _global_fail('epoch_selection_forbidden' if results.get('best_epoch')!=epochs else 'global_artifacts_invalid',
+                     f'results.json outside the global {phase} trainer contract')
+    bound=cfg['global']
+    if (environment.get('protocol_version')!=cfg['protocol_version'] or
+            environment.get('code_commit')!=spec.get('code_commit') or
+            environment.get('weights')!=cfg['model']['weights'] or
+            environment.get('weights_sha256')!=cfg['model']['weights_sha256'] or
+            environment.get('device')!=cfg['training']['device'] or environment.get('workers')!=cfg['training']['workers'] or
+            canonical_hash(environment.get('trainer_constants'))!=canonical_hash(gj.TRAINER_CONSTANTS_V1) or
+            environment.get('initial_state_sha256')!=results['initial_state_sha256'] or
+            environment.get('global')!={k:bound[k] for k in ('pools_sha256','hpo_view_sha256','plan_sha256','candidate_id',
+                                                            'freeze_kind','freeze_sha256','fold')} or
+            environment.get('evaluated_partition')!=ge.PARTITIONS[phase]):
+        bad('environment.json differs from the job/config identity')
+    provenance=read('runtime.json') if (out/'runtime.json').is_file() else {}
+    mount=provenance.get('data_mount') if type(provenance) is dict else None
+    if phase=='hpo':
+        expected=dict(kind='d_view',source=str(expected_d_view(settings,bound['pools_sha256']).resolve()),
+                      destination='/data',readonly=True,pools_sha256=bound['pools_sha256'],
+                      hpo_view_sha256=view['sha256'],view_files_sha256=view['view_files_sha256'])
+        integrity=environment.get('dataset_integrity')
+        if (mount!=expected or type(integrity) is not dict or integrity.get('source')!='hpo_view' or
+                integrity.get('view_files_sha256')!=view['view_files_sha256']):
+            _global_fail('hpo_isolation_unproven','runtime.json does not record the verified D-view as the only /data mount')
+        train_images=len(view['lists']['train'])
+    else:
+        data=Path(settings['data']).expanduser().resolve()
+        if mount!=dict(kind='data_root',source=str(data),destination='/data',readonly=True):
+            bad('runtime.json does not record the read-only data root mount of the final job')
+        train_images=len(view['train'])
+    artifact=read(ge.ARTIFACT_NAME)
+    summary=ge.validate_global_predictions(cfg,view,trusted.records,artifact,pools=trusted.pools)
+    declared={k:summary[k] for k in ('partition','samples','primary_metric','primary_value','primary_reason','content_sha256')}
+    if canonical_hash(results['clinical_evaluation'])!=canonical_hash({'artifact':ge.ARTIFACT_NAME,**declared}):
+        _global_fail('metric_recompute_mismatch','results.clinical_evaluation differs from the recomputed artifact')
+    rows=artifact['rows']
+    measured=results[evaluated]
+    if (type(measured) is not dict or set(measured)!={'loss','accuracy','samples'} or
+            type(measured['samples']) is not int or measured['samples']!=len(rows) or
+            type(measured['loss']) not in (int,float) or not math.isfinite(measured['loss']) or measured['loss']<0 or
+            type(measured['accuracy']) not in (int,float) or not 0<=measured['accuracy']<=1):
+        bad(f'results.{evaluated} is not a finite summary of the evaluated partition')
+    lower,upper=_accuracy_bounds(rows)
+    correct=measured['accuracy']*measured['samples']
+    if abs(correct-round(correct))>1e-6 or not lower<=round(correct)<=upper:
+        _global_fail('metric_recompute_mismatch','evaluated accuracy is inconsistent with stored probabilities')
+    if environment.get('evaluated_images')!=len(rows) or environment.get('train_images')!=train_images:
+        bad('environment image counts differ from the host-derived view')
+    result=dict(completed_sha256=digest(p),artifact_count=len(files),epoch=progress['epoch'],epochs=epochs)
+    samples=progress.get('samples_processed')
+    if type(samples) is int and samples>=0:result['samples_processed']=samples
+    return result
 
 
 def worker(settings,once=False):
@@ -517,7 +1294,8 @@ def worker(settings,once=False):
                     local=dict(record=record,output=str(out),container=name,image=runtime.image,stage='prepared')
                     atomic_json(active,local)
                     atomic_json(out/'runtime.json',dict(job_id=record['job_id'],attempt_id=record['attempt_id'],
-                                code_commit=runtime.commit,image_id=runtime.image,owner=owner,environment=runtime.environment))
+                                code_commit=runtime.commit,image_id=runtime.image,owner=owner,environment=runtime.environment,
+                                cpu_isa_max=cpu_isa_max(settings)))
                 spool=Spool(out/'events-pending.json',record)
                 record=spool.record
                 container=runtime.inspect(name)
@@ -598,7 +1376,7 @@ def worker(settings,once=False):
                 if not any(e['state'] in ('succeeded','failed','interrupted') for e in spool.events) and spool.record['state'] not in ('succeeded','failed','interrupted'):
                     try:
                         if state['State']['ExitCode']!=0:raise ValueError('Nonzero training exit')
-                        summary=validate_artifacts(out,record['spec'])
+                        summary=validate_completion(settings,out,record['spec'])
                         spool.add('succeeded',**summary)
                     except (ValueError,OSError,KeyError):
                         interrupted=((out/'checkpoint.pt').exists() and not (out/'failed.json').exists()
