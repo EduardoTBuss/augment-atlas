@@ -101,6 +101,8 @@ def check_amendment(spec, amendment, acquisition_raw):
             acquisition_raw):
         _fail("split_spec_invalid", "split amendment is bound to another acquisition config identity")
     check_preregistered(spec, acquisition_raw.get("splits"))
+    if amendment["dataset"] != spec["dataset"].get("id"):
+        _fail("split_spec_invalid", "the split amendment belongs to another dataset")
     for key in ("seeds", "fractions", "thresholds"):
         if canonical_hash(spec[key]) != canonical_hash(amendment[key]):
             _fail("split_spec_invalid", f"spec {key} differ from the pre-registered split amendment")

@@ -455,6 +455,15 @@ paciente, listas, hashes por grupo ou caminhos.
 O algoritmo `global-dev-eval-v1` é novo e só stdlib, sem dependência de versão do
 sklearn. Ele é distinto do `stratified-group-outer-v1`, que é within-outer-fold.
 
+**Emenda de 22/10/2026 (S1/S2).** Valem as seeds explícitas (development, selection,
+evaluation) e as regras de `configs/acquisition/isic2020-v1-splits-amendment-20261022.json`:
+- quartis nearest-rank sobre todos os grupos;
+- D_select nos estratos de D;
+- `round` lido como meio-para-cima exato;
+- um contador único de folds entre estratos.
+
+O texto abaixo é o plano original, com `split_seed` única.
+
 1. **Unidade:** o grupo do §3.5. **Estratos:** `positivo = ∃ imagem target=1` × quartil
    de nº de imagens por grupo.
 2. **D/E:** em cada estrato, ordenar os grupos por `sha256([alg, split_seed, "DE", group])`

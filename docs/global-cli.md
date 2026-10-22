@@ -127,9 +127,9 @@ never imported.
 | Search space (c00 = Q2 default, Q7) | `search-space --spec SPEC.json --color ...` plus `--code --image-id --environment-probe --weights-sha256` |
 | Plan at the clean HEAD (commit P) | `build-plan --search-space-sha256 S --view-sha256 V --final-seeds a,b,c` plus the runtime flags |
 | HPO configs | `materialize-hpo --search-space-sha256 S --plan-sha256 PL --view-sha256 V`, then commit `configs/global/<ds>/hpo/` (commit X) |
-| Seed | `seed-hpo ... --image-id I` plus the queue flags, on the clean commit X |
-| Collect | `collect-hpo ... --configs-commit X --runs RUNS --views-root VIEWS --settings worker.json` |
-| Freeze | `seal-freeze --plan-sha256 PL --evidence-sha256 EV --frozen-at UTC` |
+| Seed | `seed-hpo ... --image-id I --environment-probe PROBE` plus the queue flags, on the clean commit X |
+| Collect | `collect-hpo ... --image-id I --environment-probe PROBE --configs-commit X --runs RUNS --views-root VIEWS --settings worker.json` |
+| Freeze | `seal-freeze` with the same arguments as `collect-hpo`, plus `--evidence-sha256 EV --frozen-at UTC` |
 
 Then `anchor --kind recipe_freeze --freeze-kind hpo_d`, `materialize-final
 --freeze-kind hpo_d`, and `seal-campaign ... --search-space-sha256 S`, as for
@@ -154,7 +154,31 @@ The commit stays in every hash and identity.
   `external_fixed` campaign anchor is not yet in the queue (decision 7).
 
 `seal-freeze` takes the winner from the predeclared ranking (mean, ties to
-`c00`). No option chooses it.
+`c00`). No option chooses it. Two further guards close audit finding B-1:
+- `collect-hpo` refuses (`collection_incomplete`) while any HPO job of the plan
+  is absent or not terminal;
+- `seal-freeze` recomputes the evidence from the **current** queue and accepts
+  only an `--evidence-sha256` equal to that recomputation.
+
+So an earlier snapshot, for example one taken before a retry, can never be
+frozen.
+
+**Same image (Q6).** `seed-hpo`, `collect-hpo`, `seal-freeze` and
+`seal-campaign` require `environment_sha256(--image-id, --environment-probe)`
+to equal the `environment_sha256` that the plan or freeze recorded. A
+different image or probe is `code_identity_mismatch`. `collect-hpo` also
+requires the Q6 evidence it re-derives to equal the one `seed-hpo` stored.
+
+**Pools (`make-pools`).**
+- It reads the acquisition config and the split amendment only as tracked,
+  unmodified files of a clean `--code` checkout, so an edit is a visible
+  commit.
+- It binds them to the `READY.json` config identity of `--acquisition-root`.
+- It requires the spec to equal the derivation from that root.
+
+**Exposed datasets (INbreast).** On a dataset with `prior_exposure` other
+than `none_documented`, `seed-final` needs both campaign anchors
+(`external_fixed` and `hpo_d`) before the first final job (decision 7).
 
 **Q6 (confirmed by Eduardo on 22/10/2026):** `same_code_identity_v1` is
 confirmed. The code token `Q6_POLICY_STATUS` still reads

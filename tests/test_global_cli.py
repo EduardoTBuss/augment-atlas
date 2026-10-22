@@ -150,6 +150,7 @@ class CliCase(unittest.TestCase):
         git(env.code, "add", "-A"); git(env.code, "commit", "-qm", "final configs")
         campaign = self.run_cli(env.base("seal-campaign") + [
             "--code", str(env.code), *self.freeze_args(freeze), *env.queue_args(), "--image-id", IMAGE,
+            "--environment-probe", str(env.probe),
             "--sealed-at", "2026-10-23T13:00:00Z"])
         return freeze, campaign
 
@@ -307,6 +308,7 @@ class ExternalPathTests(CliCase):
         self.run_cli(env.base("materialize-final") + ["--code", str(env.code), *self.freeze_args(freeze)])
         error = self.run_cli(env.base("seal-campaign") + [
             "--code", str(env.code), *self.freeze_args(freeze), *env.queue_args(), "--image-id", IMAGE,
+            "--environment-probe", str(env.probe),
             "--sealed-at", "2026-10-23T13:00:00Z"], code=2)
         self.assertTrue(error.startswith("code_identity_mismatch:"), error)
         git(env.code, "add", "-A"); git(env.code, "commit", "-qm", "final configs")
@@ -314,6 +316,7 @@ class ExternalPathTests(CliCase):
         git(env.code, "commit", "-qam", "code change")
         error = self.run_cli(env.base("seal-campaign") + [
             "--code", str(env.code), *self.freeze_args(freeze), *env.queue_args(), "--image-id", IMAGE,
+            "--environment-probe", str(env.probe),
             "--sealed-at", "2026-10-23T13:00:00Z"], code=2)
         self.assertTrue(error.startswith("code_identity_mismatch:"), error)
 
@@ -394,46 +397,29 @@ class ExternalPathTests(CliCase):
         self.assertIn("message withheld", error)
         self.assertNotIn(d_image, error)
 
-    def test_make_pools_then_import_pools(self):
+    def test_make_pools_refuses_an_amendment_that_is_not_a_committed_file(self):
+        # The full make-pools path (verified acquisition root, committed amendment) is in test_isic_amendment.
         env = self.env
-        candidate = pools_candidate(env.records)
-        split_spec = {key: candidate[key] for key in ("dataset", "task", "grouping", "provenance", "source_sha256")}
-        split_spec.update(seeds={"development": 5, "selection": 6, "evaluation": 7},
-                          fractions={"D": 0.2, "D_select_given_D": 0.3},
-                          thresholds={"min_select_positive_groups": 1, "min_eval_fold_positive_groups": 1})
-        path = Path(env.data).parent / "split-spec.json"
-        path.write_text(json.dumps(split_spec), encoding="utf-8")
-        config = Path(env.data).parent / "acquisition.json"
-        splits = {"algorithm": "global-dev-eval-v1", "split_seed": 5, "dev_fraction": 0.2, "select_fraction": 0.3,
-                  "eval_folds": 5, "min_select_positive_groups": 1, "min_eval_fold_positive_groups": 1}
-        config.write_text(json.dumps({"splits": splits}), encoding="utf-8")
-        from augment_atlas.acquisition.config import identity_of
-        amendment = json.loads((ROOT / "configs/acquisition/isic2020-v1-splits-amendment-20261022.json").read_text())
-        amendment.update(seeds=split_spec["seeds"], fractions=split_spec["fractions"],
-                         thresholds=split_spec["thresholds"])
-        amendment["amends"]["config_identity_sha256"] = identity_of({"splits": splits})
-        amendment_path = Path(env.data).parent / "amendment.json"
-        amendment_path.write_text(json.dumps(amendment), encoding="utf-8")
-        lax = dict(split_spec, fractions={"D": 0.5, "D_select_given_D": 0.3})
-        lax_path = Path(env.data).parent / "lax-spec.json"
-        lax_path.write_text(json.dumps(lax), encoding="utf-8")
-        error = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(lax_path),
-                                                                    "--acquisition-config", str(config),
-                                                                    "--split-amendment", str(amendment_path)], code=2)
+        amendment = Path(env.data).parent / "amendment.json"  # a private copy, outside the code repository
+        amendment.write_text((ROOT / "configs/acquisition/isic2020-v1-splits-amendment-20261022.json").read_text())
+        spec = Path(env.data).parent / "spec.json"
+        spec.write_text(json.dumps({"dataset": {"id": DATASET}}))
+        error = self.run_cli(env.base("make-pools", pools=False) + [
+            "--spec", str(spec), "--acquisition-config", str(ROOT / "configs/acquisition/isic2020-v1.json"),
+            "--split-amendment", str(amendment), "--acquisition-root", str(env.data), "--code", str(env.code)], code=2)
         self.assertTrue(error.startswith("split_spec_invalid:"), error)
-        made = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(path),
-                                                                   "--acquisition-config", str(config),
-                                                                   "--split-amendment", str(amendment_path)])
-        self.assertEqual(made["acquisition_config_sha256"], hashlib.sha256(config.read_bytes()).hexdigest())
-        self.assertEqual(made["seeds"], {"development": 5, "selection": 6, "evaluation": 7})
-        self.assertEqual(made["algorithm"], "global-dev-eval-v1")
-        self.assertEqual(made["pools"]["E"]["groups"] + made["pools"]["D"]["groups"], 8)
-        imported = self.run_cli(env.base("import-pools", pools=False) + [
-            "--file", made["path"], "--expected-manifest", made["global_manifest_sha256"]])
-        self.assertEqual(imported["pools_sha256"], made["candidate_sha256"])
-        env.pools_sha = imported["pools_sha256"]
-        audit = self.run_cli(env.base("audit-pools") + ["--expected-manifest", made["global_manifest_sha256"]])
-        self.assertIs(audit["structural_valid"], True)
+
+    def test_seal_campaign_refuses_another_image_than_the_freeze(self):
+        env = self.env
+        self.import_pools()
+        freeze = self.seal_external()
+        self.run_cli(env.base("materialize-final") + ["--code", str(env.code), *self.freeze_args(freeze)])
+        git(env.code, "add", "-A"); git(env.code, "commit", "-qm", "final configs")
+        error = self.run_cli(env.base("seal-campaign") + [
+            "--code", str(env.code), *self.freeze_args(freeze), *env.queue_args(), "--image-id", "sha256:" + "a" * 64,
+            "--environment-probe", str(env.probe), "--sealed-at", "2026-10-23T13:00:00Z"], code=2)
+        self.assertTrue(error.startswith("code_identity_mismatch:"), error)
+
 
     def test_emit_refuses_an_exact_group_value_or_key(self):
         records = self.env.records

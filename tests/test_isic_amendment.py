@@ -12,6 +12,7 @@ beyond loopback, no real dataset.
 import copy
 import json
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 
@@ -161,17 +162,26 @@ class VerifiedRootToPoolsTests(AcquisitionE2E):
         source = self.dir / "source.json"
         source.write_text(json.dumps({"adapter": "manifest_csv", "manifest": "manifest/manifest.csv",
                                       "manifest_sha256": ready["files"]["manifest.csv"]}))
-        amendment = self.dir / "amendment.json"
+        # The config and the amendment are committed files of a clean code checkout (pre-registration).
+        code = self.dir / "code"
+        (code / "configs" / "acquisition").mkdir(parents=True)
+        config = code / "configs" / "acquisition" / "isic2020-v1.json"
+        config.write_text(self.config_path.read_text())
+        amendment = code / "configs" / "acquisition" / "isic2020-v1-splits-amendment-20261022.json"
         amendment.write_text(json.dumps(amendment_for(self.raw)))
+        for argv in (["init", "-q"], ["config", "user.email", "t@example.invalid"], ["config", "user.name", "t"],
+                     ["add", "-A"], ["commit", "-qm", "pre-registered split amendment"]):
+            subprocess.run(["git", "-C", str(code), *argv], check=True, capture_output=True)
         base = ["--data-root", str(self.root), "--source", str(source), "--dataset", "isic2020"]
+        pins = ["--acquisition-config", str(config), "--split-amendment", str(amendment),
+                "--acquisition-root", str(self.root), "--code", str(code)]
         spec_path = self.dir / "split-spec.json"
         spec = self.global_cli("split-spec", *base, "--acquisition-root", str(self.root),
                                "--split-amendment", str(amendment), "--out", str(spec_path))
         self.assertEqual(spec["dataset"]["version"], "isic2020-derived-512-v1")
         text = spec_path.read_text()
         self.assertNotRegex(text, r"SYNTH_\d{7}|PSYNTH_\d{4}|LSYNTH_\d{7}|isic20-g-")
-        made = self.global_cli("make-pools", *base, "--spec", str(spec_path), "--acquisition-config",
-                               str(self.config_path), "--split-amendment", str(amendment))
+        made = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins)
         imported = self.global_cli("import-pools", *base, "--file", made["path"],
                                    "--expected-manifest", made["global_manifest_sha256"])
         pools = gd._read(Path(made["path"]).parent / f"pools-{imported['pools_sha256']}.json")
@@ -193,9 +203,35 @@ class VerifiedRootToPoolsTests(AcquisitionE2E):
         loose["seeds"]["evaluation"] = 99
         loose_path = self.dir / "loose.json"
         loose_path.write_text(json.dumps(loose))
-        error = self.global_cli("make-pools", *base, "--spec", str(loose_path), "--acquisition-config",
-                                str(self.config_path), "--split-amendment", str(amendment), code=2)
+        error = self.global_cli("make-pools", *base, "--spec", str(loose_path), *pins, code=2)
         self.assertIn("split_spec_invalid", error)
+        # A hand-edited spec (provenance) is refused: it must equal the derivation from the verified root.
+        edited = json.loads(spec_path.read_text())
+        edited["source_sha256"] = "0" * 64
+        loose_path.write_text(json.dumps(edited))
+        error = self.global_cli("make-pools", *base, "--spec", str(loose_path), *pins, code=2)
+        self.assertIn("split_spec_invalid: the spec differs", error)
+        # An edited amendment is visible: uncommitted -> dirty checkout; a private copy -> not tracked.
+        original = amendment.read_text()
+        changed = json.loads(original)
+        changed["seeds"]["evaluation"] = 20261023
+        amendment.write_text(json.dumps(changed))
+        error = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins, code=2)
+        self.assertIn("code_identity_mismatch", error)
+        amendment.write_text(original)
+        copy_path = self.dir / "private-amendment.json"
+        copy_path.write_text(json.dumps(changed))
+        error = self.global_cli("make-pools", *base, "--spec", str(spec_path), "--acquisition-config", str(config),
+                                "--split-amendment", str(copy_path), "--acquisition-root", str(self.root),
+                                "--code", str(code), code=2)
+        self.assertIn("split_spec_invalid", error)
+        # An amendment bound to another config identity than the verified acquisition is refused at split-spec.
+        other = self.dir / "other-amendment.json"
+        other.write_text(json.dumps({**amendment_for(self.raw), "amends": {**amendment_for(self.raw)["amends"],
+                                                                           "config_identity_sha256": "1" * 64}}))
+        error = self.global_cli("split-spec", *base, "--acquisition-root", str(self.root),
+                                "--split-amendment", str(other), "--out", str(self.dir / "x.json"), code=2)
+        self.assertIn("another config identity", error)
         self.assertEqual(file_hash(self.root / "manifest" / "manifest.csv"), ready["files"]["manifest.csv"])
 
 
