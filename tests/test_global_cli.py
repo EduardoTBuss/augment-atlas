@@ -183,7 +183,8 @@ class CliCase(unittest.TestCase):
                                         "content_sha256")}}}
             (out / "results.json").write_text(json.dumps(results), encoding="utf-8")
             (out / "runtime.json").write_text(json.dumps({"data_mount": {
-                "kind": "data_root", "source": str(self.env.data), "destination": "/data", "readonly": True}}),
+                "kind": "data_root", "source": str(self.env.data), "destination": "/data", "readonly": True},
+                "image_id": IMAGE}),
                 encoding="utf-8")
             completed = {"status": "completed", "phase": "final", "config_sha256": spec["config_sha256"],
                          "splits_sha256": view["sha256"], "trainer_override": None,
@@ -300,6 +301,23 @@ class ExternalPathTests(CliCase):
         error = self.run_cli(env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs), "--host-validation", "minimal"], code=2)
         self.assertTrue(error.startswith("metric_recompute_mismatch:"), error)
         self.assertFalse(list((env.data / "global" / DATASET).glob("report-*.json")))
+
+    def test_final_attempt_on_another_image_fails_the_report(self):
+        env = self.env
+        _, campaign = self.to_campaign()
+        self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "campaign",
+                                           "--document-sha256", campaign["campaign_sha256"]])
+        self.run_cli(env.base("seed-final") + self.campaign_args(campaign))
+        queue = GitQueue(env.checkout, env.remote)
+        job = next(j for j in queue.list_jobs() if j["spec"]["arm"] == "none" and j["spec"]["fold"] == 0)
+        done = self.finish(queue, job, "succeeded", initial=H("s"))
+        path = env.runs / job["job_id"] / done["attempt_id"] / "runtime.json"
+        provenance = json.loads(path.read_text())
+        provenance["image_id"] = "sha256:" + "a" * 64
+        path.write_text(json.dumps(provenance))
+        error = self.run_cli(env.base("report") + self.campaign_args(campaign) +
+                             ["--runs", str(env.runs), "--host-validation", "minimal"], code=2)
+        self.assertTrue(error.startswith("code_identity_mismatch:"), error)
 
     def test_dirty_checkout_and_edited_config_are_refused(self):
         env = self.env

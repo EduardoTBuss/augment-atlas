@@ -131,7 +131,7 @@ never imported.
 | Collect | `collect-hpo ... --image-id I --environment-probe PROBE --configs-commit X --runs RUNS --views-root VIEWS --settings worker.json` |
 | Freeze | `seal-freeze` with the same arguments as `collect-hpo`, plus `--evidence-sha256 EV --frozen-at UTC` |
 
-Then `anchor --kind recipe_freeze --freeze-kind hpo_d`, `materialize-final
+Then `anchor --kind recipe_freeze --freeze-kind hpo_d` (with the collection arguments), `materialize-final
 --freeze-kind hpo_d`, and `seal-campaign ... --search-space-sha256 S`, as for
 campaign (a).
 
@@ -154,14 +154,23 @@ The commit stays in every hash and identity.
   `external_fixed` campaign anchor is not yet in the queue (decision 7).
 
 `seal-freeze` takes the winner from the predeclared ranking (mean, ties to
-`c00`). No option chooses it. Two further guards close audit finding B-1:
+`c00`). No option chooses it. Three further guards close audit findings B-1
+and B-1':
 - `collect-hpo` refuses (`collection_incomplete`) while any HPO job of the plan
-  is absent or not terminal;
-- `seal-freeze` recomputes the evidence from the **current** queue and accepts
-  only an `--evidence-sha256` equal to that recomputation.
+  is absent or not terminal.
+- The **first complete collection of a plan is binding**. It writes the
+  private pin `hpo-evidence-pin-<plan_sha256>.json`, and any later collection
+  with different evidence is `collection_invalid`. This covers a retry or
+  resume decided after the scores were visible, so infrastructure retries
+  happen before the first collection.
+- `seal-freeze` **and** `anchor --kind recipe_freeze --freeze-kind hpo_d`
+  recompute the evidence from the current queue. They require it to equal
+  the pin and the freeze's `selection_evidence_sha256`. An `hpo_d` anchor
+  therefore takes the same collection arguments as `collect-hpo`.
 
-So an earlier snapshot, for example one taken before a retry, can never be
-frozen.
+The pin lives in the operator's private store. Like every private document,
+it protects against mistakes and post-hoc choices, not against a repository
+owner who deletes it (spec R9: flags stay false).
 
 **Same image (Q6).** `seed-hpo`, `collect-hpo`, `seal-freeze` and
 `seal-campaign` require `environment_sha256(--image-id, --environment-probe)`
@@ -170,9 +179,11 @@ different image or probe is `code_identity_mismatch`. `collect-hpo` also
 requires the Q6 evidence it re-derives to equal the one `seed-hpo` stored.
 
 **Pools (`make-pools`).**
-- It reads the acquisition config and the split amendment only as tracked,
-  unmodified files of a clean `--code` checkout, so an edit is a visible
-  commit.
+- It reads the acquisition config and the split amendment with `git show
+  HEAD:<path>` from a clean `--code` checkout whose HEAD is on a
+  remote-tracking branch. A local-only commit or a `skip-worktree` edit is
+  never the pre-registered version.
+- It requires `--source` to be the `manifest.csv` that `READY.json` verified.
 - It binds them to the `READY.json` config identity of `--acquisition-root`.
 - It requires the spec to equal the derivation from that root.
 

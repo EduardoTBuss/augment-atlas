@@ -169,8 +169,12 @@ class VerifiedRootToPoolsTests(AcquisitionE2E):
         config.write_text(self.config_path.read_text())
         amendment = code / "configs" / "acquisition" / "isic2020-v1-splits-amendment-20261022.json"
         amendment.write_text(json.dumps(amendment_for(self.raw)))
-        for argv in (["init", "-q"], ["config", "user.email", "t@example.invalid"], ["config", "user.name", "t"],
-                     ["add", "-A"], ["commit", "-qm", "pre-registered split amendment"]):
+        remote = self.dir / "code-remote.git"
+        subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True, capture_output=True)
+        for argv in (["init", "-q", "-b", "main"], ["config", "user.email", "t@example.invalid"],
+                     ["config", "user.name", "t"], ["add", "-A"], ["commit", "-qm", "pre-registered split amendment"],
+                     ["remote", "add", "origin", str(remote)], ["push", "-q", "origin", "main"],
+                     ["fetch", "-q", "origin"]):
             subprocess.run(["git", "-C", str(code), *argv], check=True, capture_output=True)
         base = ["--data-root", str(self.root), "--source", str(source), "--dataset", "isic2020"]
         pins = ["--acquisition-config", str(config), "--split-amendment", str(amendment),
@@ -182,8 +186,10 @@ class VerifiedRootToPoolsTests(AcquisitionE2E):
         text = spec_path.read_text()
         self.assertNotRegex(text, r"SYNTH_\d{7}|PSYNTH_\d{4}|LSYNTH_\d{7}|isic20-g-")
         made = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins)
+        self.assertEqual(made["seeds"], amendment_for(self.raw)["seeds"])
         imported = self.global_cli("import-pools", *base, "--file", made["path"],
                                    "--expected-manifest", made["global_manifest_sha256"])
+        self.assertEqual(imported["pools_sha256"], made["candidate_sha256"])
         pools = gd._read(Path(made["path"]).parent / f"pools-{imported['pools_sha256']}.json")
         self.assertEqual(pools["partition_provenance"]["seeds"], amendment_for(self.raw)["seeds"])
         manifest = (self.root / "manifest" / "manifest.csv").read_text().splitlines()[1:]
@@ -225,6 +231,28 @@ class VerifiedRootToPoolsTests(AcquisitionE2E):
                                 "--split-amendment", str(copy_path), "--acquisition-root", str(self.root),
                                 "--code", str(code), code=2)
         self.assertIn("split_spec_invalid", error)
+        def git(*argv):
+            subprocess.run(["git", "-C", str(code), *argv], check=True, capture_output=True)
+        # skip-worktree hides an edit from `git status`; make-pools still reads the committed bytes.
+        git("update-index", "--skip-worktree", amendment.relative_to(code).as_posix())
+        amendment.write_text(json.dumps(changed))
+        hidden = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins)
+        self.assertEqual(hidden["seeds"], amendment_for(self.raw)["seeds"])
+        git("update-index", "--no-skip-worktree", amendment.relative_to(code).as_posix())
+        # A local-only commit of an edited amendment is not the published pre-registration.
+        git("commit", "-qam", "reseed (never pushed)")
+        error = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins, code=2)
+        self.assertIn("not on a published", error)
+        git("reset", "-q", "--hard", "origin/main")
+        # The records must be the manifest.csv that READY verified, not another manifest.
+        rows = (self.root / "manifest" / "manifest.csv").read_text().splitlines()
+        (self.root / "manifest" / "manifest-alt.csv").write_text("\n".join(rows[:-4]) + "\n")
+        alt_source = self.dir / "alt-source.json"
+        alt_source.write_text(json.dumps({"adapter": "manifest_csv", "manifest": "manifest/manifest-alt.csv",
+                                          "manifest_sha256": file_hash(self.root / "manifest" / "manifest-alt.csv")}))
+        alt = ["--data-root", str(self.root), "--source", str(alt_source), "--dataset", "isic2020"]
+        error = self.global_cli("make-pools", *alt, "--spec", str(spec_path), *pins, code=2)
+        self.assertIn("not the manifest.csv that READY.json verified", error)
         # An amendment bound to another config identity than the verified acquisition is refused at split-spec.
         other = self.dir / "other-amendment.json"
         other.write_text(json.dumps({**amendment_for(self.raw), "amends": {**amendment_for(self.raw)["amends"],

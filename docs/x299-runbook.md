@@ -58,7 +58,9 @@ Regras de operação válidas em todas as partes:
 
 1. Os PRs #3 e #4 precisam estar mergeados, nesta ordem, num commit que o Eduardo revisou.
    `COMMIT` é esse commit, ou um descendente que mude só `configs/global/**`.
-2. `git -C "$CODE" checkout "$COMMIT" && git -C "$CODE" status --porcelain` tem de sair vazio.
+2. `git -C "$CODE" fetch origin && git -C "$CODE" checkout "$COMMIT" && git -C "$CODE" status --porcelain`
+   tem de sair vazio. `COMMIT` precisa estar numa branch publicada (`git -C "$CODE" branch -r
+   --contains HEAD` não vazio), porque o `make-pools` só aceita a emenda publicada.
 3. `IMAGE`: a imagem pinada nos aceites anteriores (`docs/acceptance-v2.md`, também em
    `docs/isic-acquisition.md` §2). Confira com `docker image inspect --format '{{.Id}}' "$IMAGE"`,
    que precisa devolver exatamente `$IMAGE`. Uma tag não basta.
@@ -219,6 +221,10 @@ $G anchor $N --pools-sha256 $P --code $CODE $Q --kind campaign --document-sha256
 - Só o estágio 1 (`<s1>`, 50 jobs) é autorizado (Q13).
 - Anote `Xa = git -C $CODE rev-parse HEAD` e o `commit` impresso pela âncora da campanha
   (`C_campaign (a)`). O recibo privado fica em `anchor-campaign-$KA.json`.
+- Os commits de configs (Xa, e depois Xh e Xb) precisam existir no checkout de cada worker,
+  porque o worker roda no commit do job. Leve-os ao remoto de código (eles só contêm hashes
+  e nomes de arquivos privados, como os configs já versionados) ou ao clone local do worker,
+  sem reescrever histórico.
 
 ### C2. Campanha (b): HPO exploratório em D (4 lr, 1 seed)
 
@@ -254,6 +260,13 @@ Workers HPO: checkout em `Xh`, `settings` privados com `"phase": "hpo"`, `"views
 ./scripts/worker.sh --settings $PRIV/worker-hpo.json --phase hpo        # um treino por vez; tmux
 ```
 
+**Retries de HPO só antes da primeira coleta.** Um job que falhou por infraestrutura, sem
+predições, pode receber retry manual (`README.md`) **antes** do primeiro `collect-hpo`. A
+primeira coleta completa de um plano é vinculante: ela grava o pin
+`hpo-evidence-pin-<plan>.json`, e qualquer coleta posterior com outra evidência, por exemplo
+depois de um retry ou de um `--resume` decidido com os scores visíveis, é recusada com
+`collection_invalid`. Nesse caso, **pare e escale**; não há nova rodada.
+
 Quando os 4 jobs estiverem terminais (o `collect-hpo` recusa com `collection_incomplete`
 enquanto algum faltar):
 
@@ -263,14 +276,14 @@ C="--code $CODE --search-space-sha256 $S --plan-sha256 $PL --view-sha256 $V $Q -
    --settings $PRIV/worker-hpo.json"
 $G collect-hpo $N --pools-sha256 $P $C                                                   # -> EV
 $G seal-freeze $N --pools-sha256 $P $C --evidence-sha256 $EV --frozen-at <UTC>          # -> FB
-$G anchor $N --pools-sha256 $P --code $CODE $Q --kind recipe_freeze --freeze-kind hpo_d --document-sha256 $FB   # C_freeze (b)
+$G anchor $N --pools-sha256 $P $C --kind recipe_freeze --freeze-kind hpo_d --document-sha256 $FB   # C_freeze (b)
 ```
 
 - O vencedor sai do ranking pré-declarado: maior média, e no empate fica o `c00`, o default.
   Nenhuma opção escolhe o vencedor.
-- O `seal-freeze` recalcula a evidência a partir da fila **atual** e só aceita o `EV` igual
-  a esse recálculo. Uma evidência de um estado anterior, por exemplo antes de um retry, é
-  recusada com `collection_invalid`.
+- O `seal-freeze` e a âncora do freeze `hpo_d` recalculam a evidência a partir da fila
+  **atual** e exigem que ela seja igual ao pin da primeira coleta completa e ao `EV` do
+  freeze. Se a fila mudou depois do pin, os dois recusam com `collection_invalid`.
 - Linhas `missing`, `failed` ou `timeout` são explícitas, nunca zero.
 - Se nenhum candidato ficar definido, o `seal-freeze` falha. **Pare**: não há nova rodada.
 

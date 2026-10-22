@@ -133,7 +133,8 @@ class HpoPathTests(HpoCase):
         freeze = self.seal_freeze(collected["evidence_sha256"])
         self.assertEqual(freeze["selected_candidate_id"], "c01")  # by the predeclared ranking
         self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "recipe_freeze",
-                                           "--freeze-kind", "hpo_d", "--document-sha256", freeze["freeze_sha256"]])
+                                           "--freeze-kind", "hpo_d", "--document-sha256", freeze["freeze_sha256"],
+                                           *self.collection_tail()])
         freeze_args = ["--freeze-sha256", freeze["freeze_sha256"], "--freeze-kind", "hpo_d", "--stages", "11;13,19"]
         made = self.run_cli(env.base("materialize-final") + ["--code", str(env.code), *freeze_args])
         self.assertEqual(made["configs"], 50)
@@ -222,7 +223,8 @@ class HpoPathTests(HpoCase):
         collected = self.run_cli(self.collect_args())
         freeze = self.seal_freeze(collected["evidence_sha256"])
         self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "recipe_freeze",
-                                           "--freeze-kind", "hpo_d", "--document-sha256", freeze["freeze_sha256"]])
+                                           "--freeze-kind", "hpo_d", "--document-sha256", freeze["freeze_sha256"],
+                                           *self.collection_tail()])
         error = self.run_cli(env.base("seed-hpo") + ["--code", str(env.code), *self.pins(), *env.queue_args(),
                                                      "--image-id", IMAGE, "--environment-probe", str(env.probe)], code=2)
         self.assertTrue(error.startswith("hpo_job_after_freeze:"), error)
@@ -249,7 +251,12 @@ class FreezeSnapshotTests(HpoCase):
         self.assertTrue(error.startswith("collection_incomplete:"), error)
         self.assertFalse(list((self.env.data / "global" / DATASET).glob("evidence-*.json")))
 
-    def test_an_earlier_snapshot_cannot_be_frozen_after_a_retry(self):
+    def retry_and_finish_c01(self, queue, jobs, failed):
+        queue.retry(jobs["c01"]["job_id"], failed["version"], "infrastructure failure before predictions")
+        current = next(j for j in queue.list_jobs() if j["job_id"] == jobs["c01"]["job_id"])
+        self.finish_hpo(queue, current, GOOD)
+
+    def test_the_first_complete_collection_is_binding_a_later_retry_is_refused(self):
         self.to_seeded_hpo()
         queue, jobs = self.hpo_jobs()
         for candidate in ("c00", "c02", "c03"):
@@ -257,14 +264,41 @@ class FreezeSnapshotTests(HpoCase):
         failed = self.fail_hpo(queue, jobs["c01"])
         first = self.run_cli(self.collect_args())  # complete: c01 failed -> its row is explicit, never zero
         self.assertEqual(first["status_counts"], {"completed": 3, "failed": 1})
-        queue.retry(jobs["c01"]["job_id"], failed["version"], "infrastructure failure before predictions")
-        self.finish_hpo(queue, queue.list_jobs()[[j["job_id"] for j in queue.list_jobs()].index(jobs["c01"]["job_id"])],
-                        GOOD)
-        second = self.run_cli(self.collect_args())
-        self.assertNotEqual(first["evidence_sha256"], second["evidence_sha256"])
-        error = self.seal_freeze(first["evidence_sha256"], code=2)  # the snapshot whose winner is c00
+        self.retry_and_finish_c01(queue, jobs, failed)  # decided after the scores of the others were visible
+        error = self.run_cli(self.collect_args(), code=2)
         self.assertTrue(error.startswith("collection_invalid:"), error)
-        self.assertEqual(self.seal_freeze(second["evidence_sha256"])["selected_candidate_id"], "c01")
+        for evidence in (first["evidence_sha256"],):
+            error = self.seal_freeze(evidence, code=2)
+            self.assertTrue(error.startswith("collection_invalid:"), error)
+
+    def test_a_freeze_sealed_before_a_retry_cannot_be_anchored(self):
+        env = self.env
+        self.to_seeded_hpo()
+        queue, jobs = self.hpo_jobs()
+        for candidate in ("c00", "c02", "c03"):
+            self.finish_hpo(queue, jobs[candidate], TIE)
+        failed = self.fail_hpo(queue, jobs["c01"])
+        first = self.run_cli(self.collect_args())
+        stale = self.seal_freeze(first["evidence_sha256"])
+        self.retry_and_finish_c01(queue, jobs, failed)
+        error = self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind",
+                                                   "recipe_freeze", "--freeze-kind", "hpo_d", "--document-sha256",
+                                                   stale["freeze_sha256"], *self.collection_tail()], code=2)
+        self.assertTrue(error.startswith("collection_invalid:"), error)
+        error = self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind",
+                                                   "recipe_freeze", "--freeze-kind", "hpo_d", "--document-sha256",
+                                                   stale["freeze_sha256"]], code=2)
+        self.assertTrue(error.startswith("cli_input_invalid:"), error)  # hpo_d anchors need the collection
+
+    def test_a_second_seeding_at_another_configs_commit_is_refused(self):
+        env = self.env
+        self.to_seeded_hpo()
+        (env.code / "configs" / "global" / "README-note.txt").write_text("configs-only change\n")
+        git(env.code, "add", "-A"); git(env.code, "commit", "-qm", "configs-only follow-up")
+        error = self.run_cli(env.base("seed-hpo") + ["--code", str(env.code), *self.pins(), *env.queue_args(),
+                                                     "--image-id", IMAGE, "--environment-probe", str(env.probe)],
+                             code=2)
+        self.assertTrue(error.startswith("search_space_mismatch:"), error)
 
     def test_another_image_or_probe_than_the_plan_is_refused_at_seed(self):
         env = self.env
@@ -339,7 +373,8 @@ class InbreastOrderTests(HpoCase):
         collected = self.run_cli(self.collect_args())
         freeze = self.seal_freeze(collected["evidence_sha256"])
         self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "recipe_freeze",
-                                           "--freeze-kind", "hpo_d", "--document-sha256", freeze["freeze_sha256"]])
+                                           "--freeze-kind", "hpo_d", "--document-sha256", freeze["freeze_sha256"],
+                                           *self.collection_tail()])
         # One final materialization per commit: replace campaign (a)'s final configs in a configs-only commit.
         git(env.code, "rm", "-rq", gj.config_dir(DATASET, "final"))
         freeze_args = ["--freeze-sha256", freeze["freeze_sha256"], "--freeze-kind", "hpo_d", "--stages", "11;13,19"]
