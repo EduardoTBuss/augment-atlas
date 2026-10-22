@@ -121,6 +121,8 @@ ser um diagnóstico pré-emenda, e quem gera os pools é `make-pools`.
 | `b5ee1c9` | **`docs/x299-runbook.md`** e a atualização de `global-cli.md` e `README.md` |
 | `0fe04b6` | Primeira versão deste arquivo para a 2ª sessão |
 | `4f3fd09` | **Correções da auditoria integrada** (detalhes logo abaixo) |
+| `bcf27ca` | Registro da auditoria neste arquivo |
+| `5bbae41` | **Correções da re-revisão** (detalhes logo abaixo) |
 | (este) | Esta versão deste arquivo |
 
 **Auditoria integrada independente** (contexto novo, somente leitura), sobre os commits
@@ -154,17 +156,41 @@ ser um diagnóstico pré-emenda, e quem gera os pools é `make-pools`.
 - a decisão 7 é aplicada pela CLI e pela cronologia do lado da campanha (b), não por um
   gancho do worker.
 
-**Re-revisão independente das correções:** em andamento quando este arquivo foi gravado; o resultado entra na próxima atualização.
+**Re-revisão independente de `4f3fd09`.** M-1 e os menores estavam corrigidos, mas ela achou:
+- **B-1' (bloqueador):** um freeze selado antes de um retry ainda podia ser ancorado. O
+  operador também podia decidir fazer o retry depois de ver a evidência completa.
+- **M-2a:** os registros do `make-pools` não estavam presos ao `manifest.csv` do READY.
+- **M-2b:** um commit só local, ou um arquivo marcado `skip-worktree`, passava por emenda
+  pré-registrada.
+- **Menor:** o coletor final não conferia a imagem dos attempts.
+
+**Corrigidos em `5bbae41`:**
+- **A primeira coleta HPO completa de um plano é vinculante.** Ela grava o pin privado
+  `hpo-evidence-pin-<plan>`, e qualquer coleta posterior com outra evidência recebe
+  `collection_invalid`. Os retries de infraestrutura ficam antes da primeira coleta.
+- **`seal-freeze` e a âncora do freeze `hpo_d`** recalculam a evidência e exigem igualdade
+  com o pin e com o freeze.
+- **`make-pools`:**
+  - exige `--source` igual ao `manifest.csv` do READY;
+  - lê o config e a emenda com `git show HEAD:<path>`;
+  - exige o HEAD numa branch remota.
+- **Coletor final:** exige a imagem da campanha em cada attempt.
+
+**Limite declarado:** o pin fica no store privado do operador. Ele protege contra erro e
+escolha posterior, não contra quem apaga arquivos privados (spec R9; as flags continuam
+falsas).
+
+**Verificação independente de `5bbae41`:** em andamento quando este arquivo foi gravado.
 
 ## 5. Testes
 
 Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch,
-no commit `4f3fd09`.
+no commit `5bbae41`.
 
 | Execução | Rodados | Passaram | Pulados | Falharam |
 |---|---|---|---|---|
-| root | 926 | 890 | 35 | 1 (F1) |
-| usuário sem privilégios (`nobody`), com o PATH do root | 926 | 892 | 34 | 0 |
+| root | 929 | 893 | 35 | 1 (F1) |
+| usuário sem privilégios (`nobody`), com o PATH do root | 929 | 895 | 34 | 0 |
 
 - **Pulados:** testes de torch/contêiner, mais (só como root) o teste de exec real de
   EACCES. Pulado não é aprovado.
