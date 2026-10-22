@@ -483,7 +483,11 @@ sklearn. Ele é distinto do `stratified-group-outer-v1`, que é within-outer-fol
 8. **Limite do código atual.** `manifest_csv` + `splits.json` exigem train/selection/test
    cobrindo o manifest inteiro, e `selection-only` exige `within-outer-fold`. Os pools
    D/E dependem da extensão já listada como pendente em dataset-protocol-update.md. Aqui
-   só fica especificado o artefato.
+   só fica especificado o artefato. **Atualização (22/10/2026):** implementado em
+   `global_splits.py` / `global_cli make-pools` (`docs/global-cli.md`). A saída é um
+   candidato de pools v1, com folds dentro do mesmo documento, gravado no store
+   privado `global/<ds>/pools-candidate-<sha>.json`. Pendente: uma seed de avaliação
+   distinta (Q3) e a confirmação do arredondamento e do round-robin.
 
 ---
 
