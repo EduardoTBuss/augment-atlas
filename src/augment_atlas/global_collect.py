@@ -75,7 +75,7 @@ def expected_final_jobs(campaign, records, pools, *, freeze, dataset_source, aug
     return expected
 
 
-def _read_success(out, cfg, view_doc, records, pools, record, settings):
+def _read_success(out, cfg, view_doc, records, pools, record, settings, image_id):
     out = Path(out)
     if out.is_symlink() or not out.is_dir():
         _fail("global_artifacts_invalid", "attempt directory is missing")
@@ -91,6 +91,8 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings):
     if type(mount) is not dict or mount.get("kind") != "data_root" or mount.get("destination") != "/data" \
             or mount.get("readonly") is not True:
         _fail("global_artifacts_invalid", "runtime.json does not record the read-only data root as /data")
+    if provenance.get("image_id") != image_id:
+        _fail("code_identity_mismatch", "a final attempt ran on another image than the one the campaign pins")
     if settings is not None:
         from . import runtime
         runtime.validate_global_completion(settings, out, record["spec"])
@@ -170,7 +172,8 @@ def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools
                  "predictions": None, "initial_state_sha256": None, "telemetry_summary": None}
         if state == "succeeded":
             out = Path(runs_root) / job_id / record["attempt_id"]
-            artifact, initial, telemetry, shas = _read_success(out, cfg, view_doc, records, pools, record, settings)
+            artifact, initial, telemetry, shas = _read_success(out, cfg, view_doc, records, pools, record, settings,
+                                                               campaign["runtime"]["image_id"])
             entry.update(status="succeeded", reason=None, predictions=artifact, initial_state_sha256=initial,
                          telemetry_summary=telemetry)
             rows.append({**row, "status": "succeeded", "reason": None, **shas})

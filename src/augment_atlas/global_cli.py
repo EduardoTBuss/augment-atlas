@@ -331,15 +331,27 @@ def _acquisition_spec(args, amendment):
 
 
 def _tracked(args, path, what):
-    """A file of the clean --code checkout, tracked by Git (so an edit is a visible, committed amendment)."""
+    """(document, sha256 of its bytes) as committed at the published HEAD of --code.
+
+    Read with ``git show HEAD:<path>`` (not from disk: skip-worktree edits are invisible to
+    ``git status``), and HEAD must be on a remote-tracking branch, so the pre-registered
+    bytes are the published ones rather than a local-only commit.
+    """
+    import hashlib
     root = Path(args.code).resolve()
     target = Path(path).resolve()
     if not target.is_relative_to(root):
         _fail("split_spec_invalid", f"{what} must be the committed file inside --code")
-    if subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", target.relative_to(root).as_posix()],
-                      capture_output=True, timeout=60).returncode:
-        _fail("split_spec_invalid", f"{what} is not tracked in the code repository")
-    return _read(target, what)
+    if not _git(root, "branch", "-r", "--contains", "HEAD"):
+        _fail("split_spec_invalid", "HEAD of --code is not on a published (remote-tracking) branch")
+    shown = subprocess.run(["git", "-C", str(root), "show", "HEAD:" + target.relative_to(root).as_posix()],
+                           capture_output=True, timeout=60)
+    if shown.returncode:
+        _fail("split_spec_invalid", f"{what} is not committed at HEAD of the code repository")
+    try:
+        return json.loads(shown.stdout.decode("utf-8")), hashlib.sha256(shown.stdout).hexdigest()
+    except (UnicodeDecodeError, ValueError):
+        _fail("split_spec_invalid", f"{what} is not valid JSON at HEAD")
 
 
 def cmd_split_spec(args):
@@ -357,24 +369,29 @@ def cmd_split_spec(args):
 def cmd_make_pools(args):
     spec = _read(args.spec, "split spec")
     _clean_head(args.code)  # the amendment and the config are read as committed, unmodified files
-    config = _tracked(args, args.acquisition_config, "acquisition config")
-    amendment = _tracked(args, args.split_amendment, "split amendment")
+    config, config_sha = _tracked(args, args.acquisition_config, "acquisition config")
+    amendment, amendment_sha = _tracked(args, args.split_amendment, "split amendment")
     if type(spec) is not dict or type(spec.get("dataset")) is not dict or spec["dataset"].get("id") != args.dataset:
         _fail("cli_input_invalid", "split spec belongs to another dataset")
     if type(config) is not dict:
         _fail("cli_input_invalid", "acquisition config must be a JSON object")
     gs.check_amendment(spec, amendment, config)
-    _, expected = _acquisition_spec(args, amendment)
+    ready, expected = _acquisition_spec(args, amendment)
     if canonical_hash(spec) != canonical_hash(expected):
         _fail("split_spec_invalid", "the spec differs from the one derived from the verified acquisition root")
+    source = _source(args)
+    manifest = (Path(args.data_root).resolve() / source["manifest"]).resolve()
+    if (source["manifest_sha256"] != ready["files"].get("manifest.csv")
+            or manifest != (Path(args.acquisition_root).resolve() / "manifest" / "manifest.csv")):
+        _fail("split_spec_invalid", "--source is not the manifest.csv that READY.json verified")
     _, records, _ = _records(args, len(spec["task"]["classes"]))
     candidate, report = gs.generate_dev_eval_pools(records, spec)
     path = _private(args, "pools-candidate", report["candidate_sha256"])
     gd._publish(path, candidate, lambda value: None)
     return _emit({**report, "path": str(path), "seeds": spec["seeds"],
                   "spec_file_sha256": file_hash(Path(args.spec)),
-                  "acquisition_config_sha256": file_hash(Path(args.acquisition_config)),
-                  "split_amendment_sha256": file_hash(Path(args.split_amendment)),
+                  "acquisition_config_sha256": config_sha, "split_amendment_sha256": amendment_sha,
+                  "code_commit": _git(args.code, "rev-parse", "HEAD"),
                   "next": "approve the hashes, then import-pools --file <path> --expected-manifest "
                           "<global_manifest_sha256>"}, records)
 
@@ -535,6 +552,18 @@ def _collect(args):
     if waiting:
         # A partial snapshot would let a freeze be sealed from evidence chosen after seeing other scores.
         _fail("collection_incomplete", f"{len(waiting)} HPO job(s) are absent or not terminal; collect when all are")
+    # The FIRST complete collection of a plan is binding: a later retry/resume chosen after seeing its
+    # scores changes the evidence and is refused (retry infrastructure failures BEFORE collecting).
+    pin_path = _private(args, "hpo-evidence-pin", args.plan_sha256)
+    pin = {"plan_sha256": args.plan_sha256, "evidence_sha256": evidence["sha256"],
+           "code_identity_sha256": canonical_hash(identity)}
+    if pin_path.exists():
+        pinned = _read(pin_path, "HPO evidence pin")
+        if {k: pinned.get(k) for k in pin} != pin:
+            _fail("collection_invalid", "the evidence of this plan was pinned by its first complete collection; "
+                                        "the HPO jobs changed afterwards (retry/resume after scores were visible)")
+    else:
+        gd._publish(pin_path, {**pin, "sha256": canonical_hash(pin)}, lambda value: None)
     return records, pools, plan, evidence, manifest
 
 
@@ -632,6 +661,19 @@ def cmd_anchor(args):
     elif args.kind == "recipe_freeze":
         args.freeze_sha256 = args.document_sha256
         document, _ = _freeze(args, records, pools)
+        if args.freeze_kind == "hpo_d":
+            # Only the freeze of the pinned, current evidence can become C_freeze (audit B-1).
+            missing = [f for f in ("search_space_sha256", "plan_sha256", "view_sha256", "image_id",
+                                   "environment_probe", "runs", "views_root", "configs_commit")
+                       if not getattr(args, f, None)]
+            if missing:
+                _fail("cli_input_invalid", "an hpo_d freeze anchor needs the collection arguments: "
+                                           + ", ".join("--" + f.replace("_", "-") for f in missing))
+            if args.plan_sha256 != document["selection_plan_sha256"]:
+                _fail("collection_invalid", "--plan-sha256 is not the plan of this freeze")
+            _, _, _, evidence, _ = _collect(args)
+            if evidence["sha256"] != document["selection_evidence_sha256"]:
+                _fail("collection_invalid", "this freeze was not sealed from the evidence of the current queue")
         anchor = gc.build_anchor("recipe_freeze", document)
     else:
         args.campaign_sha256 = args.document_sha256
@@ -846,6 +888,10 @@ def _parser():
     s.add_argument("--document-sha256", required=True)
     s.add_argument("--freeze-kind", choices=sorted(FREEZE_PREFIX), default="external_fixed")
     s.add_argument("--expected-manifest"); s.add_argument("--document-utc")
+    for name in ("--search-space-sha256", "--plan-sha256", "--view-sha256", "--image-id", "--environment-probe",
+                 "--runs", "--views-root", "--configs-commit", "--settings"):
+        s.add_argument(name, help="hpo_d freeze anchors re-run the HPO collection (same arguments as collect-hpo)")
+    s.add_argument("--host-validation", choices=["full", "minimal"], default="full")
     for name, function, text in (("seed-final", cmd_seed_final, "seed the authorized final jobs"),
                                  ("audit-chronology", cmd_audit_chronology, "audit freeze -> campaign -> finals"),
                                  ("report", cmd_report, "collect finished final jobs and build the private report")):
