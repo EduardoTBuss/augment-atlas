@@ -123,6 +123,8 @@ ser um diagnóstico pré-emenda, e quem gera os pools é `make-pools`.
 | `4f3fd09` | **Correções da auditoria integrada** (detalhes logo abaixo) |
 | `bcf27ca` | Registro da auditoria neste arquivo |
 | `5bbae41` | **Correções da re-revisão** (detalhes logo abaixo) |
+| `47402d5` | Registro da re-revisão neste arquivo |
+| `9d8125c` | **Correções da 3ª revisão** (detalhes logo abaixo) |
 | (este) | Esta versão deste arquivo |
 
 **Auditoria integrada independente** (contexto novo, somente leitura), sobre os commits
@@ -180,17 +182,40 @@ ser um diagnóstico pré-emenda, e quem gera os pools é `make-pools`.
 escolha posterior, não contra quem apaga arquivos privados (spec R9; as flags continuam
 falsas).
 
-**Verificação independente de `5bbae41`:** em andamento quando este arquivo foi gravado.
+**3ª revisão independente (de `5bbae41`).** Ela confirmou fechadas todas as sequências
+anteriores:
+- freeze antigo ancorado depois de um retry;
+- resume depois da coleta;
+- manifesto alternativo;
+- `skip-worktree`;
+- commit só local;
+- imagem dos finais.
+
+Achou, e foi corrigido em `9d8125c`:
+- **B-1'' (bloqueador):** um attempt HPO que gravou o score e depois foi encerrado como
+  `failed`/`interrupted` virava uma linha de falha comum. Agora é `collection_invalid`.
+- **M-2b (residual):** "branch remota" era fraco demais. Agora o config e a emenda precisam
+  ser os mesmos blobs de `origin/main`.
+- **Checksum do pin** passa a ser verificado.
+- **Documentos** que prometiam mais do que o código faz foram corrigidos.
+
+**Ficou aberto (decisão do Eduardo, §5.1):** a política de retry de HPO. Antes da primeira
+coleta, o operador ainda decide se refaz uma falha de infraestrutura enquanto os scores dos
+outros jobs já estão em disco. O runbook fixa uma regra provisória: exatamente um retry para
+toda falha sem predições. O código ainda não impõe essa regra.
+
+**`9d8125c` não passou por nova revisão independente.** Cada correção tem teste próprio, que
+falha sem ela.
 
 ## 5. Testes
 
 Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch,
-no commit `5bbae41`.
+no commit `9d8125c`.
 
 | Execução | Rodados | Passaram | Pulados | Falharam |
 |---|---|---|---|---|
-| root | 929 | 893 | 35 | 1 (F1) |
-| usuário sem privilégios (`nobody`), com o PATH do root | 929 | 895 | 34 | 0 |
+| root | 931 | 895 | 35 | 1 (F1) |
+| usuário sem privilégios (`nobody`), com o PATH do root | 931 | 897 | 34 | 0 |
 
 - **Pulados:** testes de torch/contêiner, mais (só como root) o teste de exec real de
   EACCES. Pulado não é aprovado.
@@ -222,6 +247,14 @@ no commit `5bbae41`.
 - **INbreast pools:** se o arquivo privado de 16/10 não estiver no schema v1, a conversão
   das mesmas listas (sem novo sorteio) é uma tarefa de código à parte.
 
+### 6.1 Decisões ainda pendentes
+
+| # | Decisão | Opções |
+|---|---|---|
+| R | Política de retry de HPO | (i) retries obrigatórios até K tentativas, com K gravado no search space; ou (ii) nenhum retry de HPO, e a falha fica como linha `failed`. Até decidir, vale a regra provisória do runbook (exatamente um retry) |
+| Q9 | N de pacientes da subamostragem do ISIC | declarar N antes do split do ISIC usado em treino |
+| Q6-token | Trocar o token `pending_eduardo_confirmation` | exige autorização explícita para atualizar três testes legados; muda o hash das campanhas novas |
+
 ## 7. Bloqueado por acesso ou decisão
 
 | Item | Bloqueio |
@@ -240,8 +273,12 @@ no commit `5bbae41`.
      `make-pools`, `import-pools`, `audit-pools` e `anchor --kind pools`. Anotar os hashes
      (runbook §5) no Brain;
    - **Parte C:** só depois do Gate V4 e do endurance aprovados.
-3. Trazer para a nuvem: os hashes da Parte B (nunca IDs), as contagens do `make-pools`, a
-   decisão do N da Q9 para o ISIC, e se os pools do INbreast já estão no schema v1.
+3. Trazer para a nuvem:
+   - os hashes da Parte B (nunca IDs);
+   - as contagens do `make-pools`;
+   - a decisão do N da Q9 para o ISIC;
+   - a decisão R (política de retry de HPO), se houver;
+   - se os pools do INbreast já estão no schema v1.
 
 ## 9. Como a sessão na nuvem trabalha (para manter o padrão)
 
