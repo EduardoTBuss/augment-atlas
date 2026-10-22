@@ -95,8 +95,9 @@ O download já foi feito; **não baixe de novo**. A identidade do config não mu
 
 ### B1. `verify` sem rede, com as emendas de 22/10/2026
 
-Use a função `acq` de `docs/isic-acquisition.md` §2. `CODE` deve estar no `COMMIT` pinado,
-que contém a entrada `accepted_divergences` dos oito pares extras byte-idênticos.
+Use a função `acq` de `docs/isic-acquisition.md` §2. Ela monta `$DATA`, então defina
+`DATA="$ISIC"` antes. `CODE` deve estar no `COMMIT` pinado, que contém a entrada
+`accepted_divergences` dos oito pares extras byte-idênticos.
 
 ```bash
 acq none verify          # offline; repete sem custo
@@ -124,12 +125,16 @@ I="--data-root $ISIC --source $PRIV/isic-source.json --dataset isic2020"
 AMD="$CODE/configs/acquisition/isic2020-v1-splits-amendment-20261022.json"
 
 $G split-spec $I --acquisition-root "$ISIC" --split-amendment "$AMD" --out "$PRIV/isic-split-spec.json"
-$G make-pools $I --spec "$PRIV/isic-split-spec.json" \
+$G make-pools $I --spec "$PRIV/isic-split-spec.json" --code "$CODE" --acquisition-root "$ISIC" \
    --acquisition-config "$CODE/configs/acquisition/isic2020-v1.json" --split-amendment "$AMD"
 ```
 
-`make-pools` imprime `candidate_sha256`, `global_manifest_sha256`, as seeds (20261019,
-20261019, 20261022), os hashes da spec, do config e da emenda, e as contagens por pool.
+`make-pools` aceita só a emenda e o config **commitados e sem alteração** no `--code`
+limpo, e só uma spec igual à derivada da raiz verificada. Ele imprime:
+- `candidate_sha256` e `global_manifest_sha256`;
+- as seeds (20261019, 20261019, 20261022);
+- os hashes da spec, do config e da emenda;
+- as contagens por pool.
 
 - **Se sair com `split_audit_failed`, pare e escale.** Nenhuma seed nova, nenhum fallback
   (decisão S1).
@@ -141,7 +146,7 @@ Com as contagens aprovadas pelo Eduardo:
 $G import-pools $I --file <path impresso> --expected-manifest <global_manifest_sha256>
 $G audit-pools  $I --pools-sha256 <pools_sha256> --expected-manifest <global_manifest_sha256>
 $G anchor $I --pools-sha256 <pools_sha256> --code "$CODE" --remote "$REMOTE" --checkout "$ADMIN" \
-   --kind pools --expected-manifest <global_manifest_sha256> --document-utc <UTC agora>
+   --kind pools --document-sha256 <pools_sha256> --expected-manifest <global_manifest_sha256> --document-utc <UTC agora>
 ```
 
 **A Parte B termina aqui.** HPO e treinos finais do ISIC **não** fazem parte desta etapa,
@@ -164,9 +169,11 @@ V2 armado; `max_temperature_c` do worker conforme o teto vigente; um treino por 
 3. freeze `hpo_d`, âncora, configs finais (b), campanha (b) selada e ancorada;
 4. só então qualquer job final.
 
-O código recusa a quebra dessa ordem: o `seed-hpo` de um dataset exposto exige a âncora da
-campanha (a), e a auditoria de cronologia recusa jobs finais antes das duas âncoras de
-campanha.
+O código recusa a quebra dessa ordem:
+- num dataset exposto, o `seed-hpo` exige a âncora da campanha (a);
+- num dataset exposto, o `seed-final` exige as âncoras das duas campanhas;
+- a cronologia da campanha (b) recusa qualquer job final dos pools criado antes da âncora
+  da campanha (b) (`final_job_before_seal`).
 
 **Teto de 8 GPU-h para o piloto inteiro.** Ao atingir o teto, pare os workers, registre a
 matriz incompleta e **não escolha quais jobs completar**. A estimativa da spec é de cerca
@@ -203,7 +210,7 @@ $G anchor $N --pools-sha256 $P --code $CODE $Q --kind recipe_freeze --document-s
 $G materialize-final $N --pools-sha256 $P --code $CODE --freeze-sha256 $FA --freeze-kind external_fixed --stages '<s1>;<s2>,<s3>'
 git -C $CODE add configs/global && git -C $CODE commit -m "inbreast: final configs, campaign (a)"   # commit Xa
 $G seal-campaign $N --pools-sha256 $P --code $CODE --freeze-sha256 $FA --freeze-kind external_fixed \
-   --stages '<s1>;<s2>,<s3>' $Q --image-id $IMAGE --sealed-at <UTC>
+   --stages '<s1>;<s2>,<s3>' $Q --image-id $IMAGE --environment-probe $PRIV/probe.json --sealed-at <UTC>
 $G anchor $N --pools-sha256 $P --code $CODE $Q --kind campaign --document-sha256 $KA          # C_campaign (a)
 ```
 
@@ -228,14 +235,17 @@ $G search-space $N --pools-sha256 $P $RT --spec $PRIV/search-space.json --color 
 $G build-plan $N --pools-sha256 $P $RT --search-space-sha256 $S --view-sha256 $V --final-seeds <s1,s2,s3>   # -> PL, commit P
 $G materialize-hpo $N --pools-sha256 $P --code $CODE --search-space-sha256 $S --plan-sha256 $PL --view-sha256 $V
 git -C $CODE add configs/global && git -C $CODE commit -m "inbreast: HPO configs"   # commit Xh (só configs/global/**)
-$G seed-hpo $N --pools-sha256 $P --code $CODE --search-space-sha256 $S --plan-sha256 $PL --view-sha256 $V $Q --image-id $IMAGE
+$G seed-hpo $N --pools-sha256 $P --code $CODE --search-space-sha256 $S --plan-sha256 $PL --view-sha256 $V $Q \
+   --image-id $IMAGE --environment-probe $PRIV/probe.json
 ```
 
 O `seed-hpo` imprime `code_commit` (= Xh), `plan_commit` (= P) e `code_identity_sha256`.
 Ele recusa nestes casos:
 - `src/`, `scripts/`, `docker/` ou `pyproject.toml` mudaram entre P e Xh (Q6/B1);
+- a imagem ou o probe não reproduzem o `environment_sha256` do plano;
 - um config commitado difere do plano;
-- a campanha (a) não está ancorada.
+- a campanha (a) não está ancorada;
+- já existem jobs HPO destes pools em outro commit.
 
 Workers HPO: checkout em `Xh`, `settings` privados com `"phase": "hpo"`, `"views": "$VIEWS"`,
 `"data": "$INB"` e `"datasets": ["inbreast"]`, mais os campos de sempre (`configs/worker.example.json`).
@@ -244,17 +254,23 @@ Workers HPO: checkout em `Xh`, `settings` privados com `"phase": "hpo"`, `"views
 ./scripts/worker.sh --settings $PRIV/worker-hpo.json --phase hpo        # um treino por vez; tmux
 ```
 
-Quando os 4 jobs estiverem terminais:
+Quando os 4 jobs estiverem terminais (o `collect-hpo` recusa com `collection_incomplete`
+enquanto algum faltar):
 
 ```bash
-$G collect-hpo $N --pools-sha256 $P --code $CODE --search-space-sha256 $S --plan-sha256 $PL --view-sha256 $V \
-   $Q --image-id $IMAGE --runs $RUNS --views-root $VIEWS --configs-commit <Xh> --settings $PRIV/worker-hpo.json   # -> EV
-$G seal-freeze $N --pools-sha256 $P --plan-sha256 $PL --evidence-sha256 $EV --frozen-at <UTC>                  # -> FB
+C="--code $CODE --search-space-sha256 $S --plan-sha256 $PL --view-sha256 $V $Q --image-id $IMAGE \
+   --environment-probe $PRIV/probe.json --runs $RUNS --views-root $VIEWS --configs-commit <Xh> \
+   --settings $PRIV/worker-hpo.json"
+$G collect-hpo $N --pools-sha256 $P $C                                                   # -> EV
+$G seal-freeze $N --pools-sha256 $P $C --evidence-sha256 $EV --frozen-at <UTC>          # -> FB
 $G anchor $N --pools-sha256 $P --code $CODE $Q --kind recipe_freeze --freeze-kind hpo_d --document-sha256 $FB   # C_freeze (b)
 ```
 
 - O vencedor sai do ranking pré-declarado: maior média, e no empate fica o `c00`, o default.
   Nenhuma opção escolhe o vencedor.
+- O `seal-freeze` recalcula a evidência a partir da fila **atual** e só aceita o `EV` igual
+  a esse recálculo. Uma evidência de um estado anterior, por exemplo antes de um retry, é
+  recusada com `collection_invalid`.
 - Linhas `missing`, `failed` ou `timeout` são explícitas, nunca zero.
 - Se nenhum candidato ficar definido, o `seal-freeze` falha. **Pare**: não há nova rodada.
 
@@ -267,7 +283,7 @@ git -C $CODE rm -r configs/global/inbreast/final && git -C $CODE commit -m "inbr
 $G materialize-final $N --pools-sha256 $P --code $CODE --freeze-sha256 $FB --freeze-kind hpo_d --stages '<s1>;<s2>,<s3>'
 git -C $CODE add configs/global && git -C $CODE commit -m "inbreast: final configs, campaign (b)"   # commit Xb
 $G seal-campaign $N --pools-sha256 $P --code $CODE --freeze-sha256 $FB --freeze-kind hpo_d --stages '<s1>;<s2>,<s3>' \
-   $Q --image-id $IMAGE --sealed-at <UTC> --search-space-sha256 $S
+   $Q --image-id $IMAGE --environment-probe $PRIV/probe.json --sealed-at <UTC> --search-space-sha256 $S
 $G anchor $N --pools-sha256 $P --code $CODE $Q --kind campaign --document-sha256 $KB            # C_campaign (b)
 ```
 
@@ -314,7 +330,7 @@ O relatório é sempre `descriptive_only`, `exploratory`, com as flags em `false
 
 - Qualquer exit 2 da CLI global: parar e ler o código. Os códigos estão em
   `global-next-integration.md` §6.11 e em `global-cli.md`.
-- `identifier_leak`, `split_audit_failed`, `code_identity_mismatch`,
+- `identifier_leak`, `split_audit_failed`, `code_identity_mismatch`, `collection_invalid`,
   `chronology_invalid`, `final_job_before_seal`, `hpo_job_after_freeze`,
   `external_recipe_contaminated`, `metric_recompute_mismatch`: **parar e escalar**.
   Nunca contornar.

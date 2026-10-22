@@ -622,8 +622,10 @@ registradas):**
   abaixo) — decisão a tomar antes do estágio 2, não implementada aqui.
   `audit_chronology` e o runtime recusam job final com seed fora do estágio
   autorizado (`campaign_invalid`).
-- **Q6 `q6_policy="same_code_identity_v1"` (S3, PENDENTE de confirmação do
-  Eduardo):** literalmente "mesmo commit" é impossível, porque os configs
+- **Q6 `q6_policy="same_code_identity_v1"` (S3; CONFIRMADA pelo Eduardo em
+  22/10/2026, que também a estendeu aos jobs HPO na decisão B1; o token
+  `Q6_POLICY_STATUS` continua com o valor abaixo porque testes legados o fixam,
+  ver `docs/cloud-context.md` §3):** literalmente "mesmo commit" é impossível, porque os configs
   finais contêm `freeze_sha256` e só podem ser commitados depois do freeze.
   Interpretação implementada, isolada em `_q6_same_code_identity_v1`
   (`Q6_POLICY_STATUS="pending_eduardo_confirmation"`): o commit do freeze
@@ -1420,7 +1422,7 @@ entre braços, com as ressalvas acima.
 | Q3 | Folds de E selados antes do HPO (v1 atual) servem como "nova seed"? | **DECIDIDA (Eduardo, 19/10/2026):** sim (ADR-02), com seed de avaliação distinta das de desenvolvimento/seleção |
 | Q4 | Limiar das secundárias binárias | **DECIDIDA (Eduardo, 19/10/2026):** 0,5 fixo a priori com `ge`; F1/BA claramente secundárias; não ajustar em D_select |
 | Q5 | Agregação primária | **DECIDIDA (Eduardo, 19/10/2026):** média dos 5 folds e depois média das seeds; E concatenado como sensibilidade |
-| Q6 | O mesmo commit para HPO e final? | **DECIDIDA (Eduardo, 19/10/2026):** sim; qualquer exceção vira emenda explícita. **Interpretação PENDENTE (S3, 20/10/2026):** "mesmo commit" literal é impossível (configs finais contêm `freeze_sha256`); implementado `same_code_identity_v1` (mesma árvore de `src/`, `scripts/`, `docker/`, `pyproject.toml` + imagem pinada; só `configs/global/**` muda), isolado em `_q6_same_code_identity_v1` e marcado pendente no código (§6.9 "(S3)") |
+| Q6 | O mesmo commit para HPO e final? | **DECIDIDA (Eduardo, 19/10/2026):** sim; qualquer exceção vira emenda explícita. **Interpretação PENDENTE (S3, 20/10/2026):** "mesmo commit" literal é impossível (configs finais contêm `freeze_sha256`); implementado `same_code_identity_v1` (mesma árvore de `src/`, `scripts/`, `docker/`, `pyproject.toml` + imagem pinada; só `configs/global/**` muda), isolado em `_q6_same_code_identity_v1` e marcado pendente no código (§6.9 "(S3)"). **CONFIRMADA (Eduardo, 22/10/2026)**, inclusive para os jobs HPO (B1: configs HPO commitados depois do plano, só `configs/global/**` muda); o token no código continua `pending_eduardo_confirmation` porque testes legados o fixam |
 | Q7 | Espaço de busca padrão (outros datasets) | **DECIDIDA (Eduardo, 19/10/2026):** 4 valores de lr log-espaçados, wd fixo, 1 seed, épocas fixas ≤ 20, `c00` = default |
 | Q8 | Tórax: labels e política | **DECIDIDA (Eduardo, 19/10/2026):** 5 labels de competição; treino `-1`→ignorar, blank→0; avaliação `-1`→excluir, blank→0; só frontais; mínimo de positivos por label/fold fixado antes do split |
 | Q9 | Subamostrar CheXpert/ISIC2020 por paciente? | **DECIDIDA (Eduardo, 19/10/2026):** sim, N declarado antes do split |

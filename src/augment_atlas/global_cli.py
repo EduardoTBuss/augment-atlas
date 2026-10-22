@@ -234,6 +234,14 @@ def _runtime_decl(args):
             "imagenet_weights_sha256": args.weights_sha256}
 
 
+def _check_environment(args, runtime):
+    """Decision Q6 (same immutable image): the image + probe must reproduce the recorded environment."""
+    probe = _read(args.environment_probe, "environment probe")
+    if gh.environment_sha256(args.image_id, probe) != runtime["environment_sha256"]:
+        _fail("code_identity_mismatch", "--image-id/--environment-probe do not reproduce the environment_sha256 "
+                                        "recorded by the plan/freeze (another image or probe)")
+
+
 def _hpo_identity(args, plan, head=None):
     """Q6 evidence from plan.runtime.commit to the commit holding the HPO configs (decision B1).
 
@@ -305,16 +313,39 @@ def cmd_identity(args):
     return _emit({"records": len(records), "records_sha256": canonical_hash(records), **extra}, records)
 
 
-def cmd_split_spec(args):
-    """Split spec from a verified acquisition root (READY + manifest-private), hashes only."""
+def _acquisition_spec(args, amendment):
+    """Spec recomputed from a verified acquisition root bound to the amendment's config identity."""
     root = Path(args.acquisition_root).resolve()
     ready = _read(root / "manifest" / "READY.json", "READY.json")
     private_path = root / "manifest" / "manifest-private.json"
     if type(ready) is not dict or ready.get("files", {}).get("manifest-private.json") != file_hash(private_path):
         _fail("split_spec_invalid", "manifest-private.json differs from the hash READY.json records")
-    amendment = _read(args.split_amendment, "split amendment")
+    if type(amendment) is not dict or type(amendment.get("amends")) is not dict or (
+            ready.get("config_identity_sha256") != amendment["amends"].get("config_identity_sha256")):
+        _fail("split_spec_invalid", "the acquisition was verified under another config identity than the amendment's")
+    if amendment.get("dataset") != args.dataset:
+        _fail("split_spec_invalid", "the split amendment belongs to another dataset")
     spec = gs.spec_from_acquisition(ready, _read(private_path, "manifest-private.json"), amendment,
                                     dataset_id=args.dataset)
+    return ready, spec
+
+
+def _tracked(args, path, what):
+    """A file of the clean --code checkout, tracked by Git (so an edit is a visible, committed amendment)."""
+    root = Path(args.code).resolve()
+    target = Path(path).resolve()
+    if not target.is_relative_to(root):
+        _fail("split_spec_invalid", f"{what} must be the committed file inside --code")
+    if subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", target.relative_to(root).as_posix()],
+                      capture_output=True, timeout=60).returncode:
+        _fail("split_spec_invalid", f"{what} is not tracked in the code repository")
+    return _read(target, what)
+
+
+def cmd_split_spec(args):
+    """Split spec from a verified acquisition root (READY + manifest-private), hashes only."""
+    amendment = _read(args.split_amendment, "split amendment")
+    ready, spec = _acquisition_spec(args, amendment)
     out = Path(args.out)
     if out.exists():
         _fail("cli_input_invalid", "--out exists; split specs are never overwritten")
@@ -325,13 +356,17 @@ def cmd_split_spec(args):
 
 def cmd_make_pools(args):
     spec = _read(args.spec, "split spec")
-    config = _read(args.acquisition_config, "acquisition config")
-    amendment = _read(args.split_amendment, "split amendment")
+    _clean_head(args.code)  # the amendment and the config are read as committed, unmodified files
+    config = _tracked(args, args.acquisition_config, "acquisition config")
+    amendment = _tracked(args, args.split_amendment, "split amendment")
     if type(spec) is not dict or type(spec.get("dataset")) is not dict or spec["dataset"].get("id") != args.dataset:
         _fail("cli_input_invalid", "split spec belongs to another dataset")
     if type(config) is not dict:
         _fail("cli_input_invalid", "acquisition config must be a JSON object")
     gs.check_amendment(spec, amendment, config)
+    _, expected = _acquisition_spec(args, amendment)
+    if canonical_hash(spec) != canonical_hash(expected):
+        _fail("split_spec_invalid", "the spec differs from the one derived from the verified acquisition root")
     _, records, _ = _records(args, len(spec["task"]["classes"]))
     candidate, report = gs.generate_dev_eval_pools(records, spec)
     path = _private(args, "pools-candidate", report["candidate_sha256"])
@@ -444,8 +479,14 @@ def cmd_materialize_hpo(args):
 
 def cmd_seed_hpo(args):
     source, records, _, pools, space, plan, view = _hpo_inputs(args)
+    _check_environment(args, plan["runtime"])
     identity = _hpo_identity(args, plan)
     queue = _queue(args)
+    for record in queue.list_jobs():
+        bound = record["spec"].get("global")
+        if (record["spec"].get("phase") == "hpo" and type(bound) is dict and bound.get("pools_sha256") == pools["sha256"]
+                and record["spec"]["code_commit"] != identity["code_commit"]):
+            _fail("search_space_mismatch", "HPO jobs of these pools already exist at another configs commit")
     anchors = [a for a in _anchors(queue, args.dataset) if a["pools_sha256"] == pools["sha256"]]
     if any(a["kind"] == "recipe_freeze" and a["recipe_source"] == "hpo_d" for a in anchors):
         _fail("hpo_job_after_freeze", "an hpo_d recipe freeze of these pools is already anchored")
@@ -478,13 +519,27 @@ def _validation(args):
     return _read(args.settings, "worker settings") if args.settings else None
 
 
-def cmd_collect_hpo(args):
+def _collect(args):
+    """Evidence of the CURRENT queue state; refuses while any job of the plan is missing or not terminal."""
     source, records, images, pools, space, plan, view = _hpo_inputs(args)
+    _check_environment(args, plan["runtime"])
     identity = _hpo_identity(args, plan, head=args.configs_commit)
+    stored = _read(_private(args, "hpo-code-identity", canonical_hash(identity)), "seed-time HPO code identity")
+    if {k: v for k, v in stored.items() if k != "sha256"} != identity:
+        _fail("code_identity_mismatch", "the Q6 evidence differs from the one recorded when the HPO jobs were seeded")
     evidence, manifest = gh.collect_hpo_evidence(
         space, plan, args.plan_sha256, view, _queue(args).list_jobs(), Path(args.runs).resolve(), records=records,
         pools=pools, dataset_source=source, image_sha256=images, views_root=Path(args.views_root).resolve(),
         settings=_validation(args), code_identity=identity, code_repo=Path(args.code).resolve())
+    waiting = [row for row in manifest["rows"] if row["status"] == "missing"]
+    if waiting:
+        # A partial snapshot would let a freeze be sealed from evidence chosen after seeing other scores.
+        _fail("collection_incomplete", f"{len(waiting)} HPO job(s) are absent or not terminal; collect when all are")
+    return records, pools, plan, evidence, manifest
+
+
+def cmd_collect_hpo(args):
+    records, _, _, evidence, manifest = _collect(args)
     evidence_path = _private(args, "evidence", evidence["sha256"])
     gd._publish(evidence_path, evidence, lambda value: None)
     gd._publish(_private(args, "hpo-collection", manifest["sha256"]), manifest, lambda value: None)
@@ -499,9 +554,12 @@ def cmd_collect_hpo(args):
 
 def cmd_seal_freeze(args):
     import tempfile
-    _, records, _, pools = _pools(args)
-    plan = _plan(args)
-    evidence = _document(args, "evidence", args.evidence_sha256)
+    records, pools, plan, evidence, _ = _collect(args)
+    if evidence["sha256"] != args.evidence_sha256:
+        # Only the evidence of the current, complete queue state can be frozen (no choice among snapshots).
+        _fail("collection_invalid", "--evidence-sha256 is not the evidence recomputed from the current queue")
+    if _document(args, "evidence", args.evidence_sha256) != evidence:
+        _fail("collection_invalid", "the stored evidence differs from the recomputation")
     candidates = gd._plan(plan, pools, args.plan_sha256)
     winner, means, _ = gd._evidence(evidence, plan, candidates, pools)  # predeclared ranking, never chosen here
     candidate = {"schema_version": 1, "protocol": gd.FREEZE_PROTOCOL, "scientific_status": "provisional",
@@ -544,6 +602,7 @@ def cmd_materialize_final(args):
 def cmd_seal_campaign(args):
     source, records, _, pools = _pools(args)
     freeze, evidence = _freeze(args, records, pools)
+    _check_environment(args, freeze["runtime"])
     code_commit = _clean_head(args.code)
     identity = gc.derive_code_identity(Path(args.code).resolve(), freeze_commit=freeze["runtime"]["commit"],
                                        code_commit=code_commit, image_id=args.image_id)
@@ -590,6 +649,13 @@ def cmd_seed_final(args):
     source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
     if _clean_head(args.code) != campaign["runtime"]["code_commit"]:
         _fail("code_identity_mismatch", "the code checkout HEAD is not the sealed campaign code_commit")
+    if pools["grouping"]["prior_exposure"] != "none_documented":
+        # Decision 7: on an exposed dataset (INbreast) both exploratory campaigns are sealed and anchored
+        # before the first final job of these pools.
+        sources = {a["recipe_source"] for a in _anchors(_queue(args), args.dataset)
+                   if a["kind"] == "campaign" and a["pools_sha256"] == pools["sha256"]}
+        if not {"external_fixed", "hpo_d"} <= sources:
+            _fail("final_job_before_seal", "exposed dataset: anchor both campaigns (external_fixed, hpo_d) first")
     expected = gcol.expected_final_jobs(campaign, records, pools, freeze=freeze, dataset_source=source,
                                         augmentation_presets=presets, evidence=evidence)
     specs = [item[5] for _, item in sorted(expected.items(), key=lambda pair: pair[1][:3])]
@@ -704,6 +770,8 @@ def _parser():
                    help="pre-registered config whose splits block the spec must reproduce")
     s.add_argument("--split-amendment", required=True,
                    help="committed pre-registration amendment (explicit seeds, S2 rules) the spec must reproduce")
+    s.add_argument("--acquisition-root", required=True, help="the verified acquisition root (READY.json present)")
+    code(s)
     s = command("split-spec", cmd_split_spec, "write the split spec of a verified acquisition (hashes only)",
                 pools=False)
     s.add_argument("--acquisition-root", required=True, help="the verified acquisition root (READY.json present)")
@@ -743,17 +811,22 @@ def _parser():
     code(s); hpo_pins(s)
     s = command("seed-hpo", cmd_seed_hpo, "seed the HPO jobs at the configs commit (Q6 evidence from P)")
     code(s); hpo_pins(s); queue(s)
-    s.add_argument("--image-id", required=True)
-    s = command("collect-hpo", cmd_collect_hpo, "collect finished HPO jobs into queue_collected_v1 evidence")
-    code(s); hpo_pins(s); queue(s)
-    s.add_argument("--image-id", required=True); s.add_argument("--runs", required=True)
-    s.add_argument("--views-root", required=True)
-    s.add_argument("--configs-commit", required=True, help="the code_commit printed by seed-hpo")
-    s.add_argument("--settings", help="worker settings: full nine-artifact validation (default mode)")
-    s.add_argument("--host-validation", choices=["full", "minimal"], default="full")
-    s = command("seal-freeze", cmd_seal_freeze, "seal the hpo_d recipe freeze (winner by the predeclared ranking)")
-    s.add_argument("--plan-sha256", required=True); s.add_argument("--evidence-sha256", required=True)
-    s.add_argument("--frozen-at", required=True)
+    s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
+
+    def collection_args(s):
+        code(s); hpo_pins(s); queue(s)
+        s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
+        s.add_argument("--runs", required=True); s.add_argument("--views-root", required=True)
+        s.add_argument("--configs-commit", required=True, help="the code_commit printed by seed-hpo")
+        s.add_argument("--settings", help="worker settings: full nine-artifact validation (default mode)")
+        s.add_argument("--host-validation", choices=["full", "minimal"], default="full")
+
+    s = command("collect-hpo", cmd_collect_hpo, "collect the finished HPO jobs into queue_collected_v1 evidence")
+    collection_args(s)
+    s = command("seal-freeze", cmd_seal_freeze,
+                "seal the hpo_d freeze from the evidence of the current queue (winner by the predeclared ranking)")
+    collection_args(s)
+    s.add_argument("--evidence-sha256", required=True); s.add_argument("--frozen-at", required=True)
     for name, function, text in (("materialize-final", cmd_materialize_final, "write the final configs + MANIFEST"),
                                  ("seal-campaign", cmd_seal_campaign, "seal campaign.json on the configs commit")):
         s = command(name, function, text)
@@ -763,7 +836,8 @@ def _parser():
         s.add_argument("--stages", required=True, help="seeds per stage, e.g. '11;13,19' (stage 1 is authorized)")
         if name == "seal-campaign":
             queue(s)
-            s.add_argument("--image-id", required=True); s.add_argument("--sealed-at", required=True)
+            s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
+            s.add_argument("--sealed-at", required=True)
             s.add_argument("--label", default="exploratory", choices=["exploratory", "confirmatory_candidate"])
             s.add_argument("--analysis-plan-sha256"); s.add_argument("--search-space-sha256")
     s = command("anchor", cmd_anchor, "publish a public hash anchor on the queue branch")
