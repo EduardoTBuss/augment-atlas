@@ -36,6 +36,15 @@ class AbsentOrDeniedTests(unittest.TestCase):
             exc = PermissionError(13, "Permission denied", name)
             self.assertIs(exc, tv.absent_or_denied([name], exc))
 
+    def test_existing_but_not_executable_bare_name_stays_denied(self):
+        with tempfile.TemporaryDirectory(prefix="atlas-noexec-") as tmp:
+            tool = Path(tmp) / MISSING
+            tool.write_text("#!/bin/sh\n", encoding="utf-8")
+            tool.chmod(0o644)
+            with mock.patch.dict(os.environ, {"PATH": tmp}):
+                exc = PermissionError(13, "Permission denied", MISSING)
+                self.assertIs(exc, tv.absent_or_denied([MISSING], exc))
+
     def test_explicit_path_stays_denied(self):
         exc = PermissionError(13, "Permission denied", "/nonexistent/" + MISSING)
         self.assertIs(exc, tv.absent_or_denied(["/nonexistent/" + MISSING], exc))

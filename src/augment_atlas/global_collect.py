@@ -9,8 +9,12 @@ campaign the job is located by its recomputed identity (same config bytes,
 view, code commit and campaign as ``seed_final``). Then:
 
 * ``succeeded``: completion identity (phase, config, split), checksummed
-  ``predictions.json`` and the declared clinical evaluation equal to the
-  recomputation; the predictions go to the report, which re-validates them;
+  ``predictions.json`` and ``results.json`` (the source of
+  ``initial_state_sha256``) and the declared clinical evaluation equal to the
+  recomputation; the predictions go to the report, which re-validates them.
+  ``telemetry/summary.json`` is best effort and outside the completion
+  checksums: it is read as data and only its hash is recorded. ``settings``
+  adds the worker's full nine-artifact validation;
 * ``failed``/``cancelled`` -> ``failed``, ``interrupted`` -> ``interrupted``,
   a timeout recorded by the queue -> ``timeout`` (always with a reason);
 * absent or not yet terminal: no entry, so the report shows the cell as
@@ -93,9 +97,14 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings):
     if (type(files) is not dict or prediction_path.is_symlink() or not prediction_path.is_file()
             or files.get(ge.ARTIFACT_NAME) != file_hash(prediction_path)):
         _fail("global_artifacts_invalid", "predictions.json is not covered by the completion checksums")
+    results_path = out / "results.json"
+    if (results_path.is_symlink() or not results_path.is_file()
+            or files.get("results.json") != file_hash(results_path)):
+        # initial_state_sha256 (the pairing proof) and the declared metric come from here.
+        _fail("global_artifacts_invalid", "results.json is not covered by the completion checksums")
     artifact = gh._read_json(prediction_path, "predictions.json")
     summary = ge.validate_global_predictions(cfg, view_doc, records, artifact, pools=pools)
-    results = gh._read_json(out / "results.json", "results.json")
+    results = gh._read_json(results_path, "results.json")
     declared = results.get("clinical_evaluation") if type(results) is dict else None
     recomputed = {"artifact": ge.ARTIFACT_NAME,
                   **{key: summary[key] for key in ("partition", "samples", "primary_metric", "primary_value",
@@ -112,7 +121,9 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings):
     if telemetry_path.is_file() and not telemetry_path.is_symlink():
         telemetry = gh._read_json(telemetry_path, "telemetry/summary.json")
     return artifact, state, telemetry, {"completed_sha256": file_hash(out / "completed.json"),
-                                        "predictions_sha256": file_hash(prediction_path)}
+                                        "predictions_sha256": file_hash(prediction_path),
+                                        "results_sha256": file_hash(results_path),
+                                        "telemetry_sha256": file_hash(telemetry_path) if telemetry else None}
 
 
 def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools, freeze, dataset_source,

@@ -6,8 +6,8 @@ section 10). Each subcommand reads private documents from
 `<data-root>/global/<dataset>/<kind>-<sha256>.json`, pinned by hash. That is the
 same layout the worker reads. Each subcommand re-audits its inputs and writes
 with the no-clobber publisher. Standard output carries only hashes, counts,
-commits and private paths, and the CLI refuses to print a record ID or image
-path. Re-running a step with the same inputs is idempotent.
+commits and private paths. The CLI refuses to print a record ID, group or
+image path, and it withholds error text that names one. Re-running a step with the same inputs is idempotent.
 
 Nothing here trains or talks to Docker. `scientific_status` stays
 `provisional`; `execution_verified` and `scientific_eligible` stay `false`.
@@ -50,14 +50,18 @@ Nothing here trains or talks to Docker. `scientific_status` stays
    refuses them without the campaign anchor.
 10. Workers `phase=final` run the jobs (outside this CLI).
 11. `audit-chronology --campaign-sha256 K` at any time.
-12. `report --campaign-sha256 K --runs RUNS [--settings worker.json]` does the
+12. `report --campaign-sha256 K --runs RUNS --settings worker.json` does the
     following:
     - collects every authorized cell from the queue and the attempt
       directories (`global_collect`);
     - re-audits the chronology;
     - writes the private `report-<sha>.json` and `final-collection-<sha>.json`.
 
-    `--settings` adds the worker's full artifact validation. Missing cells
+    By default the worker's full nine-artifact validation runs (`--settings`).
+    `--host-validation minimal` (no settings) must be chosen explicitly; even
+    then `predictions.json` and `results.json` must match the completion
+    checksums. `telemetry/summary.json` is best effort and is read as data
+    (its hash goes into the collection manifest). Missing cells
     stay `missing`, never zero, and one contaminated artifact fails the whole
     report.
 13. `summary --report-sha256 R` (public, ID-free), then `export-article
