@@ -68,6 +68,36 @@ Nothing here trains or talks to Docker. `scientific_status` stays
     --report-sha256 R --out DIR` (directory outside the repository), and
     `compare --report-a A --report-b B --out DIR` once both campaigns exist.
 
+## New datasets: D/E pools (`make-pools`)
+
+`make-pools --spec SPLIT.json` runs `global-dev-eval-v1`
+(`dataset-acquisition-plan.md` section 5, `global_splits.py`), stdlib only.
+The spec holds:
+- the pools metadata: `dataset`, `task`, `grouping`, `provenance`, `source_sha256`;
+- three seeds: `development`, `selection` and `evaluation`, where the
+  evaluation seed must differ from the other two (Q3);
+- `fractions {D, D_select_given_D}`;
+- the pre-registered `thresholds {min_select_positive_groups,
+  min_eval_fold_positive_groups}`.
+
+The command writes an unsigned candidate to the private store and prints
+counts and hashes. If any audit fails, it stops with `split_audit_failed`;
+there is no seed retry and no fallback. After approval, run `import-pools
+--file <path> --expected-manifest <global_manifest_sha256>`.
+
+Choices fixed by the implementation, not stated in section 5:
+- nearest-rank quartile cut points;
+- half-up rounding;
+- one round-robin counter across strata, so fold sizes differ by at most one
+  group.
+
+Only binary tasks have a specified stratification; ordinal or multiclass
+(mBRSET) needs a decision first.
+
+**Pending decision for ISIC:** `configs/acquisition/isic2020-v1.json` pins a
+single `split_seed`, but the pools schema and Q3 need a distinct evaluation
+seed. Declaring one is an amendment to the pre-registered config.
+
 ## Not covered: HPO (campaign (b))
 
 The HPO subcommands (`search-space`, `build-plan`, `seed-hpo`, `collect-hpo`,

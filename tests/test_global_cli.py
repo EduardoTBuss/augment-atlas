@@ -392,6 +392,25 @@ class ExternalPathTests(CliCase):
         self.assertIn("message withheld", error)
         self.assertNotIn(d_image, error)
 
+    def test_make_pools_then_import_pools(self):
+        env = self.env
+        candidate = pools_candidate(env.records)
+        split_spec = {key: candidate[key] for key in ("dataset", "task", "grouping", "provenance", "source_sha256")}
+        split_spec.update(seeds={"development": 5, "selection": 6, "evaluation": 7},
+                          fractions={"D": 0.2, "D_select_given_D": 0.3},
+                          thresholds={"min_select_positive_groups": 1, "min_eval_fold_positive_groups": 1})
+        path = Path(env.data).parent / "split-spec.json"
+        path.write_text(json.dumps(split_spec), encoding="utf-8")
+        made = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(path)])
+        self.assertEqual(made["algorithm"], "global-dev-eval-v1")
+        self.assertEqual(made["pools"]["E"]["groups"] + made["pools"]["D"]["groups"], 8)
+        imported = self.run_cli(env.base("import-pools", pools=False) + [
+            "--file", made["path"], "--expected-manifest", made["global_manifest_sha256"]])
+        self.assertEqual(imported["pools_sha256"], made["candidate_sha256"])
+        env.pools_sha = imported["pools_sha256"]
+        audit = self.run_cli(env.base("audit-pools") + ["--expected-manifest", made["global_manifest_sha256"]])
+        self.assertIs(audit["structural_valid"], True)
+
     def test_module_entry_point(self):
         result = subprocess.run([sys.executable, "-m", "augment_atlas.global_cli", "--help"], capture_output=True,
                                 text=True, timeout=60, env={"PYTHONPATH": str(ROOT / "src"), "PATH": "/usr/bin:/bin"})

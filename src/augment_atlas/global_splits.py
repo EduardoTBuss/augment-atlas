@@ -1,0 +1,197 @@
+"""D/E pools generator ``global-dev-eval-v1`` (dataset-acquisition-plan section 5).
+
+Stdlib only, deterministic and seed-pinned: no sklearn, no retry. The unit is
+the group of the manifest (patient, merged with duplicates by the acquisition
+tool). The output is an UNSIGNED v1 pools candidate for
+``global_development.seal_global_pools`` (the CLI ``make-pools`` then
+``import-pools``); it holds record IDs and stays private.
+
+Algorithm (binary tasks; other task types have no specified stratification yet):
+
+1. Strata: ``positive`` (the group has an image of ``task.positive_class``) x
+   the quartile bucket of the group's image count. Quartile cut points are the
+   nearest-rank values ``sizes[ceil(k*n/4) - 1]`` (k = 1, 2, 3) of the sorted
+   group sizes; the bucket is the number of cut points strictly below the size.
+2. D: in each stratum, groups ordered by
+   ``canonical_hash([algorithm, seeds.development, "DE", group])``; the first
+   ``floor(f_D * n + 1/2)`` go to D (half-up rounding, not banker's).
+3. D_select: the same inside D with stage ``"D-select"``, ``seeds.selection``
+   and ``f_sel``; the rest of D is D_fit.
+4. E -> 5 folds: strata in order, groups in each ordered by stage
+   ``"E-folds"`` with ``seeds.evaluation``, assigned round-robin 0..4 with ONE
+   counter that continues across strata (fold sizes differ by at most one
+   group; a restart per stratum would bias fold 0).
+5. Pass/fail audits, no seed retry and no fallback: coverage exactly once,
+   groups never split, both classes in D_fit, D_select and every E fold, and
+   the pre-registered thresholds (positive groups in D_select and in each E
+   fold). A failure raises ``split_audit_failed`` and must be escalated.
+
+The evaluation seed must differ from the development and selection seeds (Q3,
+``seed_reuse_forbidden``).
+
+Caveat (``global_campaign.SELECTION_BIAS_CAVEAT``): reshuffling folds does not
+remove selection bias if patients used to choose hyperparameters fall into a
+test set (Bradshaw 2023, DOI 10.1148/ryai.220232); D therefore stays out of
+every test.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+import math
+
+from . import global_development as gd
+from .contracts import canonical_hash
+
+ALGORITHM = "global-dev-eval-v1"
+VERSION = "1"
+GENERATOR_VERSION = "augment_atlas.global_splits v1"
+FOLDS = 5
+_SPEC_KEYS = {"dataset", "task", "grouping", "provenance", "source_sha256", "seeds", "fractions", "thresholds"}
+
+
+def _fail(code, message):
+    raise ValueError(f"{code}: {message}")
+
+
+def _check_spec(spec):
+    if type(spec) is not dict or set(spec) != _SPEC_KEYS:
+        _fail("split_spec_invalid", f"split spec must have exactly {sorted(_SPEC_KEYS)}")
+    seeds = spec["seeds"]
+    if type(seeds) is not dict or set(seeds) != {"development", "selection", "evaluation"} \
+            or any(type(v) is not int for v in seeds.values()):
+        _fail("split_spec_invalid", "seeds must be integers {development, selection, evaluation}")
+    if seeds["evaluation"] in (seeds["development"], seeds["selection"]):
+        _fail("seed_reuse_forbidden", "E folds need an evaluation seed distinct from the D seeds (Q3)")
+    fractions = spec["fractions"]
+    if type(fractions) is not dict or set(fractions) != {"D", "D_select_given_D"}:
+        _fail("split_spec_invalid", "fractions must be {D, D_select_given_D}")
+    for key, value in fractions.items():
+        if type(value) not in (int, float) or not 0 < value < 1:
+            _fail("split_spec_invalid", f"fraction {key} must be strictly between 0 and 1")
+    thresholds = spec["thresholds"]
+    if type(thresholds) is not dict or set(thresholds) != {"min_select_positive_groups",
+                                                           "min_eval_fold_positive_groups"} \
+            or any(type(v) is not int or v < 1 for v in thresholds.values()):
+        _fail("split_spec_invalid", "thresholds must be positive integers "
+                                    "{min_select_positive_groups, min_eval_fold_positive_groups}")
+    task = spec["task"]
+    if type(task) is not dict or task.get("type") != "binary":
+        _fail("split_spec_invalid", "global-dev-eval-v1 stratification is specified for binary tasks only")
+
+
+def _quartile_bucket(sizes):
+    ordered = sorted(sizes)
+    n = len(ordered)
+    cuts = [ordered[math.ceil(k * n / 4) - 1] for k in (1, 2, 3)]
+    return lambda size: sum(size > cut for cut in cuts)
+
+
+def _half_up(value):
+    return math.floor(value + 0.5)
+
+
+def _key(seed, stage, group):
+    return canonical_hash([ALGORITHM, seed, stage, group])
+
+
+def _strata(groups, members, positive_class):
+    """{(positive, bucket): [group, ...]} for the given groups."""
+    bucket = _quartile_bucket([len(members[g]) for g in groups])
+    strata = {}
+    for group in groups:
+        positive = int(any(row["label"] == positive_class for row in members[group]))
+        strata.setdefault((positive, bucket(len(members[group]))), []).append(group)
+    return dict(sorted(strata.items()))
+
+
+def _take(strata, fraction, seed, stage):
+    chosen = set()
+    for groups in strata.values():
+        ordered = sorted(groups, key=lambda g: (_key(seed, stage, g), g))
+        chosen.update(ordered[:_half_up(fraction * len(ordered))])
+    return chosen
+
+
+def _ids(groups, members):
+    return sorted(row["id"] for group in groups for row in members[group])
+
+
+def generate_dev_eval_pools(records, spec):
+    """Return (unsigned pools candidate, split report). Raises on any failed audit."""
+    _check_spec(spec)
+    rows = gd._records(deepcopy(records))
+    task = spec["task"]
+    positive_class = task["positive_class"]
+    members = {}
+    for row in rows:
+        if row["label"] not in task["classes"]:
+            _fail("split_spec_invalid", "record label outside the task classes")
+        members.setdefault(row["group"], []).append(row)
+    groups = sorted(members)
+    seeds, fractions = spec["seeds"], spec["fractions"]
+    strata = _strata(groups, members, positive_class)
+    d_groups = _take(strata, fractions["D"], seeds["development"], "DE")
+    d_strata = {key: [g for g in value if g in d_groups] for key, value in strata.items()}
+    select_groups = _take(d_strata, fractions["D_select_given_D"], seeds["selection"], "D-select")
+    fold_of, counter = {}, 0
+    for value in strata.values():
+        for group in sorted((g for g in value if g not in d_groups), key=lambda g: (_key(seeds["evaluation"],
+                                                                                      "E-folds", g), g)):
+            fold_of[group] = counter % FOLDS
+            counter += 1
+    lists = {"D": _ids(d_groups, members), "D_fit": _ids(d_groups - select_groups, members),
+             "D_select": _ids(select_groups, members), "E": _ids(set(fold_of), members)}
+    folds = [{"fold": f, "test_ids": _ids({g for g, k in fold_of.items() if k == f}, members)} for f in range(FOLDS)]
+    candidate = {
+        "schema_version": 1, "protocol": gd.PROTOCOL, "scientific_status": "provisional",
+        "dataset": deepcopy(spec["dataset"]), "records_sha256": canonical_hash(rows),
+        "source_sha256": spec["source_sha256"], "provenance": deepcopy(spec["provenance"]),
+        "grouping": deepcopy(spec["grouping"]), "task": deepcopy(task),
+        "partition_provenance": {"algorithm": ALGORITHM, "version": VERSION,
+                                 "source": "stdlib hash-ordered stratified groups (dataset-acquisition-plan 5)",
+                                 "generator_version": GENERATOR_VERSION, "seeds": deepcopy(seeds),
+                                 "intended_fractions": {"D": fractions["D"],
+                                                        "D_fit_given_D": 1 - fractions["D_select_given_D"],
+                                                        "E_test_given_E": 1 / FOLDS}},
+        "lists": lists, "evaluation_folds": folds}
+    report = _audit(candidate, rows, members, positive_class, spec["thresholds"])
+    return candidate, report
+
+
+def _positive_groups(ids, lookup, positive_class):
+    return len({lookup[i]["group"] for i in ids if lookup[i]["label"] == positive_class})
+
+
+def _audit(candidate, rows, members, positive_class, thresholds):
+    """Structural audit (the v1 auditor on a signed copy) plus the pre-registered pass/fail rules."""
+    signed = gd._signed(candidate)
+    try:
+        audit = gd.audit_global_pools(rows, signed,
+                                      expected_manifest_sha256=gd.global_manifest_sha256(rows, candidate))
+    except ValueError as error:
+        _fail("split_audit_failed", f"structural audit: {error}")
+    lookup = {row["id"]: row for row in rows}
+    pools = {"D_fit": candidate["lists"]["D_fit"], "D_select": candidate["lists"]["D_select"],
+             **{f"E_test_{f['fold']}": f["test_ids"] for f in candidate["evaluation_folds"]}}
+    failures = []
+    for name, ids in pools.items():
+        if audit["diagnostics"][name]["missing_classes"]:
+            failures.append(f"{name} lacks a class")
+    selected = _positive_groups(pools["D_select"], lookup, positive_class)
+    if selected < thresholds["min_select_positive_groups"]:
+        failures.append(f"D_select has {selected} positive groups (< {thresholds['min_select_positive_groups']})")
+    for fold in range(FOLDS):
+        count = _positive_groups(pools[f"E_test_{fold}"], lookup, positive_class)
+        if count < thresholds["min_eval_fold_positive_groups"]:
+            failures.append(f"E_test_{fold} has {count} positive groups "
+                            f"(< {thresholds['min_eval_fold_positive_groups']})")
+    if failures:
+        _fail("split_audit_failed", "; ".join(failures) + " (no retry, no fallback: escalate)")
+    summary = {name: {"images": audit["diagnostics"][name]["images"], "groups": audit["diagnostics"][name]["groups"],
+                      "positive_groups": _positive_groups(candidate["lists"][name] if name in candidate["lists"]
+                                                          else pools[name], lookup, positive_class),
+                      "class_counts": audit["diagnostics"][name]["class_counts"]}
+               for name in ("D", "D_fit", "D_select", "E", *[f"E_test_{f}" for f in range(FOLDS)])}
+    return {"algorithm": ALGORITHM, "groups": len(members), "records": len(rows), "pools": summary,
+            "global_manifest_sha256": gd.global_manifest_sha256(rows, candidate),
+            "candidate_sha256": signed["sha256"], "eligibility": audit["eligibility"]}

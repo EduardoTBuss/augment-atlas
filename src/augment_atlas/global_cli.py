@@ -11,7 +11,8 @@ Covered (INbreast campaign (a), spec section 10): records/pools identity, the
 D-only hpo-view and D-view, the external freeze, final config
 materialization, campaign seal, public anchors, ``seed_final``, chronology,
 collection of finished final jobs, the private report, the public summary, the
-article export and the two-campaign comparison.
+article export and the two-campaign comparison; for new datasets, the D/E
+pools generator ``global-dev-eval-v1`` (``make-pools``, binary tasks).
 
 Not covered: HPO seeding/collection/freeze. HPO configs embed ``plan_sha256``,
 which covers ``plan.runtime.commit``, while the collector and the worker
@@ -40,6 +41,7 @@ from . import global_development as gd
 from . import global_hpo as gh
 from . import global_jobs as gj
 from . import global_report as gr
+from . import global_splits as gs
 from .contracts import ARMS, canonical_hash
 from .data import load_records
 from .queue import GitQueue, QueueError
@@ -246,6 +248,19 @@ def cmd_identity(args):
         _, records, _ = _records(args, args.num_classes)
         extra = {}
     return _emit({"records": len(records), "records_sha256": canonical_hash(records), **extra}, records)
+
+
+def cmd_make_pools(args):
+    spec = _read(args.spec, "split spec")
+    if type(spec) is not dict or spec.get("dataset", {}).get("id") != args.dataset:
+        _fail("cli_input_invalid", "split spec belongs to another dataset")
+    _, records, _ = _records(args, len(spec["task"]["classes"]))
+    candidate, report = gs.generate_dev_eval_pools(records, spec)
+    path = _private(args, "pools-candidate", report["candidate_sha256"])
+    gd._publish(path, candidate, lambda value: None)
+    return _emit({**report, "path": str(path),
+                  "next": "approve the hashes, then import-pools --file <path> --expected-manifest "
+                          "<global_manifest_sha256>"}, records)
 
 
 def cmd_import_pools(args):
@@ -476,6 +491,9 @@ def _parser():
     s = command("identity", cmd_identity, "record count and hashes; with --pools-sha256 the global manifest hash",
                 pools=False)
     s.add_argument("--pools-sha256"); s.add_argument("--num-classes", type=int, default=2)
+    s = command("make-pools", cmd_make_pools, "generate D/E pools (global-dev-eval-v1) as a private candidate",
+                pools=False)
+    s.add_argument("--spec", required=True, help="split spec JSON (seeds, fractions, thresholds, metadata)")
     s = command("import-pools", cmd_import_pools, "seal an approved pools document into the private store",
                 pools=False)
     s.add_argument("--file", required=True); s.add_argument("--expected-manifest", required=True)
