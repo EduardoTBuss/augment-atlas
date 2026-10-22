@@ -1,8 +1,11 @@
-# Global CLI — operator runbook (external fixed recipe)
+# Global CLI — operator reference
 
 `python -m augment_atlas.global_cli` is the operator glue of spec section 13 for
-the **external fixed recipe** campaign (INbreast pilot, campaign (a), spec
-section 10). Each subcommand reads private documents from
+both binary datasets in scope (INbreast, ISIC 2020): the **external fixed
+recipe** campaign (a), the **HPO** campaign (b) and the D/E pools generator.
+The step-by-step server procedure, with exact commands, stop conditions and the
+hashes to record, is [`x299-runbook.md`](x299-runbook.md); this page is the
+command reference. Each subcommand reads private documents from
 `<data-root>/global/<dataset>/<kind>-<sha256>.json`, pinned by hash. That is the
 same layout the worker reads. Each subcommand re-audits its inputs and writes
 with the no-clobber publisher. Standard output carries only hashes, counts,
@@ -71,8 +74,8 @@ Nothing here trains or talks to Docker. `scientific_status` stays
 
 ## New datasets: D/E pools (`make-pools`)
 
-`make-pools --spec SPLIT.json --acquisition-config CONFIG.json` runs
-`global-dev-eval-v1`
+`make-pools --spec SPLIT.json --acquisition-config CONFIG.json --split-amendment AMENDMENT.json`
+runs `global-dev-eval-v1`
 (`dataset-acquisition-plan.md` section 5, `global_splits.py`), stdlib only.
 The spec holds:
 - the pools metadata: `dataset`, `task`, `grouping`, `provenance`, `source_sha256`;
@@ -83,15 +86,19 @@ The spec holds:
   min_eval_fold_positive_groups}`.
 
 The spec must reproduce the `splits` block of the pre-registered acquisition
-config: algorithm, 5 folds, both fractions and both thresholds. Nothing can be
+config (algorithm, 5 folds, both fractions and both thresholds) **and** the
+committed split amendment (seeds, fractions, thresholds; the amendment pins the
+acquisition config identity). `split-spec --acquisition-root ROOT
+--split-amendment AMENDMENT.json --out SPEC.json` writes the spec of a verified
+acquisition from `READY.json` and `manifest-private.json`, hashes only. Nothing can be
 relaxed at split time. The command writes an unsigned candidate to the private
 store. It prints counts, hashes, the seeds and the sha256 of the spec and
 config files, so they can be recorded next to the manifest hash. If any audit fails, it stops with `split_audit_failed`;
 there is no seed retry and no fallback. After approval, run `import-pools
 --file <path> --expected-manifest <global_manifest_sha256>`.
 
-Choices fixed by the implementation, not stated in section 5 (to be
-confirmed or changed with the config):
+Choices not stated in section 5, **confirmed by Eduardo on 22/10/2026 (S2)**
+and recorded in `configs/acquisition/isic2020-v1-splits-amendment-20261022.json`:
 - **Quartile cut points:** nearest-rank, computed over all groups. D_select
   reuses those strata restricted to D; it computes no new quartiles.
 - **Rounding:** exact half-up, `floor(f*n + 1/2)`. Section 5 writes `round`,
@@ -105,17 +112,56 @@ confirmed or changed with the config):
 Only binary tasks have a specified stratification; ordinal or multiclass
 (mBRSET) needs a decision first.
 
-**Pending decision for ISIC:** `configs/acquisition/isic2020-v1.json` pins a
-single `split_seed`, but the pools schema and Q3 need a distinct evaluation
-seed. Declaring one is an amendment to the pre-registered config.
+**ISIC seeds (S1, decided 22/10/2026):** `configs/acquisition/isic2020-v1.json`
+keeps its single `split_seed` because the `splits` block is part of the identity
+pinned in the existing download ledger. The amendment declares
+development = selection = 20261019 and evaluation = 20261022. The `splits/`
+output of acquisition `verify` is a single-seed, pre-amendment diagnostic. It is
+never imported.
 
-## Not covered: HPO (campaign (b))
+## HPO path (campaign (b), decision B1)
 
-The HPO subcommands (`search-space`, `build-plan`, `seed-hpo`, `collect-hpo`,
-`seal-freeze`) are deliberately absent. HPO configs embed `plan_sha256`, and
-that hash covers `plan.runtime.commit`. But the collector recomputes the HPO job
-ids with `code_commit = plan.runtime.commit` (`code_commit` is a job identity
-field), and the worker requires the config file committed at the job's commit.
-So the configs can never exist at that commit. This needs an explicit decision
-(for example a Q6-style "same code identity" rule for HPO jobs) before those
-subcommands can be written.
+| Step | Command |
+|---|---|
+| D-only view | `hpo-view`, `d-view --view-sha256 V --views-root VIEWS` |
+| Search space (c00 = Q2 default, Q7) | `search-space --spec SPEC.json --color ...` plus `--code --image-id --environment-probe --weights-sha256` |
+| Plan at the clean HEAD (commit P) | `build-plan --search-space-sha256 S --view-sha256 V --final-seeds a,b,c` plus the runtime flags |
+| HPO configs | `materialize-hpo --search-space-sha256 S --plan-sha256 PL --view-sha256 V`, then commit `configs/global/<ds>/hpo/` (commit X) |
+| Seed | `seed-hpo ... --image-id I` plus the queue flags, on the clean commit X |
+| Collect | `collect-hpo ... --configs-commit X --runs RUNS --views-root VIEWS --settings worker.json` |
+| Freeze | `seal-freeze --plan-sha256 PL --evidence-sha256 EV --frozen-at UTC` |
+
+Then `anchor --kind recipe_freeze --freeze-kind hpo_d`, `materialize-final
+--freeze-kind hpo_d`, and `seal-campaign ... --search-space-sha256 S`, as for
+campaign (a).
+
+**B1 (Eduardo, 22/10/2026), option (i):** the HPO configs embed `plan_sha256`,
+which covers `plan.runtime.commit`, so they are committed after the plan, at X.
+`seed-hpo` and `collect-hpo` require the Q6 evidence from P to X
+(`same_code_identity_v1`):
+- P is an ancestor of X;
+- only `configs/global/**` changed;
+- the code tree is identical;
+- the image is the pinned one, and every succeeded HPO attempt must record it in
+  `runtime.json`.
+
+The commit stays in every hash and identity.
+
+`seed-hpo` also refuses in these cases:
+- the committed configs differ from the plan's materialization;
+- an `hpo_d` freeze of these pools is already anchored;
+- on a dataset with `prior_exposure` other than `none_documented` (INbreast), the
+  `external_fixed` campaign anchor is not yet in the queue (decision 7).
+
+`seal-freeze` takes the winner from the predeclared ranking (mean, ties to
+`c00`). No option chooses it.
+
+**Q6 (confirmed by Eduardo on 22/10/2026):** `same_code_identity_v1` is
+confirmed. The code token `Q6_POLICY_STATUS` still reads
+`"pending_eduardo_confirmation"`, because three legacy tests pin that string
+and old tests are never edited. The token is part of the hashed campaign
+documents, so changing it needs an explicit decision to update those tests.
+
+Workers run with `./scripts/worker.sh --phase hpo|final` (the CLI hook added for
+B1). `hpo` needs `settings.views`; `final` needs `settings.campaign_sha256` and
+`settings.campaign_commit`.
