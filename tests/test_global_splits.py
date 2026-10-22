@@ -120,7 +120,23 @@ class GeneratorTests(unittest.TestCase):
     def test_quartile_buckets_and_half_up_rounding(self):
         bucket = gs._quartile_bucket([1, 1, 1, 1, 2, 3, 4, 8])  # cuts: 1, 1, 3
         self.assertEqual([bucket(s) for s in (1, 2, 3, 4, 8)], [0, 2, 2, 3, 3])
-        self.assertEqual([gs._half_up(x) for x in (0.5, 1.5, 2.5, 0.49)], [1, 2, 3, 0])
+        self.assertEqual([gs._half_up_count(f, n) for f, n in ((0.5, 1), (0.3, 5), (0.3, 15), (0.2, 2))],
+                         [1, 2, 5, 0])
+        self.assertEqual(gs._half_up_count(0.35, 90), 32)  # 31.5 exactly; float arithmetic gives 31.4999...
+
+    def test_spec_must_reproduce_the_preregistered_config(self):
+        pinned = {"algorithm": "global-dev-eval-v1", "split_seed": 20261019, "dev_fraction": 0.2,
+                  "select_fraction": 0.3, "eval_folds": 5, "min_select_positive_groups": 5,
+                  "min_eval_fold_positive_groups": 15}
+        gs.check_preregistered(spec(), pinned)
+        for change in ({"fractions": {"D": 0.25, "D_select_given_D": 0.3}},
+                       {"thresholds": {"min_select_positive_groups": 1, "min_eval_fold_positive_groups": 15}}):
+            with self.assertRaisesRegex(ValueError, "^split_spec_invalid: .*pre-registered"):
+                gs.check_preregistered(spec(**change), pinned)
+        with self.assertRaisesRegex(ValueError, "^split_spec_invalid: acquisition config"):
+            gs.check_preregistered(spec(), {**pinned, "eval_folds": 4})
+        with self.assertRaisesRegex(ValueError, "^split_spec_invalid: dataset and task"):
+            gs.generate_dev_eval_pools(self.rows, spec(dataset="isic"))
 
 
 if __name__ == "__main__":

@@ -60,8 +60,9 @@ Nothing here trains or talks to Docker. `scientific_status` stays
     By default the worker's full nine-artifact validation runs (`--settings`).
     `--host-validation minimal` (no settings) must be chosen explicitly; even
     then `predictions.json` and `results.json` must match the completion
-    checksums. `telemetry/summary.json` is best effort and is read as data
-    (its hash goes into the collection manifest). Missing cells
+    checksums. `telemetry/summary.json` is best effort and is read as data.
+    Its hash and state go into the collection manifest. If it is unreadable
+    or off-schema it becomes null; it never fails the report. Missing cells
     stay `missing`, never zero, and one contaminated artifact fails the whole
     report.
 13. `summary --report-sha256 R` (public, ID-free), then `export-article
@@ -70,7 +71,8 @@ Nothing here trains or talks to Docker. `scientific_status` stays
 
 ## New datasets: D/E pools (`make-pools`)
 
-`make-pools --spec SPLIT.json` runs `global-dev-eval-v1`
+`make-pools --spec SPLIT.json --acquisition-config CONFIG.json` runs
+`global-dev-eval-v1`
 (`dataset-acquisition-plan.md` section 5, `global_splits.py`), stdlib only.
 The spec holds:
 - the pools metadata: `dataset`, `task`, `grouping`, `provenance`, `source_sha256`;
@@ -80,16 +82,25 @@ The spec holds:
 - the pre-registered `thresholds {min_select_positive_groups,
   min_eval_fold_positive_groups}`.
 
-The command writes an unsigned candidate to the private store and prints
-counts and hashes. If any audit fails, it stops with `split_audit_failed`;
+The spec must reproduce the `splits` block of the pre-registered acquisition
+config: algorithm, 5 folds, both fractions and both thresholds. Nothing can be
+relaxed at split time. The command writes an unsigned candidate to the private
+store. It prints counts, hashes, the seeds and the sha256 of the spec and
+config files, so they can be recorded next to the manifest hash. If any audit fails, it stops with `split_audit_failed`;
 there is no seed retry and no fallback. After approval, run `import-pools
 --file <path> --expected-manifest <global_manifest_sha256>`.
 
-Choices fixed by the implementation, not stated in section 5:
-- nearest-rank quartile cut points;
-- half-up rounding;
-- one round-robin counter across strata, so fold sizes differ by at most one
-  group.
+Choices fixed by the implementation, not stated in section 5 (to be
+confirmed or changed with the config):
+- **Quartile cut points:** nearest-rank, computed over all groups. D_select
+  reuses those strata restricted to D; it computes no new quartiles.
+- **Rounding:** exact half-up, `floor(f*n + 1/2)`. Section 5 writes `round`,
+  and Python's banker's `round` gives a different count for f_sel = 0.30 when
+  a stratum has 15, 35, 55, ... groups (5 instead of 4 for 15).
+- **Fold round-robin:** one counter that continues across strata. Each
+  stratum is still split within ±1 group per fold, and fold 0 gets no
+  surplus. A restart in every stratum would give fold 0 up to one extra
+  group per stratum.
 
 Only binary tasks have a specified stratification; ordinal or multiclass
 (mBRSET) needs a decision first.

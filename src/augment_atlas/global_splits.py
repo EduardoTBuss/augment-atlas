@@ -11,10 +11,13 @@ Algorithm (binary tasks; other task types have no specified stratification yet):
 1. Strata: ``positive`` (the group has an image of ``task.positive_class``) x
    the quartile bucket of the group's image count. Quartile cut points are the
    nearest-rank values ``sizes[ceil(k*n/4) - 1]`` (k = 1, 2, 3) of the sorted
-   group sizes; the bucket is the number of cut points strictly below the size.
+   sizes of ALL groups; the bucket is the number of cut points strictly below
+   the size. D_select reuses these strata restricted to D (no new quartiles).
 2. D: in each stratum, groups ordered by
    ``canonical_hash([algorithm, seeds.development, "DE", group])``; the first
-   ``floor(f_D * n + 1/2)`` go to D (half-up rounding, not banker's).
+   ``floor(f_D * n + 1/2)`` go to D (half-up rounding in exact decimal
+   arithmetic, not banker's ``round``; for f_sel = 0.30 the two differ when
+   ``n`` is 15, 35, 55, ... in a stratum).
 3. D_select: the same inside D with stage ``"D-select"``, ``seeds.selection``
    and ``f_sel``; the rest of D is D_fit.
 4. E -> 5 folds: strata in order, groups in each ordered by stage
@@ -37,6 +40,7 @@ every test.
 from __future__ import annotations
 
 from copy import deepcopy
+from fractions import Fraction
 import math
 
 from . import global_development as gd
@@ -53,9 +57,33 @@ def _fail(code, message):
     raise ValueError(f"{code}: {message}")
 
 
+def check_preregistered(spec, splits):
+    """The spec must reproduce the pre-registered ``splits`` block of the acquisition config.
+
+    Fractions and thresholds cannot be relaxed at split time; seeds are not
+    compared because the config pins one ``split_seed`` while the pools schema
+    needs three (a pending amendment), so they are printed for the record.
+    """
+    _check_spec(spec)
+    expected = {"algorithm": ALGORITHM, "eval_folds": FOLDS}
+    if type(splits) is not dict or any(splits.get(k) != v for k, v in expected.items()):
+        _fail("split_spec_invalid", "acquisition config splits must declare global-dev-eval-v1 with 5 folds")
+    pairs = ((spec["fractions"]["D"], splits.get("dev_fraction"), "D fraction"),
+             (spec["fractions"]["D_select_given_D"], splits.get("select_fraction"), "D_select fraction"),
+             (spec["thresholds"]["min_select_positive_groups"], splits.get("min_select_positive_groups"),
+              "min_select_positive_groups"),
+             (spec["thresholds"]["min_eval_fold_positive_groups"], splits.get("min_eval_fold_positive_groups"),
+              "min_eval_fold_positive_groups"))
+    for got, pinned, name in pairs:
+        if type(pinned) not in (int, float) or Fraction(str(got)) != Fraction(str(pinned)):
+            _fail("split_spec_invalid", f"{name} differs from the pre-registered acquisition config")
+
+
 def _check_spec(spec):
     if type(spec) is not dict or set(spec) != _SPEC_KEYS:
         _fail("split_spec_invalid", f"split spec must have exactly {sorted(_SPEC_KEYS)}")
+    if type(spec["dataset"]) is not dict or type(spec["task"]) is not dict:
+        _fail("split_spec_invalid", "dataset and task must be objects")
     seeds = spec["seeds"]
     if type(seeds) is not dict or set(seeds) != {"development", "selection", "evaluation"} \
             or any(type(v) is not int for v in seeds.values()):
@@ -86,8 +114,9 @@ def _quartile_bucket(sizes):
     return lambda size: sum(size > cut for cut in cuts)
 
 
-def _half_up(value):
-    return math.floor(value + 0.5)
+def _half_up_count(fraction, n):
+    """floor(f * n + 1/2) in exact decimal arithmetic (0.35 * 90 is 31.5, not 31.4999...)."""
+    return math.floor(Fraction(str(fraction)) * n + Fraction(1, 2))
 
 
 def _key(seed, stage, group):
@@ -108,7 +137,7 @@ def _take(strata, fraction, seed, stage):
     chosen = set()
     for groups in strata.values():
         ordered = sorted(groups, key=lambda g: (_key(seed, stage, g), g))
-        chosen.update(ordered[:_half_up(fraction * len(ordered))])
+        chosen.update(ordered[:_half_up_count(fraction, len(ordered))])
     return chosen
 
 

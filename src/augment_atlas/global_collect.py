@@ -13,7 +13,8 @@ view, code commit and campaign as ``seed_final``). Then:
   ``initial_state_sha256``) and the declared clinical evaluation equal to the
   recomputation; the predictions go to the report, which re-validates them.
   ``telemetry/summary.json`` is best effort and outside the completion
-  checksums: it is read as data and only its hash is recorded. ``settings``
+  checksums: it is read as data, its hash is recorded, and an unreadable or
+  off-schema summary becomes null with its reason (it never fails the report). ``settings``
   adds the worker's full nine-artifact validation;
 * ``failed``/``cancelled`` -> ``failed``, ``interrupted`` -> ``interrupted``,
   a timeout recorded by the queue -> ``timeout`` (always with a reason);
@@ -37,6 +38,7 @@ from . import global_campaign as gc
 from . import global_evaluation as ge
 from . import global_hpo as gh
 from . import global_jobs as gj
+from . import global_report as gr
 from .contracts import canonical_hash, file_hash
 from .queue import validate_record
 
@@ -117,13 +119,20 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings):
         _fail("metric_recompute_mismatch", "results.clinical_evaluation differs from the metric recomputed from the scores")
     state = results.get("initial_state_sha256")
     telemetry_path = out / "telemetry" / "summary.json"
-    telemetry = None
+    telemetry, telemetry_state = None, "absent"
     if telemetry_path.is_file() and not telemetry_path.is_symlink():
-        telemetry = gh._read_json(telemetry_path, "telemetry/summary.json")
+        try:  # best effort: an unreadable or off-schema summary becomes null, never fails the report
+            raw = gh._read_json(telemetry_path, "telemetry/summary.json")
+            gr._check_telemetry(raw)  # the same check build_report applies; the raw summary goes on
+            telemetry, telemetry_state = raw, "read"
+        except ValueError as error:
+            telemetry_state = "invalid:" + str(error).split(":", 1)[0]
     return artifact, state, telemetry, {"completed_sha256": file_hash(out / "completed.json"),
                                         "predictions_sha256": file_hash(prediction_path),
                                         "results_sha256": file_hash(results_path),
-                                        "telemetry_sha256": file_hash(telemetry_path) if telemetry else None}
+                                        "telemetry_state": telemetry_state,
+                                        "telemetry_sha256": file_hash(telemetry_path)
+                                        if telemetry_state != "absent" else None}
 
 
 def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools, freeze, dataset_source,

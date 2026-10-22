@@ -373,11 +373,13 @@ class ExternalPathTests(CliCase):
         report = self.run_cli(env.base("report") + self.campaign_args(campaign) +
                               ["--runs", str(env.runs), "--host-validation", "minimal"])
         document = gd._read(Path(report["path"]))
-        document["hashes"]["pools_sha256"] = H("other pools")
-        document["sha256"] = H({k: v for k, v in document.items() if k != "sha256"})
-        (env.data / "global" / DATASET / f"report-{document['sha256']}.json").write_text(json.dumps(document))
-        error = self.run_cli(env.base("summary") + ["--report-sha256", document["sha256"]], code=2)
-        self.assertTrue(error.startswith("report_invalid:"), error)
+        for change in ({"hashes": {**document["hashes"], "pools_sha256": H("other pools")}},
+                       {"dataset": {**document["dataset"], "id": "other_dataset"}}):
+            forged = {**document, **change}
+            forged["sha256"] = H({k: v for k, v in forged.items() if k != "sha256"})
+            (env.data / "global" / DATASET / f"report-{forged['sha256']}.json").write_text(json.dumps(forged))
+            error = self.run_cli(env.base("summary") + ["--report-sha256", forged["sha256"]], code=2)
+            self.assertTrue(error.startswith("report_invalid: report belongs to other"), error)
 
     def test_error_text_naming_an_image_is_withheld(self):
         env = self.env
@@ -401,7 +403,20 @@ class ExternalPathTests(CliCase):
                           thresholds={"min_select_positive_groups": 1, "min_eval_fold_positive_groups": 1})
         path = Path(env.data).parent / "split-spec.json"
         path.write_text(json.dumps(split_spec), encoding="utf-8")
-        made = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(path)])
+        config = Path(env.data).parent / "acquisition.json"
+        splits = {"algorithm": "global-dev-eval-v1", "split_seed": 5, "dev_fraction": 0.2, "select_fraction": 0.3,
+                  "eval_folds": 5, "min_select_positive_groups": 1, "min_eval_fold_positive_groups": 1}
+        config.write_text(json.dumps({"splits": splits}), encoding="utf-8")
+        lax = dict(split_spec, fractions={"D": 0.5, "D_select_given_D": 0.3})
+        lax_path = Path(env.data).parent / "lax-spec.json"
+        lax_path.write_text(json.dumps(lax), encoding="utf-8")
+        error = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(lax_path),
+                                                                    "--acquisition-config", str(config)], code=2)
+        self.assertTrue(error.startswith("split_spec_invalid:"), error)
+        made = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(path),
+                                                                   "--acquisition-config", str(config)])
+        self.assertEqual(made["acquisition_config_sha256"], hashlib.sha256(config.read_bytes()).hexdigest())
+        self.assertEqual(made["seeds"], {"development": 5, "selection": 6, "evaluation": 7})
         self.assertEqual(made["algorithm"], "global-dev-eval-v1")
         self.assertEqual(made["pools"]["E"]["groups"] + made["pools"]["D"]["groups"], 8)
         imported = self.run_cli(env.base("import-pools", pools=False) + [
@@ -410,6 +425,41 @@ class ExternalPathTests(CliCase):
         env.pools_sha = imported["pools_sha256"]
         audit = self.run_cli(env.base("audit-pools") + ["--expected-manifest", made["global_manifest_sha256"]])
         self.assertIs(audit["structural_valid"], True)
+
+    def test_emit_refuses_an_exact_group_value_or_key(self):
+        records = self.env.records
+        for value in ({"note": records[0]["group"]}, {records[0]["group"]: 1}):
+            with self.assertRaisesRegex(ValueError, "^identifier_leak:"):
+                cli._emit(value, records)
+
+    def test_report_mode_flags_must_agree(self):
+        env = self.env
+        _, campaign = self.to_campaign()
+        settings = Path(env.data).parent / "settings.json"
+        settings.write_text("{}", encoding="utf-8")
+        error = self.run_cli(env.base("report") + self.campaign_args(campaign) + [
+            "--runs", str(env.runs), "--host-validation", "minimal", "--settings", str(settings)], code=2)
+        self.assertTrue(error.startswith("cli_input_invalid:"), error)
+
+    def test_invalid_telemetry_is_null_and_never_fails_the_report(self):
+        env = self.env
+        _, campaign = self.to_campaign()
+        self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "campaign",
+                                           "--document-sha256", campaign["campaign_sha256"]])
+        self.run_cli(env.base("seed-final") + self.campaign_args(campaign))
+        queue = GitQueue(env.checkout, env.remote)
+        job = next(j for j in queue.list_jobs() if j["spec"]["arm"] == "none" and j["spec"]["fold"] == 0)
+        done = self.finish(queue, job, "succeeded", initial=H("s"))
+        telemetry = env.runs / job["job_id"] / done["attempt_id"] / "telemetry"
+        telemetry.mkdir()
+        (telemetry / "summary.json").write_text("{truncated", encoding="utf-8")
+        report = self.run_cli(env.base("report") + self.campaign_args(campaign) +
+                              ["--runs", str(env.runs), "--host-validation", "minimal"])
+        self.assertEqual(report["status_counts"]["succeeded"], 1)
+        collection = gd._read(env.data / "global" / DATASET / f"final-collection-{report['collection_sha256']}.json")
+        row = next(r for r in collection["rows"] if r["status"] == "succeeded")
+        self.assertTrue(row["telemetry_state"].startswith("invalid:"), row)
+        self.assertIsNotNone(row["telemetry_sha256"])
 
     def test_module_entry_point(self):
         result = subprocess.run([sys.executable, "-m", "augment_atlas.global_cli", "--help"], capture_output=True,
