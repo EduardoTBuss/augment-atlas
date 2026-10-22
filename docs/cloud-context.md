@@ -1,33 +1,58 @@
-# Contexto do trabalho na nuvem — estado em 22/10/2026
+# Contexto do trabalho na nuvem — estado em 22/10/2026 (2ª sessão do dia)
 
-Este arquivo existe para que qualquer IA (local ou na nuvem) saiba o que já foi feito, o que
-está pendente e qual é o próximo passo, sem reler toda a conversa. Leia junto com
-[`cloud-handoff.md`](cloud-handoff.md) (regras duras) e [`global-cli.md`](global-cli.md)
-(runbook do operador). Repositório público: aqui só há código, decisões e contagens de
-testes. Nenhum dado privado, caminho, host, credencial ou resultado de campanha.
+Este arquivo existe para que qualquer IA, local ou na nuvem, saiba o que já foi feito, o que
+está pendente e qual é o próximo passo sem reler toda a conversa. Leia junto com:
+- [`cloud-handoff.md`](cloud-handoff.md): regras duras;
+- [`x299-runbook.md`](x299-runbook.md): procedimento do servidor;
+- [`global-cli.md`](global-cli.md): referência dos comandos.
+
+O repositório é público: aqui só há código, decisões e contagens de testes. Nenhum dado
+privado, caminho, host, credencial ou resultado de campanha.
 
 Atualize este arquivo ao fim de cada sessão de trabalho, mudando a data do título.
+
+**Distinção que vale para tudo abaixo:** "verificado" aqui quer dizer *verificado na nuvem
+com fixtures sintéticas*. Nada foi executado no X299, com GPU ou com dados reais. A
+execução real é do Eduardo, pelo runbook.
 
 ---
 
 ## 1. Resumo em uma tela
 
-- **O código do protocolo D/E está completo para a campanha (a) do INbreast**, com a
-  receita externa fixa. Isso vai de pools a freeze, âncora, configs, campanha, jobs finais,
-  coleta, relatório e exportação para o artigo, tudo via `python -m augment_atlas.global_cli`.
-- **A campanha (b), com HPO, está bloqueada por uma decisão de protocolo** (B1, §5).
-- **O ISIC está bloqueado por uma decisão sobre seeds** e pelo checklist §7.1 do plano de
-  aquisição.
+**Escopo desta etapa:** INbreast e ISIC 2020. mBRSET e CheXpert aguardam o acesso
+PhysioNet. Ficam fora o caminho ordinal (mBRSET) e o multilabel (CheXpert).
+
+**Código pronto e testado só com dados sintéticos:**
+- as duas campanhas do piloto INbreast, (a) receita externa fixa e (b) HPO exploratório,
+  na ordem decidida;
+- os pools D/E do ISIC a partir da verificação offline já existente;
+- tudo via `python -m augment_atlas.global_cli`, e workers com
+  `./scripts/worker.sh --phase smoke|hpo|final`.
+
+**Decisões de 22/10/2026 aplicadas:**
+- **B1:** identidade dos jobs HPO, opção (i);
+- **Q6:** confirmada;
+- **S1/S2:** seeds e regras do split do ISIC, numa emenda pré-registrada;
+- **os 8 pares extras de duplicatas do ISIC.**
+
+**Ainda não pode rodar:**
+- **HPO e treino final do ISIC:** falta o N de pacientes da subamostragem (Q9) e a
+  calibração do orçamento de GPU;
+- **o piloto INbreast:** no servidor, exige antes o Gate V4 e o endurance de 5h30
+  aprovados no Brain.
+
+**Invariantes:**
 - **Nada foi treinado nem executado em servidor.** `scientific_status` continua
   `"provisional"`, e `execution_verified` e `scientific_eligible` continuam `false`.
-- **Nada foi mergeado em `main`.** O trabalho está em dois PRs empilhados, ambos em draft (§2).
+- **Nada foi mergeado em `main`.** Os dois PRs estão empilhados e em draft (§2).
+- O artigo **não** está completo nem pronto para quatro datasets.
 
 ## 2. Mapa de branches e PRs
 
 | PR | Branch | Base | Conteúdo | Estado |
 |---|---|---|---|---|
 | EduardoTBuss/augment-atlas#3 | `claude/tarefa-c-merge-branches-pwmlw1` | `main` | Integração (tarefa C): as 5 branches de feature numa árvore só | draft, sem conflito |
-| EduardoTBuss/augment-atlas#4 | `claude/magical-bardeen-vkyubk` | branch do #3 | Correção do sentinel, CLI global, coletor final, gerador de pools, este arquivo | draft, sem conflito |
+| EduardoTBuss/augment-atlas#4 | `claude/magical-bardeen-vkyubk` | branch do #3 | Sentinel F2, CLI global, coletor final, gerador de pools, B1/HPO, emendas ISIC, runbook, este arquivo | draft, sem conflito |
 | EduardoTBuss/augment-atlas#1, #2 | `wip/s4-telemetry-20261021`, `feature/global-protocol-20261016` | `main` | Já contidos no #3 | abertos |
 
 Ordem de merge: **#3, depois #4**. Depois do merge do #3, os PRs #1 e #2 podem ser
@@ -43,114 +68,121 @@ Branches de origem integradas no #3 (merge `--no-ff`, nesta ordem):
 | `feature/fleet-20261019` | `cff5d81` |
 | `feature/isic-acquisition-20261019` | `e956b5e` |
 
-## 3. O que foi feito (cronológico)
+## 3. Decisões do Eduardo (22/10/2026) e como foram aplicadas
 
-### 3.1 Integração (PR #3)
+| Decisão | Aplicação |
+|---|---|
+| **B1**, opção (i): configs HPO commitados depois do plano se só `configs/global/**` mudar; o commit continua nos hashes | `global_hpo.collect_hpo_evidence(..., code_identity=, code_repo=)` exige a evidência Q6 de `plan.runtime.commit` (P) até o commit dos configs (X) e refaz as identidades dos jobs com X. Sem evidência, nada muda, e jobs em outro commit falham fechados (`search_space_mismatch`). Cada attempt aprovado precisa registrar a imagem pinada. `global_cli seed-hpo`/`collect-hpo` exigem e re-derivam a evidência do Git |
+| **Q6** confirmada (`same_code_identity_v1`) | Regra aplicada aos finais (já existia) e agora também ao HPO. **O token `Q6_POLICY_STATUS` continua `"pending_eduardo_confirmation"`**, porque três testes legados fixam essa string (`test_global_campaign.py:107`, `:326`, `test_global_campaign_runtime.py:127`) e testes antigos não são editados. Trocar o token muda o hash das campanhas e exige decisão explícita de atualizar esses testes. A confirmação está registrada aqui e em `global-cli.md` |
+| **S1**: seeds explícitas, evaluation distinta, D=0,20, f_sel=0,30, sem novas seeds | `configs/acquisition/isic2020-v1-splits-amendment-20261022.json`: development = selection = 20261019 (a `split_seed` pré-registrada antes do download), evaluation = 20261022, limiares 15/50, `before_any_score: true`. `make-pools` recusa qualquer divergência da emenda ou do config |
+| **S2**: quartis nearest-rank, D_select nos estratos de D, meio-para-cima exato, contador único de folds | Implementado em `global_splits.py` e escrito na emenda (`rules`) |
+| **S3** (mBRSET) adiada | Nada implementado; `global_splits` recusa tarefas não binárias |
+| **8 pares extras byte-idênticos** | Entrada em `accepted_divergences` de `configs/acquisition/isic2020-v1.json` (`duplicates.identical_originals_not_listed`, `observed: 8`, `decided_by: Eduardo`). É uma chave operacional e a identidade do config não muda. O `verify` já une pares de SHA idêntico no union-find e aplica `keep-min-image-name-v1`. Não há novo download |
+| **INbreast**: duas campanhas exploratórias; selar antes do 1º final; a campanha externa antes de qualquer HPO | `seed-hpo` recusa, num dataset exposto (`prior_exposure ≠ none_documented`), enquanto a âncora da campanha `external_fixed` não existir. A cronologia recusa finais antes das âncoras. A ordem completa está testada de ponta a ponta |
+| Já decididos, não perguntar de novo | Licença CC BY-NC e atribuição do ISIC, tarefa binária, AUROC primária, derivado 512 px, agrupamento padrão, frações, autorização de download |
+
+**Por que a emenda do ISIC é um arquivo separado.** O bloco `splits` de `isic2020-v1.json`
+faz parte da identidade gravada no ledger do download (`605233a8…`). Editar esse bloco faria
+o `verify` recusar os dados já baixados. Além disso, `acquisition/splits_global.py`, o split
+de seed única do `verify`, é fixado por testes antigos. A saída `splits/` do `verify` passa a
+ser um diagnóstico pré-emenda, e quem gera os pools é `make-pools`.
+
+## 4. O que foi feito (cronológico)
+
+### 4.1 Integração (PR #3)
+
 - **Conflitos resolvidos sem mudar comportamento:**
-  - `runtime.py` `DockerRuntime.create`: a checagem de ISA continua primeiro e falha fechado,
-    e a montagem da D-view global foi mantida.
-  - `cli.py`: `recipe_identity` passou a ser importado de `contracts`.
-  - `queue.py`: ficaram as âncoras S3, `seed_final` e os documentos do fleet.
-  - `docs/global-next-integration.md`: os blocos de erro do S2 e do S4 foram concatenados.
-- **Revisão:**
-  - todos os arquivos de `tests/` são idênticos byte a byte aos da branch de origem;
-  - nenhuma flag científica é `true`;
-  - os 8 casos adversariais do S2 têm teste;
-  - uma revisão independente confirmou as resoluções.
+  - `runtime.py`: a checagem de ISA continua primeiro, e a montagem da D-view foi mantida;
+  - `cli.py`: `recipe_identity` vem de `contracts`;
+  - `queue.py`: âncoras S3 e documentos do fleet;
+  - `docs/global-next-integration.md`: blocos S2 e S4.
+- **Revisões independentes** confirmaram as resoluções.
 
-### 3.2 PR #4
+### 4.2 PR #4
+
+**1ª sessão de 22/10:**
 
 | Commit | O quê |
 |---|---|
-| `c4aefd2` | **Correção F2 do sentinel.** Uma ferramenta ausente do PATH virava `permission_denied` quando o PATH tinha um diretório ilegível, como um usuário sem privilégios herdando o PATH do root. Agora sai `tool_absent`. |
-| `4f8831e` | **`global_cli.py`, `global_collect.py` e `docs/global-cli.md`.** A CLI do operador (spec §13) e o coletor de jobs finais que o `build_report` exige (spec §6.10). |
-| `8425f6f` | **Correções da 1ª revisão independente:** `results.json` checksummado, modo de validação explícito, varredura de IDs/grupos/caminhos também no stderr, relatório preso aos pools e uma ferramenta não executável continua `permission_denied`. |
-| `e6aa7f3` | **`global_splits.py` e `make-pools`.** Gerador de pools D/E `global-dev-eval-v1` (§5 do `dataset-acquisition-plan.md`), só stdlib. |
-| `7510b38` | **Correções da 2ª revisão independente:** frações e limiares presos ao config pré-registrado, arredondamento exato, telemetria inválida vira `null` e não derruba o relatório. |
-| (este) | Este arquivo de contexto e a atualização do `cloud-handoff.md`. |
+| `c4aefd2` | **Sentinel F2:** ferramenta ausente do PATH sai como `tool_absent` mesmo quando o exec responde EACCES |
+| `4f8831e` | **`global_cli.py` e `global_collect.py`:** CLI e coletor de jobs finais |
+| `8425f6f` | **Correções da 1ª revisão:** `results.json` checksummado, modo de validação explícito, varredura de IDs |
+| `e6aa7f3` | **`global_splits.py` e `make-pools`:** gerador `global-dev-eval-v1` |
+| `7510b38` | **Correções da 2ª revisão:** frações e limiares presos ao config, meio-para-cima exato |
+| `7a96d83` | Primeira versão deste arquivo |
 
-**Módulos novos:**
+**2ª sessão de 22/10 (esta):**
 
-| Módulo | Função |
+| Commit | O quê |
 |---|---|
-| `global_cli.py` | Subcomandos `identity`, `make-pools`, `import-pools`, `audit-pools`, `hpo-view`, `d-view`, `seal-external`, `materialize-final`, `seal-campaign`, `anchor`, `seed-final`, `audit-chronology`, `report`, `summary`, `export-article`, `compare`. Lê documentos privados por hash em `<data-root>/global/<ds>/<kind>-<sha>.json`, reaudita tudo e grava sem sobrescrever. |
-| `global_collect.py` | Monta as entradas do relatório a partir da fila e dos diretórios de attempt, sempre recalculando. |
-| `global_splits.py` | Gera os pools D/E estratificados por grupo positivo × quartil de tamanho do grupo. Não troca de seed nem tem fallback. |
+| `324d4b9` | **B1 no coletor HPO** (evidência Q6 de P até o commit dos configs); gancho `--phase hpo\|final` do worker em `cli.py`; `tests/test_global_hpo_b1.py` |
+| `f166799` | **Caminho HPO na CLI:** `search-space`, `build-plan`, `materialize-hpo`, `seed-hpo`, `collect-hpo`, `seal-freeze`. `tests/test_global_cli_hpo.py` cobre a campanha (b) de ponta a ponta e a ordem completa do INbreast com as duas campanhas, a comparação incluída |
+| `9ae9c02` | **ISIC:** emenda de split S1/S2, divergência aceita dos 8 pares, `split-spec`, `make-pools` exigindo a emenda; `tests/test_isic_amendment.py` (e2e: aquisição sintética → verify → pools selados) |
+| `b5ee1c9` | **`docs/x299-runbook.md`** e a atualização de `global-cli.md` e `README.md` |
+| (este) | Esta versão deste arquivo |
 
-**Testes novos** (nenhum teste antigo foi alterado): `tests/test_sentinel_tool_resolution.py`,
-`tests/test_global_cli.py` (ponta a ponta com arquivos reais, repositório de código real e
-fila Git bare) e `tests/test_global_splits.py`.
+## 5. Testes
 
-## 4. Testes (último estado: commit `7510b38`)
-
-Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch.
+Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch,
+no commit `b5ee1c9`.
 
 | Execução | Rodados | Passaram | Pulados | Falharam |
 |---|---|---|---|---|
-| root | 900 | 864 | 35 | 1 (F1) |
-| usuário sem privilégios (`nobody`), com o PATH do root | 900 | 866 | 34 | 0 |
+| root | 920 | 884 | 35 | 1 (F1) |
+| usuário sem privilégios (`nobody`), com o PATH do root | 920 | 886 | 34 | 0 |
 
-- **Pulados:** são os testes de torch/contêiner, mais (só como root) o teste de exec real de
+- **Pulados:** testes de torch/contêiner, mais (só como root) o teste de exec real de
   EACCES. Pulado não é aprovado.
 - **F1:** `test_sentinel.CliAndScriptTests.test_cli_run_report_latest` falha como root
-  porque o sentinel recusa root de propósito. Não há correção que respeite as regras, então
-  **rode a suíte com um usuário sem privilégios**.
+  porque o sentinel recusa root de propósito. **Rode a suíte com um usuário sem
+  privilégios.**
+- **Testes legados:** os 6 arquivos de teste que diferem de `main` e das branches de
+  origem são todos novos neste PR. Nenhum teste antigo foi alterado.
+- **O que os testes provam:** só caminhos sintéticos (arquivos reais em diretório
+  temporário, repositório Git local, fila Git bare, servidor HTTP em loopback). Não provam
+  nada sobre o X299, a GPU, a imagem real ou os dados reais.
 
-## 5. Decisões pendentes do Eduardo (bloqueiam trabalho)
+## 6. Achados registrados, sem correção nesta etapa
 
-| # | Decisão | Opções | Bloqueia |
-|---|---|---|---|
-| **B1** | Commit dos jobs HPO. Os configs HPO embutem `plan_sha256`, que cobre `plan.runtime.commit`. O coletor recalcula os ids dos jobs com esse commit (`code_commit` é campo de identidade), e o worker exige o config commitado nesse mesmo commit. Um arquivo não pode conter o hash do commit em que ele está. | (i) Regra tipo Q6 para HPO: o commit dos configs HPO pode diferir de `plan.runtime.commit` só em `configs/global/**`, com o mesmo código. (ii) Tirar o commit do hash embutido nos configs. | Campanha (b) do INbreast e qualquer HPO; os subcomandos HPO da CLI |
-| **S1** | Seed de avaliação do ISIC. O config `configs/acquisition/isic2020-v1.json` tem uma `split_seed` só, mas o schema de pools e a Q3 exigem uma seed de avaliação distinta. | Emenda ao config declarando `development`, `selection` e `evaluation` (a de avaliação diferente das outras duas). | `make-pools` do ISIC |
-| **S2** | Detalhes que a §5 não fixa. Implementados assim, confirmar ou mudar: quartis nearest-rank sobre todos os grupos, com o D_select reaproveitando os estratos de D; arredondamento meio-para-cima exato (o `round` do Python dá 4 em vez de 5 com f_sel = 0,30 num estrato de 15 grupos); rodízio único dos folds entre estratos. | Confirmar ou pedir mudança | Splits do ISIC/mBRSET |
-| **S3** | Estratificação de tarefa ordinal/multiclasse (mBRSET, QWK). Não especificada. | Definir a regra | `make-pools` do mBRSET |
-| **Q6** | `same_code_identity_v1` continua `pending_eduardo_confirmation` no código. | Confirmar | Selo de campanha "definitivo" |
-| **ISIC §7.1** | Licença, os 4 links, emenda de tarefa, resolução 512, política de duplicatas, frações e autorização do download. | — | Aquisição do ISIC |
-
-## 6. Achados que ficaram registrados (sem correção)
-
-- **Arquivo central, fora do escopo:** o worker (`runtime.py`, `_global_config_bytes`) lê
-  config e MANIFEST da árvore de trabalho, não do blob do HEAD. O conteúdo continua preso
-  por hash, então não é falha aberta. A correção sugerida é ler com
+- **Arquivo central:** o worker (`runtime.py`, `_global_config_bytes`) lê config e
+  MANIFEST da árvore de trabalho, não do blob do HEAD. O conteúdo continua preso por hash,
+  então não há falha aberta. A correção sugerida, num PR separado, é
   `git cat-file blob HEAD:<path>`.
-- **Seed única, mais de uma leitura:** a §5 menciona uma `split_seed` única; o gerador usa
-  três seeds (ver S1).
+- **Q6:** o token `pending_eduardo_confirmation` continua no código (§3).
+- **Ponta do HPO no worker:** o worker HPO não confere sozinho a identidade Q6 entre P e o
+  seu HEAD. A proteção está no `seed-hpo`, que recusa semear, e no `collect-hpo`, que recusa
+  coletar. Um gancho no `runtime.py` seria mais cedo, mas mexe em arquivo central.
+- **INbreast pools:** se o arquivo privado de 16/10 não estiver no schema v1, a conversão
+  das mesmas listas (sem novo sorteio) é uma tarefa de código à parte.
 
-## 7. Próximos passos (em ordem)
+## 7. Bloqueado por acesso ou decisão
 
-**Para o Eduardo:**
-1. Revisar e mergear o #3 e depois o #4. Fechar os PRs #1 e #2.
-2. Decidir B1, S1 e S2 (e Q6 se quiser fechar). Mandar as decisões para a sessão na nuvem.
+| Item | Bloqueio |
+|---|---|
+| mBRSET/BRSET | acesso PhysioNet; regra ordinal (S3) adiada |
+| CheXpert/MIMIC | acesso; treino multilabel (S6) fora do escopo |
+| HPO e finais do ISIC | N da subamostragem por paciente (Q9) e calibração do orçamento de GPU |
+| Piloto INbreast no servidor | Gate V4 e endurance de 5h30 pendentes no Brain |
 
-**No servidor (só o Eduardo; a nuvem não acessa servidor):**
-3. Piloto INbreast, campanha (a), seguindo [`global-cli.md`](global-cli.md):
-   1. `identity` (conferir as 387 imagens);
-   2. `import-pools`, `audit-pools`;
-   3. calibrar o throughput (1 job smoke com dados de D ou sintéticos);
-   4. `seal-external` e `anchor recipe_freeze`;
-   5. `materialize-final`, commit, `seal-campaign` e `anchor campaign`;
-   6. `seed-final` e os workers `phase=final`;
-   7. `report`, `summary` e `export-article`.
+## 8. Próximo passo exato para o Eduardo
 
-   Teto de 8 GPU-h. Se estourar, parar e reportar a matriz incompleta.
-4. Rodar a suíte com um usuário sem privilégios no servidor antes do primeiro job real.
+1. Revisar e mergear o PR #3, depois o PR #4. Fechar os PRs #1 e #2.
+2. No X299, a partir do commit mergeado, seguir [`x299-runbook.md`](x299-runbook.md):
+   - **Parte A:** suíte com usuário sem privilégios; imagem, pesos, AVX2, sentinel e smoke;
+   - **Parte B:** `acq none verify` com a emenda dos 8 pares, depois `split-spec`,
+     `make-pools`, `import-pools`, `audit-pools` e `anchor --kind pools`. Anotar os hashes
+     (runbook §5) no Brain;
+   - **Parte C:** só depois do Gate V4 e do endurance aprovados.
+3. Trazer para a nuvem: os hashes da Parte B (nunca IDs), as contagens do `make-pools`, a
+   decisão do N da Q9 para o ISIC, e se os pools do INbreast já estão no schema v1.
 
-**Na nuvem (código, depois das decisões):**
-5. B1 decidida: implementar a regra e os subcomandos HPO (`search-space`, `build-plan`,
-   `materialize-hpo`, `seed-hpo`, `collect-hpo`, `seal-freeze`), com testes ponta a ponta.
-6. S1/S2 decididas: ajustar o config do ISIC (emenda) e o gerador. S3 decidida:
-   estratificação ordinal para o mBRSET.
-7. Opcional: ler os configs do worker a partir do blob do HEAD (§6), num PR separado,
-   porque mexe em arquivo central.
-8. Depois do piloto aceito: S6 multilabel (CheXpert), que está fora de escopo por enquanto.
+## 9. Como a sessão na nuvem trabalha (para manter o padrão)
 
-## 8. Como a sessão na nuvem trabalha (para manter o padrão)
-
-- Laço do handoff: implementar, rodar testes, revisão independente em contexto novo e
+- **Laço do handoff:** implementar, rodar testes, revisão independente em contexto novo e
   somente leitura, corrigir os achados, repetir.
-- Testes antigos nunca são editados. Todo caso adversarial tem teste, e mutações são
-  reassinadas para o checksum não esconder a falha.
-- Lógica nova vai em módulo novo. Os arquivos centrais (`train/runtime/contracts/evaluation/cli`)
-  só recebem ganchos pequenos.
-- Commits sem trailers de co-autoria. Nada vai direto para `main`. PRs ficam em draft até o
+- **Testes:** testes antigos nunca são editados. Todo caso adversarial tem teste, e
+  mutações são reassinadas para o checksum não esconder a falha.
+- **Módulos:** lógica nova vai em módulo novo. Os arquivos centrais só recebem ganchos
+  pequenos; o único desta sessão é o `--phase` do worker em `cli.py`.
+- **Commits e PRs:** sem trailers. Nada vai direto para `main`. Os PRs ficam em draft até o
   Eduardo revisar.
