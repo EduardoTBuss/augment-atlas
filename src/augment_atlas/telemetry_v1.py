@@ -60,9 +60,15 @@ def absent_or_denied(argv, exc):
     """execvp reports EACCES, not ENOENT, for a bare name missing from PATH when
     some PATH entry is unreadable; that is an absent tool, not a denied one."""
     name = str(argv[0])
-    if os.sep not in name and shutil.which(name) is None:
-        return FileNotFoundError(2, "No such file or directory", name)
-    return exc
+    if os.sep in name:
+        return exc
+    for directory in os.get_exec_path():
+        try:
+            if os.path.isfile(os.path.join(directory, name)):
+                return exc  # present but not executable (or not searchable): really denied
+        except OSError:
+            continue
+    return FileNotFoundError(2, "No such file or directory", name)
 
 
 def read_text_file(path):

@@ -186,8 +186,8 @@ class CliCase(unittest.TestCase):
                 encoding="utf-8")
             completed = {"status": "completed", "phase": "final", "config_sha256": spec["config_sha256"],
                          "splits_sha256": view["sha256"], "trainer_override": None,
-                         "artifacts": {ge.ARTIFACT_NAME: hashlib.sha256((out / "predictions.json").read_bytes())
-                                       .hexdigest()}}
+                         "artifacts": {name: hashlib.sha256((out / name).read_bytes()).hexdigest()
+                                       for name in (ge.ARTIFACT_NAME, "results.json")}}
             (out / "completed.json").write_text(json.dumps(completed), encoding="utf-8")
         return queue.update(job["job_id"], running["attempt_id"], running["token"], running["version"],
                             {"event_id": "end", "state": state})
@@ -254,7 +254,7 @@ class ExternalPathTests(CliCase):
         states[(ARMS[1], 4)] = "failed"
         for (arm, fold), state in states.items():
             self.finish(queue, jobs[(arm, fold)], state, initial=H(["state", fold, 11]))
-        report = self.run_cli(env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs)])
+        report = self.run_cli(env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs), "--host-validation", "minimal"])
         self.assertEqual(report["authorized_cells"], 50)
         self.assertEqual(report["status_counts"], {"succeeded": 9, "failed": 1, "missing": 40})
         stored = gd._read(Path(report["path"]))
@@ -278,7 +278,7 @@ class ExternalPathTests(CliCase):
                 self.assertNotIn(row["id"], text)
         # Re-running the report on unchanged inputs is idempotent (no-clobber, same hash).
         self.assertEqual(report["report_sha256"], self.run_cli(
-            env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs)])["report_sha256"])
+            env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs), "--host-validation", "minimal"])["report_sha256"])
 
     def test_tampered_prediction_fails_the_whole_report(self):
         env = self.env
@@ -293,7 +293,10 @@ class ExternalPathTests(CliCase):
         results = json.loads((out / "results.json").read_text())
         results["clinical_evaluation"]["primary_value"] = 0.99  # declared metric differs from the scores
         (out / "results.json").write_text(json.dumps(results))
-        error = self.run_cli(env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs)], code=2)
+        completed = json.loads((out / "completed.json").read_text())  # the worker itself declared it (re-signed)
+        completed["artifacts"]["results.json"] = hashlib.sha256((out / "results.json").read_bytes()).hexdigest()
+        (out / "completed.json").write_text(json.dumps(completed))
+        error = self.run_cli(env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs), "--host-validation", "minimal"], code=2)
         self.assertTrue(error.startswith("metric_recompute_mismatch:"), error)
         self.assertFalse(list((env.data / "global" / DATASET).glob("report-*.json")))
 
@@ -325,7 +328,7 @@ class ExternalPathTests(CliCase):
         path.write_text(json.dumps(document))
         error = self.run_cli(env.base("materialize-final") + ["--code", str(env.code), *self.freeze_args(freeze)],
                              code=2)
-        self.assertNotEqual(error, "")
+        self.assertTrue(error.startswith("freeze_not_sealed:"), error)
         self.assertFalse((env.code / gj.config_dir(DATASET, "final")).exists())
         path.write_text(original)
         self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "recipe_freeze",
@@ -337,6 +340,57 @@ class ExternalPathTests(CliCase):
         error = self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind",
                                                    "recipe_freeze", "--document-sha256", document["sha256"]], code=2)
         self.assertTrue(error.startswith("anchor_conflict:"), error)
+
+    def test_report_validation_mode_is_explicit(self):
+        env = self.env
+        _, campaign = self.to_campaign()
+        error = self.run_cli(env.base("report") + self.campaign_args(campaign) + ["--runs", str(env.runs)], code=2)
+        self.assertTrue(error.startswith("cli_input_invalid:"), error)
+
+    def test_results_edited_after_completion_fails_the_report(self):
+        env = self.env
+        _, campaign = self.to_campaign()
+        self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "campaign",
+                                           "--document-sha256", campaign["campaign_sha256"]])
+        self.run_cli(env.base("seed-final") + self.campaign_args(campaign))
+        queue = GitQueue(env.checkout, env.remote)
+        job = next(j for j in queue.list_jobs() if j["spec"]["arm"] == "none" and j["spec"]["fold"] == 0)
+        done = self.finish(queue, job, "succeeded", initial=H("s"))
+        path = env.runs / job["job_id"] / done["attempt_id"] / "results.json"
+        results = json.loads(path.read_text())
+        results["initial_state_sha256"] = H("warm start hidden after completion")
+        path.write_text(json.dumps(results))
+        error = self.run_cli(env.base("report") + self.campaign_args(campaign) +
+                             ["--runs", str(env.runs), "--host-validation", "minimal"], code=2)
+        self.assertTrue(error.startswith("global_artifacts_invalid: results.json"), error)
+
+    def test_summary_refuses_a_report_of_other_pools(self):
+        env = self.env
+        _, campaign = self.to_campaign()
+        self.run_cli(env.base("anchor") + ["--code", str(env.code), *env.queue_args(), "--kind", "campaign",
+                                           "--document-sha256", campaign["campaign_sha256"]])
+        self.run_cli(env.base("seed-final") + self.campaign_args(campaign))
+        report = self.run_cli(env.base("report") + self.campaign_args(campaign) +
+                              ["--runs", str(env.runs), "--host-validation", "minimal"])
+        document = gd._read(Path(report["path"]))
+        document["hashes"]["pools_sha256"] = H("other pools")
+        document["sha256"] = H({k: v for k, v in document.items() if k != "sha256"})
+        (env.data / "global" / DATASET / f"report-{document['sha256']}.json").write_text(json.dumps(document))
+        error = self.run_cli(env.base("summary") + ["--report-sha256", document["sha256"]], code=2)
+        self.assertTrue(error.startswith("report_invalid:"), error)
+
+    def test_error_text_naming_an_image_is_withheld(self):
+        env = self.env
+        self.import_pools()
+        view = self.run_cli(env.base("hpo-view"))
+        d_image = pools_candidate(env.records)["lists"]["D"][0]
+        stray = env.views / env.pools_sha / "D" / d_image
+        stray.parent.mkdir(parents=True)
+        stray.write_bytes(b"not the manifest bytes")
+        error = self.run_cli(env.base("d-view") + ["--view-sha256", view["hpo_view_sha256"],
+                                                   "--views-root", str(env.views)], code=2)
+        self.assertIn("message withheld", error)
+        self.assertNotIn(d_image, error)
 
     def test_module_entry_point(self):
         result = subprocess.run([sys.executable, "-m", "augment_atlas.global_cli", "--help"], capture_output=True,

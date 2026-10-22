@@ -56,6 +56,9 @@ FINAL_POLICY_FIXED = {
     "early_stopping": False, "checkpoint_selection": "last_epoch", "selection_on_E": False}
 
 
+_LOADED_RECORDS = []  # records of this invocation, for redacting error text
+
+
 def _fail(code, message):
     raise ValueError(f"{code}: {message}")
 
@@ -101,6 +104,7 @@ def _records(args, num_classes):
                           root=Path(args.data_root).resolve())
     records = sorted(({k: row[k] for k in ("id", "path", "group", "label")} for row in loaded),
                      key=lambda row: row["id"])
+    _LOADED_RECORDS[:] = records
     return source, records, {row["path"]: row["sha256"] for row in loaded}
 
 
@@ -211,12 +215,22 @@ def _receipt(args, kind, anchor, published):
 # --------------------------------------------------------------------------
 
 def _emit(value, records):
+    """Print JSON after two scans: exact IDs/groups/paths anywhere, and ID/path substrings."""
+    gr._scan_identifiers(value, records, "CLI output")
     text = json.dumps(value, indent=2, sort_keys=True, allow_nan=False)
     for row in records:
         if row["id"] in text or row["path"] in text:
             _fail("identifier_leak", "refusing to print a record ID or image path")
     sys.stdout.write(text + "\n")
     return 0
+
+
+def _redact(message):
+    """Library error text may name a file of the view; keep only the code if it holds an identifier."""
+    for row in _LOADED_RECORDS:
+        if any(type(v) is str and v in message for v in (row["id"], row["path"], row["group"])):
+            return message.split(":", 1)[0] + ": (message withheld: it names a record identifier)"
+    return message
 
 
 # --------------------------------------------------------------------------
@@ -378,6 +392,8 @@ def cmd_audit_chronology(args):
 def cmd_report(args):
     source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
     queue = _queue(args)
+    if (args.host_validation == "full") != bool(args.settings):
+        _fail("cli_input_invalid", "--host-validation full needs --settings; minimal must not get one")
     settings = _read(args.settings, "worker settings") if args.settings else None
     entries, manifest = gcol.collect_final_entries(campaign, queue.list_jobs(), Path(args.runs).resolve(),
                                                    records=records, pools=pools, freeze=freeze,
@@ -397,17 +413,23 @@ def cmd_report(args):
                   "authorized_cells": manifest["authorized_cells"], "status_counts": counts}, records)
 
 
+def _report(args, sha):
+    report = _document(args, "report", sha)
+    gr.check_report(report)
+    if report["hashes"]["pools_sha256"] != args.pools_sha256 or report["dataset"]["id"] != args.dataset:
+        _fail("report_invalid", "report belongs to other pools or another dataset")
+    return report
+
+
 def cmd_summary(args):
     _, records, _, _ = _pools(args)
-    report = _document(args, "report", args.report_sha256)
-    gr.check_report(report)
+    report = _report(args, args.report_sha256)
     return _emit(gr.public_summary(report), records)
 
 
 def cmd_export_article(args):
     _, records, _, _ = _pools(args)
-    report = _document(args, "report", args.report_sha256)
-    gr.check_report(report)
+    report = _report(args, args.report_sha256)
     campaign = _document(args, "campaign", report["hashes"]["campaign_sha256"])
     out = Path(args.out).resolve() if args.out else Path(gr.default_article_dir(campaign, args.article_root))
     written = gr.export_article_variables(report, campaign, out, records=records, overwrite=args.overwrite)
@@ -418,9 +440,7 @@ def cmd_compare(args):
     _, records, _, _ = _pools(args)
     reports = []
     for sha in (args.report_a, args.report_b):
-        report = _document(args, "report", sha)
-        gr.check_report(report)
-        reports.append(report)
+        reports.append(_report(args, sha))
     comparison = gr.compare_campaigns(*reports)
     written = gr.export_comparison(comparison, Path(args.out).resolve(), records=records, overwrite=args.overwrite)
     return _emit({"comparison_sha256": comparison.get("sha256"), "out": str(Path(args.out).resolve()),
@@ -497,7 +517,10 @@ def _parser():
         if name != "seed-final":
             s.add_argument("--recorded-commit", help="C_campaign recorded at sealing (default: the anchor receipt)")
         if name == "report":
-            s.add_argument("--runs", required=True); s.add_argument("--settings")
+            s.add_argument("--runs", required=True)
+            s.add_argument("--settings", help="worker settings: full nine-artifact validation (default mode)")
+            s.add_argument("--host-validation", choices=["full", "minimal"], default="full",
+                           help="minimal skips the worker re-validation; it must be chosen explicitly")
     s = command("summary", cmd_summary, "public, ID-free summary of a private report")
     s.add_argument("--report-sha256", required=True)
     s = command("export-article", cmd_export_article, "export the article variables of one report")
@@ -517,7 +540,7 @@ def main(argv=None):
         return args.function(args)
     except (ValueError, OSError, QueueError, KeyError, TypeError) as error:
         message = str(error) if isinstance(error, (ValueError, QueueError)) else f"cli_error: {type(error).__name__}"
-        sys.stderr.write(json.dumps({"error": message}) + "\n")
+        sys.stderr.write(json.dumps({"error": _redact(message)}) + "\n")
         return 2
 
 
