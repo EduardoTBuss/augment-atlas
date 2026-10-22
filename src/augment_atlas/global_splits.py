@@ -79,6 +79,67 @@ def check_preregistered(spec, splits):
             _fail("split_spec_invalid", f"{name} differs from the pre-registered acquisition config")
 
 
+AMENDMENT_SCHEMA = "augment-atlas/split-amendment/v1"
+_AMENDMENT_KEYS = {"schema", "dataset", "amends", "decided_by", "decided_on", "before_any_score", "algorithm",
+                   "eval_folds", "seeds", "fractions", "thresholds", "rules", "seed_rationale", "no_reseed",
+                   "supersedes"}
+
+
+def check_amendment(spec, amendment, acquisition_raw):
+    """The spec must reproduce a committed pre-registration amendment of the acquisition ``splits`` block.
+
+    The amendment pins the acquisition config identity (unchanged, so the existing
+    download ledger stays valid), declares the three seeds (Q3) and the S2 rules,
+    and must agree with the fractions/thresholds of the config itself.
+    """
+    from .acquisition.config import identity_of
+    if type(amendment) is not dict or set(amendment) != _AMENDMENT_KEYS or amendment["schema"] != AMENDMENT_SCHEMA:
+        _fail("split_spec_invalid", "split amendment must be a closed augment-atlas/split-amendment/v1 document")
+    if amendment["before_any_score"] is not True or amendment["algorithm"] != ALGORITHM or amendment["eval_folds"] != FOLDS:
+        _fail("split_spec_invalid", "split amendment must be global-dev-eval-v1, 5 folds, declared before any score")
+    if type(acquisition_raw) is not dict or amendment["amends"].get("config_identity_sha256") != identity_of(
+            acquisition_raw):
+        _fail("split_spec_invalid", "split amendment is bound to another acquisition config identity")
+    check_preregistered(spec, acquisition_raw.get("splits"))
+    for key in ("seeds", "fractions", "thresholds"):
+        if canonical_hash(spec[key]) != canonical_hash(amendment[key]):
+            _fail("split_spec_invalid", f"spec {key} differ from the pre-registered split amendment")
+
+
+def spec_from_acquisition(ready, private, amendment, *, dataset_id):
+    """Split spec of a verified acquisition (READY + manifest-private): hashes only, no identifiers.
+
+    ``source_sha256`` = canonical hash of the release sources (ETag/size, central
+    directory and CSV hashes); provenance hashes cover the preprocessing block,
+    the GroundTruth CSVs, the duplicate pairs/policy and the exclusions. The
+    grouping is the patient/duplicate union-find, declared at ``group`` level
+    with unverified linkage (no external patient-identity evidence).
+    """
+    if type(ready) is not dict or ready.get("schema") != "augment-atlas/dataset-ready/v1":
+        _fail("split_spec_invalid", "READY.json is not an augment-atlas/dataset-ready/v1 document")
+    if type(private) is not dict or private.get("schema") != "augment-atlas/dataset-manifest-private/v1":
+        _fail("split_spec_invalid", "manifest-private.json is not a dataset-manifest-private/v1 document")
+    sources = private["acquisition"]["sources"]
+    labels = [s for s in sources if s["role"] in ("ground_truth_v1", "ground_truth_v2")]
+    excluded = [{"image": r["image"], "status": r["status"], "reason": r["reason"]}
+                for r in private["records"] if r["status"] != "included"]
+    return {"dataset": {"id": dataset_id, "version": private["preprocessing"]["id"]},
+            "task": {"type": "binary", "classes": [0, 1], "positive_class": 1, "endpoint": "binary_auroc",
+                     "decision_rule": "fixed_threshold", "missing_policy": "undefined_no_drop",
+                     "requires_patient_identity": True},
+            "grouping": {"namespace": f"{private['dataset']['name']} patient_id merged by duplicate pairs",
+                         "source": private["groups"]["algorithm"], "identity_level": "group",
+                         "linkage_status": "unverified", "evidence_sha256": None,
+                         "prior_exposure": "none_documented"},
+            "provenance": {"preprocessing_sha256": canonical_hash(private["preprocessing"]),
+                           "labels_sha256": canonical_hash(labels),
+                           "duplicates_sha256": canonical_hash(private["duplicates"]),
+                           "exclusions_sha256": canonical_hash(excluded)},
+            "source_sha256": canonical_hash(sources),
+            "seeds": deepcopy(amendment["seeds"]), "fractions": deepcopy(amendment["fractions"]),
+            "thresholds": deepcopy(amendment["thresholds"])}
+
+
 def _check_spec(spec):
     if type(spec) is not dict or set(spec) != _SPEC_KEYS:
         _fail("split_spec_invalid", f"split spec must have exactly {sorted(_SPEC_KEYS)}")

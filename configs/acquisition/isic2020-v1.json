@@ -103,5 +103,9 @@
     "projection_factor": 1.3,
     "projection_every": 2000
   },
-  "accepted_divergences": []
+  "accepted_divergences": [
+    {"field": "duplicates.identical_originals_not_listed", "observed": 8,
+     "resolution": "Amendment 2026-10-22: eight additional byte-identical original pairs (same SHA256, not in the official duplicate list) found by verify are accepted as duplicates; verify merges them in the patient/duplicate union-find (patient-union-duplicates-v1) and applies keep-min-image-name-v1 to them, before any split or score. No new download.",
+     "decided_by": "Eduardo"}
+  ]
 }
