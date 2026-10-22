@@ -676,8 +676,30 @@ def _manifest_row(candidate_id, seed, job_id, status, **fields):
     return row
 
 
+def _hpo_code_commit(plan, code_identity, code_repo):
+    """(commit the HPO jobs must carry, pinned image or None) under decision B1 / Q6."""
+    commit = plan.get("runtime", {}).get("commit") if type(plan) is dict and type(plan.get("runtime")) is dict else None
+    if code_identity is None:
+        if code_repo is not None:
+            _fail("code_identity_mismatch", "code_repo needs the code_identity it re-derives")
+        return commit, None
+    from . import global_campaign as gc
+    if type(code_identity) is not dict:
+        _fail("code_identity_mismatch", "code_identity must be the Q6 evidence object")
+    identity = gc.audit_code_identity(code_identity, freeze_runtime=plan["runtime"],
+                                      code_commit=code_identity.get("code_commit"),
+                                      image_id=code_identity.get("image_id"))
+    if code_repo is not None:
+        derived = gc.derive_code_identity(code_repo, freeze_commit=identity["freeze_commit"],
+                                          code_commit=identity["code_commit"], image_id=identity["image_id"])
+        if derived != identity:
+            _fail("code_identity_mismatch", "Git-derived Q6 evidence differs from the HPO code_identity")
+    return identity["code_commit"], identity["image_id"]
+
+
 def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, runs_root, *, records, pools,
-                         dataset_source, image_sha256=None, views_root=None, settings=None):
+                         dataset_source, image_sha256=None, views_root=None, settings=None, code_identity=None,
+                         code_repo=None):
     """Turn finished HPO jobs into ``queue_collected_v1`` evidence + a private manifest.
 
     For every (candidate, seed) the job is located by its recomputed identity.
@@ -688,9 +710,20 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
     overrun ``budget.gpu_minutes_cap`` (canonical order) become ``timeout`` rows;
     no new round is ever chosen after seeing scores. ``settings`` additionally
     runs the full host validation (``runtime.validate_global_completion``).
+
+    Decision B1 (Eduardo, 22/10/2026): the HPO configs embed ``plan_sha256``,
+    which covers ``plan.runtime.commit``, so they are committed AFTER the plan.
+    ``code_identity`` is the Q6 evidence (``global_campaign.derive_code_identity``)
+    from ``plan.runtime.commit`` to that configs commit: it must pass
+    ``same_code_identity_v1`` (ancestor, only ``configs/global/**`` changed,
+    identical code tree, pinned image), job identities are then recomputed with
+    the configs commit, and every succeeded attempt must record the pinned
+    image. ``code_repo`` re-derives the identity from Git and requires equality.
+    Without ``code_identity`` the jobs must carry ``plan.runtime.commit`` itself.
     """
     pools_sha = pools["sha256"]
     validate_search_space(search_space, pools=pools, runtime=plan.get("runtime") if type(plan) is dict else None)
+    code_commit, image_id = _hpo_code_commit(plan, code_identity, code_repo)
     audit_plan_from_search_space(plan, search_space)
     _guard("plan_invalid", gd._plan, plan, pools, plan_sha256)
     candidates = {c["id"]: c for c in plan["candidates"]}
@@ -704,8 +737,7 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
     expected = {}
     for name, cfg in configs.items():
         sha = ge.config_sha256(cfg)
-        spec = gj.hpo_job_spec(cfg, config_path=f"{directory}/{name}", config_sha256=sha,
-                               code_commit=plan["runtime"]["commit"])
+        spec = gj.hpo_job_spec(cfg, config_path=f"{directory}/{name}", config_sha256=sha, code_commit=code_commit)
         expected[spec["job_id"]] = (cfg["global"]["candidate_id"], cfg["training"]["seed"], cfg, sha, spec)
     by_id = {}
     for record in queue_snapshot:
@@ -781,6 +813,10 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                                                docker_log_sha256=file_hash(log_path) if has_log else None, **common))
             continue
         artifact, summary, shas = _read_attempt(out, record, cfg, config_sha, view, records, pools, views_root, settings)
+        if image_id is not None:
+            provenance = _read_json(out / "runtime.json", "runtime.json")
+            if type(provenance) is not dict or provenance.get("image_id") != image_id:
+                _fail("code_identity_mismatch", "an HPO attempt ran on another image than the pinned Q6 image")
         primary = artifact["metrics"]["primary"]
         if primary["value"] is None:
             ledger.append(_row(candidate, seed, pools, endpoint, "completed", metric_state="undefined",
@@ -807,5 +843,7 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                          "evidence_sha256": evidence["sha256"], "hpo_view_sha256": view["sha256"],
                          "host_validation": "minimal" if settings is None else "full",
                          "mount_source_pinned": views_root is not None, "listing_verified": image_sha256 is not None,
+                         "code_commit": code_commit,
+                         "code_identity_sha256": None if code_identity is None else canonical_hash(code_identity),
                          "gpu_minutes_counted": spent / 60, "gpu_minutes_cap": cap, "rows": manifest_rows})
     return evidence, manifest
