@@ -1,4 +1,4 @@
-"""Operator CLI of the global D/E protocol (spec section 13), external fixed recipe path.
+"""Operator CLI of the global D/E protocol (spec section 13).
 
 Thin glue over the audited library: every subcommand loads its inputs from the
 private store ``<data-root>/global/<dataset>/<kind>-<sha256>.json`` (the
@@ -7,17 +7,19 @@ re-audits them, and writes new documents with the no-clobber publisher.
 Standard output carries only hashes, counts, commits and private file paths;
 it is scanned for record IDs and image paths before printing.
 
-Covered (INbreast campaign (a), spec section 10): records/pools identity, the
-D-only hpo-view and D-view, the external freeze, final config
-materialization, campaign seal, public anchors, ``seed_final``, chronology,
-collection of finished final jobs, the private report, the public summary, the
-article export and the two-campaign comparison; for new datasets, the D/E
-pools generator ``global-dev-eval-v1`` (``make-pools``, binary tasks).
+Covered: records/pools identity, the D/E pools generator ``global-dev-eval-v1``
+(``make-pools``, binary tasks), the D-only hpo-view and D-view; the external
+fixed recipe freeze (campaign (a)); the HPO path (search space, plan, HPO
+configs, seeding, evidence collection, recipe freeze; campaign (b)); final
+config materialization, campaign seal, public anchors, ``seed_final``,
+chronology, collection of finished final jobs, the private report, the public
+summary, the article export and the two-campaign comparison.
 
-Not covered: HPO seeding/collection/freeze. HPO configs embed ``plan_sha256``,
-which covers ``plan.runtime.commit``, while the collector and the worker
-require the configs to be committed AT that commit; that cycle needs a
-decision (see the PR description) before an HPO subcommand can exist.
+HPO commit identity (decision B1, Eduardo 22/10/2026): the plan is built at a
+clean commit P (``plan.runtime.commit``); the HPO configs embed ``plan_sha256``
+and are therefore committed later, at X. ``seed-hpo`` and ``collect-hpo``
+require Q6 evidence from P to X (``same_code_identity_v1``: ancestor, only
+``configs/global/**`` changed, same code tree, pinned image).
 
 Nothing here trains, opens images beyond hashing, or talks to Docker.
 
@@ -203,6 +205,59 @@ def _campaign(args):
     return source, records, pools, campaign, freeze, evidence, presets
 
 
+def _plan(args):
+    """The anchored plan (it has no own ``sha256`` field: its pin is ``canonical_hash(plan)``)."""
+    plan = _read(_private(args, "plan", args.plan_sha256), "private plan document")
+    if type(plan) is not dict or gh.plan_hash(plan) != args.plan_sha256:
+        _fail("cli_input_invalid", "private plan document does not hash to the pinned plan_sha256")
+    return plan
+
+
+def _hpo_inputs(args):
+    """Pools, records, images, search space, plan and hpo-view of one HPO search, re-audited."""
+    source, records, images, pools = _pools(args)
+    space = _document(args, "search-space", args.search_space_sha256)
+    plan = _plan(args)
+    view = _document(args, "hpo-view", args.view_sha256)
+    gh.validate_search_space(space, pools=pools, runtime=plan.get("runtime"))
+    gh.audit_plan_from_search_space(plan, space)
+    gh.audit_hpo_view(view, records, pools, expected_pools_sha256=pools["sha256"], image_sha256=images)
+    if plan["producer"]["manifest_sha256"] != view["view_files_sha256"]:
+        _fail("view_hash_mismatch", "plan.producer.manifest_sha256 is not the view_files_sha256 of this D-view")
+    return source, records, images, pools, space, plan, view
+
+
+def _runtime_decl(args):
+    """{commit: clean HEAD, environment_sha256, imagenet_weights_sha256} of the pinned code and image."""
+    probe = _read(args.environment_probe, "environment probe")
+    return {"commit": _clean_head(args.code), "environment_sha256": gh.environment_sha256(args.image_id, probe),
+            "imagenet_weights_sha256": args.weights_sha256}
+
+
+def _hpo_identity(args, plan, head=None):
+    """Q6 evidence from plan.runtime.commit to the commit holding the HPO configs (decision B1).
+
+    ``seed-hpo`` uses the clean HEAD; ``collect-hpo`` names the configs commit that seed-hpo printed.
+    """
+    head = head or _clean_head(args.code)
+    identity = gc.derive_code_identity(Path(args.code).resolve(), freeze_commit=plan["runtime"]["commit"],
+                                       code_commit=head, image_id=args.image_id)
+    return gc.audit_code_identity(identity, freeze_runtime=plan["runtime"], code_commit=head, image_id=args.image_id)
+
+
+def _hpo_configs(args, source, records, pools, space, plan, view):
+    configs = gj.build_hpo_configs(records, pools, expected_pools_sha256=pools["sha256"], dataset_source=source,
+                                   plan=plan, expected_plan_sha256=args.plan_sha256,
+                                   search_space_sha256=space["sha256"], hpo_view_sha256=view["sha256"])
+    return configs, gj.config_dir(args.dataset, "hpo")
+
+
+def _anchors(queue, dataset):
+    from .queue import validate_anchor
+    head = queue._fetch_head()
+    return [validate_anchor(json.loads(queue.read_path(head, path))) for path in queue.list_anchors(head, dataset)]
+
+
 def _receipt(args, kind, anchor, published):
     receipt = {"schema_version": 1, "kind": kind, "anchor_sha256": anchor["sha256"],
                "document_sha256": anchor["document_sha256"], "path": published["path"],
@@ -323,6 +378,133 @@ def cmd_seal_external(args):
                   "runtime_commit": runtime["commit"]}, records)
 
 
+def cmd_search_space(args):
+    _, records, _, pools = _pools(args)
+    spec = _read(args.spec, "search space spec")
+    keys = {"grid", "default", "seeds", "budget", "failure_policy"}
+    if type(spec) is not dict or set(spec) != keys:
+        _fail("cli_input_invalid", f"search space spec must be exactly {sorted(keys)}")
+    base = gj.external_recipe_q2(pools, _runtime_decl(args), color=args.color)  # c00 = the Q2 default (Q7)
+    space = gh.build_search_space(pools, base_recipe=base, grid=spec["grid"], default=spec["default"],
+                                  seeds=spec["seeds"], budget=spec["budget"], failure_policy=spec["failure_policy"])
+    path = _private(args, "search-space", space["sha256"])
+    gd._publish(path, space, lambda value: gh.validate_search_space(value, pools=pools))
+    return _emit({"search_space_sha256": space["sha256"], "path": str(path),
+                  "candidates": len(gh.expand_candidates(space)), "seeds": space["seeds"]}, records)
+
+
+def cmd_build_plan(args):
+    _, records, images, pools = _pools(args)
+    space = _document(args, "search-space", args.search_space_sha256)
+    view = _document(args, "hpo-view", args.view_sha256)
+    gh.audit_hpo_view(view, records, pools, expected_pools_sha256=pools["sha256"], image_sha256=images)
+    runtime = _runtime_decl(args)
+    producer = gh.make_producer(code_sha256=gh.code_tree_sha256(Path(args.code).resolve() / "src"),
+                                environment_sha256=runtime["environment_sha256"],
+                                view_files_sha256=view["view_files_sha256"])
+    plan = gh.build_selection_plan(space, pools, producer=producer, runtime=runtime,
+                                   final_policy=_final_policy(args.code, _seeds(args.final_seeds)))
+    sha = gh.plan_hash(plan)
+    path = _private(args, "plan", sha)
+    gd._publish(path, plan, lambda value: gh.audit_plan_from_search_space(value, space))
+    return _emit({"plan_sha256": sha, "path": str(path), "plan_commit": runtime["commit"],
+                  "candidates": len(plan["candidates"]), "seeds": plan["seeds"],
+                  "next": "materialize-hpo, commit configs/global/<ds>/hpo/, then seed-hpo on that commit"}, records)
+
+
+def cmd_materialize_hpo(args):
+    source, records, _, pools, space, plan, view = _hpo_inputs(args)
+    configs, directory = _hpo_configs(args, source, records, pools, space, plan, view)
+    manifest = gj.materialize_configs("hpo", Path(args.code).resolve(), configs, pools_sha256=pools["sha256"],
+                                      plan_sha256=args.plan_sha256)
+    return _emit({"manifest_sha256": manifest["sha256"], "configs": len(manifest["files"]), "directory": directory,
+                  "plan_commit": plan["runtime"]["commit"],
+                  "next": "commit the directory (only configs/global/** may change), then seed-hpo"}, records)
+
+
+def cmd_seed_hpo(args):
+    source, records, _, pools, space, plan, view = _hpo_inputs(args)
+    identity = _hpo_identity(args, plan)
+    queue = _queue(args)
+    anchors = [a for a in _anchors(queue, args.dataset) if a["pools_sha256"] == pools["sha256"]]
+    if any(a["kind"] == "recipe_freeze" and a["recipe_source"] == "hpo_d" for a in anchors):
+        _fail("hpo_job_after_freeze", "an hpo_d recipe freeze of these pools is already anchored")
+    if pools["grouping"]["prior_exposure"] != "none_documented" and not any(
+            a["kind"] == "campaign" and a["recipe_source"] == "external_fixed" for a in anchors):
+        # Decision 7 (22/10/2026): on an exposed dataset (INbreast) the external fixed recipe campaign is
+        # sealed and anchored before any HPO job of these pools exists.
+        _fail("external_recipe_contaminated", "exposed dataset: anchor the external_fixed campaign before HPO jobs")
+    configs, directory = _hpo_configs(args, source, records, pools, space, plan, view)
+    root = Path(args.code).resolve()
+    specs = []
+    for name in sorted(configs):
+        sha = gj._bytes_sha256(gj.render_config_bytes(configs[name]))
+        committed = root / directory / name
+        if not committed.is_file() or file_hash(committed) != sha:
+            _fail("config_identity_mismatch", "committed HPO configs differ from the plan's materialization")
+        specs.append(gj.hpo_job_spec(configs[name], config_path=f"{directory}/{name}", config_sha256=sha,
+                                     code_commit=identity["code_commit"]))
+    jobs = queue.seed(specs)
+    path = _private(args, "hpo-code-identity", canonical_hash(identity))
+    gd._publish(path, {**identity, "sha256": canonical_hash(identity)}, lambda value: None)
+    return _emit({"jobs": len(jobs), "code_commit": identity["code_commit"], "plan_commit": identity["freeze_commit"],
+                  "changed_paths": len(identity["changed_paths"]), "code_identity_sha256": canonical_hash(identity),
+                  "worker_settings": {"phase": "hpo", "views": "<views root of d-view>"}}, records)
+
+
+def _validation(args):
+    if (args.host_validation == "full") != bool(args.settings):
+        _fail("cli_input_invalid", "--host-validation full needs --settings; minimal must not get one")
+    return _read(args.settings, "worker settings") if args.settings else None
+
+
+def cmd_collect_hpo(args):
+    source, records, images, pools, space, plan, view = _hpo_inputs(args)
+    identity = _hpo_identity(args, plan, head=args.configs_commit)
+    evidence, manifest = gh.collect_hpo_evidence(
+        space, plan, args.plan_sha256, view, _queue(args).list_jobs(), Path(args.runs).resolve(), records=records,
+        pools=pools, dataset_source=source, image_sha256=images, views_root=Path(args.views_root).resolve(),
+        settings=_validation(args), code_identity=identity, code_repo=Path(args.code).resolve())
+    evidence_path = _private(args, "evidence", evidence["sha256"])
+    gd._publish(evidence_path, evidence, lambda value: None)
+    gd._publish(_private(args, "hpo-collection", manifest["sha256"]), manifest, lambda value: None)
+    counts = {}
+    for row in evidence["rows"]:
+        counts[row["status"]] = counts.get(row["status"], 0) + 1
+    return _emit({"evidence_sha256": evidence["sha256"], "path": str(evidence_path),
+                  "collection_sha256": manifest["sha256"], "status_counts": counts,
+                  "gpu_minutes_counted": manifest["gpu_minutes_counted"], "gpu_minutes_cap": manifest["gpu_minutes_cap"]},
+                 records)
+
+
+def cmd_seal_freeze(args):
+    import tempfile
+    _, records, _, pools = _pools(args)
+    plan = _plan(args)
+    evidence = _document(args, "evidence", args.evidence_sha256)
+    candidates = gd._plan(plan, pools, args.plan_sha256)
+    winner, means, _ = gd._evidence(evidence, plan, candidates, pools)  # predeclared ranking, never chosen here
+    candidate = {"schema_version": 1, "protocol": gd.FREEZE_PROTOCOL, "scientific_status": "provisional",
+                 "dataset": plan["dataset"], "task": plan["task"], "pools_sha256": pools["sha256"],
+                 "selection_plan": plan, "selection_plan_sha256": args.plan_sha256,
+                 "selection_evidence_sha256": evidence["sha256"], "selected_candidate_id": winner,
+                 "selected_parameters": candidates[winner]["parameters"], "frozen_recipe": candidates[winner]["recipe"],
+                 "final_policy": plan["final_policy"], "runtime": plan["runtime"],
+                 "selection_scope": {"train_ids": pools["lists"]["D_fit"], "select_ids": pools["lists"]["D_select"],
+                                     "epoch_ids": pools["lists"]["D_select"],
+                                     "threshold_ids": pools["lists"]["D_select"],
+                                     "augmentation": {"arm": "none", "ops": []}, "producer": plan["producer"]},
+                 "frozen_at_utc": _utc(args.frozen_at, "--frozen-at")}
+    with tempfile.TemporaryDirectory(prefix="atlas-freeze-") as directory:
+        freeze = gd.seal_recipe_freeze(records, pools, candidate, evidence, expected_pools_sha256=pools["sha256"],
+                                       expected_plan_sha256=args.plan_sha256, output=Path(directory) / "freeze.json")
+    path = _private(args, "freeze", freeze["sha256"])
+    gd._publish(path, freeze, lambda value: gd.audit_recipe_freeze(
+        records, pools, value, evidence, expected_pools_sha256=pools["sha256"], expected_plan_sha256=args.plan_sha256))
+    return _emit({"freeze_sha256": freeze["sha256"], "freeze_kind": "hpo_d", "path": str(path),
+                  "selected_candidate_id": winner, "candidates_defined": len(means)}, records)
+
+
 def cmd_materialize_final(args):
     source, records, _, pools = _pools(args)
     freeze, evidence = _freeze(args, records, pools)
@@ -413,9 +595,7 @@ def cmd_audit_chronology(args):
 def cmd_report(args):
     source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
     queue = _queue(args)
-    if (args.host_validation == "full") != bool(args.settings):
-        _fail("cli_input_invalid", "--host-validation full needs --settings; minimal must not get one")
-    settings = _read(args.settings, "worker settings") if args.settings else None
+    settings = _validation(args)
     entries, manifest = gcol.collect_final_entries(campaign, queue.list_jobs(), Path(args.runs).resolve(),
                                                    records=records, pools=pools, freeze=freeze,
                                                    dataset_source=source, augmentation_presets=presets,
@@ -474,7 +654,7 @@ def cmd_compare(args):
 
 def _parser():
     p = argparse.ArgumentParser(prog="python -m augment_atlas.global_cli",
-                                description="Global D/E protocol operator CLI (external fixed recipe path)")
+                                description="Global D/E protocol operator CLI")
     sub = p.add_subparsers(dest="command", required=True)
 
     def command(name, function, help_text, pools=True):
@@ -516,6 +696,38 @@ def _parser():
     s.add_argument("--weights-sha256", required=True); s.add_argument("--final-seeds", required=True)
     s.add_argument("--color", required=True, choices=["grayscale_to_rgb", "rgb"])
     s.add_argument("--frozen-at", required=True, help="explicit UTC, e.g. 2026-10-23T12:00:00Z")
+    def runtime_args(s):
+        code(s)
+        s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
+        s.add_argument("--weights-sha256", required=True)
+
+    def hpo_pins(s):
+        s.add_argument("--search-space-sha256", required=True); s.add_argument("--plan-sha256", required=True)
+        s.add_argument("--view-sha256", required=True)
+
+    s = command("search-space", cmd_search_space, "seal the HPO search space (base recipe = Q2 default, c00)")
+    runtime_args(s)
+    s.add_argument("--spec", required=True, help="JSON {grid, default, seeds, budget, failure_policy}")
+    s.add_argument("--color", required=True, choices=["grayscale_to_rgb", "rgb"])
+    s = command("build-plan", cmd_build_plan, "build and store the selection plan at the clean HEAD (commit P)")
+    runtime_args(s)
+    s.add_argument("--search-space-sha256", required=True); s.add_argument("--view-sha256", required=True)
+    s.add_argument("--final-seeds", required=True)
+    s = command("materialize-hpo", cmd_materialize_hpo, "write the HPO configs + MANIFEST of an anchored plan")
+    code(s); hpo_pins(s)
+    s = command("seed-hpo", cmd_seed_hpo, "seed the HPO jobs at the configs commit (Q6 evidence from P)")
+    code(s); hpo_pins(s); queue(s)
+    s.add_argument("--image-id", required=True)
+    s = command("collect-hpo", cmd_collect_hpo, "collect finished HPO jobs into queue_collected_v1 evidence")
+    code(s); hpo_pins(s); queue(s)
+    s.add_argument("--image-id", required=True); s.add_argument("--runs", required=True)
+    s.add_argument("--views-root", required=True)
+    s.add_argument("--configs-commit", required=True, help="the code_commit printed by seed-hpo")
+    s.add_argument("--settings", help="worker settings: full nine-artifact validation (default mode)")
+    s.add_argument("--host-validation", choices=["full", "minimal"], default="full")
+    s = command("seal-freeze", cmd_seal_freeze, "seal the hpo_d recipe freeze (winner by the predeclared ranking)")
+    s.add_argument("--plan-sha256", required=True); s.add_argument("--evidence-sha256", required=True)
+    s.add_argument("--frozen-at", required=True)
     for name, function, text in (("materialize-final", cmd_materialize_final, "write the final configs + MANIFEST"),
                                  ("seal-campaign", cmd_seal_campaign, "seal campaign.json on the configs commit")):
         s = command(name, function, text)
