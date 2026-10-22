@@ -119,17 +119,52 @@ ser um diagnóstico pré-emenda, e quem gera os pools é `make-pools`.
 | `f166799` | **Caminho HPO na CLI:** `search-space`, `build-plan`, `materialize-hpo`, `seed-hpo`, `collect-hpo`, `seal-freeze`. `tests/test_global_cli_hpo.py` cobre a campanha (b) de ponta a ponta e a ordem completa do INbreast com as duas campanhas, a comparação incluída |
 | `9ae9c02` | **ISIC:** emenda de split S1/S2, divergência aceita dos 8 pares, `split-spec`, `make-pools` exigindo a emenda; `tests/test_isic_amendment.py` (e2e: aquisição sintética → verify → pools selados) |
 | `b5ee1c9` | **`docs/x299-runbook.md`** e a atualização de `global-cli.md` e `README.md` |
+| `0fe04b6` | Primeira versão deste arquivo para a 2ª sessão |
+| `4f3fd09` | **Correções da auditoria integrada** (detalhes logo abaixo) |
 | (este) | Esta versão deste arquivo |
+
+**Auditoria integrada independente** (contexto novo, somente leitura), sobre os commits
+`324d4b9`..`b5ee1c9` e a integração.
+
+**Bloqueador corrigido em `4f3fd09`:**
+- **B-1:** o operador podia escolher o vencedor do freeze `hpo_d` escolhendo um snapshot da
+  evidência. Agora:
+  - o `collect-hpo` recusa com `collection_incomplete` enquanto algum job HPO faltar ou não
+    for terminal;
+  - o `seal-freeze` recalcula a evidência a partir da fila **atual** e só aceita a igual a
+    esse recálculo.
+
+**Maiores corrigidos:**
+- **M-1:** a imagem não era pinada. Agora o `environment_sha256(imagem, probe)` precisa
+  igualar o do plano ou do freeze no `seed-hpo`, `collect-hpo`, `seal-freeze` e
+  `seal-campaign`.
+- **M-2:** a emenda do ISIC não era pinada. Agora o `make-pools` só lê o config e a emenda
+  como arquivos rastreados e sem alteração de um `--code` limpo, presos ao `READY.json`, e
+  exige que a spec seja igual à derivada da raiz verificada.
+
+**Menores corrigidos:**
+- o `seed-final` num dataset exposto exige as duas âncoras de campanha;
+- o `seed-hpo` recusa jobs HPO em outro commit;
+- testes do gancho `--phase` do worker;
+- `DATA` no runbook, e todas as flags do runbook conferidas contra o parser;
+- documentos desatualizados.
+
+**Registrados sem correção (§6):**
+- o freeze não grava o commit X dos configs HPO; só o manifesto privado de coleta grava;
+- a decisão 7 é aplicada pela CLI e pela cronologia do lado da campanha (b), não por um
+  gancho do worker.
+
+**Re-revisão independente das correções:** em andamento quando este arquivo foi gravado; o resultado entra na próxima atualização.
 
 ## 5. Testes
 
 Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch,
-no commit `b5ee1c9`.
+no commit `4f3fd09`.
 
 | Execução | Rodados | Passaram | Pulados | Falharam |
 |---|---|---|---|---|
-| root | 920 | 884 | 35 | 1 (F1) |
-| usuário sem privilégios (`nobody`), com o PATH do root | 920 | 886 | 34 | 0 |
+| root | 926 | 890 | 35 | 1 (F1) |
+| usuário sem privilégios (`nobody`), com o PATH do root | 926 | 892 | 34 | 0 |
 
 - **Pulados:** testes de torch/contêiner, mais (só como root) o teste de exec real de
   EACCES. Pulado não é aprovado.
@@ -152,6 +187,12 @@ no commit `b5ee1c9`.
 - **Ponta do HPO no worker:** o worker HPO não confere sozinho a identidade Q6 entre P e o
   seu HEAD. A proteção está no `seed-hpo`, que recusa semear, e no `collect-hpo`, que recusa
   coletar. Um gancho no `runtime.py` seria mais cedo, mas mexe em arquivo central.
+- **Rastro do commit HPO:** o freeze `hpo_d` (schema v1 fechado) não grava o commit X dos
+  configs HPO nem o hash da evidência Q6. Eles ficam no manifesto privado
+  `hpo-collection-<sha>.json` e no `hpo-code-identity-<sha>.json`.
+- **Decisão 7 fora da CLI:** a cronologia da campanha (a) exige jobs HPO depois do
+  C_freeze(a), não depois do C_campaign(a). Jobs HPO semeados fora da CLI entre essas duas
+  âncoras passariam nessa auditoria. A CLI recusa esse caso.
 - **INbreast pools:** se o arquivo privado de 16/10 não estiver no schema v1, a conversão
   das mesmas listas (sem novo sorteio) é uma tarefa de código à parte.
 
