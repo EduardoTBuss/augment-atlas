@@ -805,6 +805,10 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                                                docker_log_sha256=file_hash(log_path) if has_log else None, **common))
             continue
         if state != "succeeded":
+            if any((out / name).exists() for name in (ge.ARTIFACT_NAME, "results.json")):
+                # Scores were written and then the job ended without success: counting it as a plain
+                # failure would let a candidate be dropped after its own score was visible.
+                _fail("collection_invalid", f"non-succeeded HPO job {job_id[:12]} already wrote scores")
             status = "timeout" if _timed_out(record) else "failed"
             reason = f"job_{'timeout' if status == 'timeout' else state}"
             ledger.append(_row(candidate, seed, pools, endpoint, status, metric_state="unavailable", reason=reason,

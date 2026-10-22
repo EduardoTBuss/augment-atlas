@@ -242,7 +242,12 @@ class VerifiedRootToPoolsTests(AcquisitionE2E):
         # A local-only commit of an edited amendment is not the published pre-registration.
         git("commit", "-qam", "reseed (never pushed)")
         error = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins, code=2)
-        self.assertIn("not on a published", error)
+        self.assertIn("not the published version on origin/main", error)
+        # Pushing it to a feature branch does not make it the pre-registration either.
+        git("push", "-q", "origin", "HEAD:refs/heads/reseed")
+        git("fetch", "-q", "origin")
+        error = self.global_cli("make-pools", *base, "--spec", str(spec_path), *pins, code=2)
+        self.assertIn("not the published version on origin/main", error)
         git("reset", "-q", "--hard", "origin/main")
         # The records must be the manifest.csv that READY verified, not another manifest.
         rows = (self.root / "manifest" / "manifest.csv").read_text().splitlines()

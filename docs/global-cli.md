@@ -161,12 +161,23 @@ and B-1':
 - The **first complete collection of a plan is binding**. It writes the
   private pin `hpo-evidence-pin-<plan_sha256>.json`, and any later collection
   with different evidence is `collection_invalid`. This covers a retry or
-  resume decided after the scores were visible, so infrastructure retries
-  happen before the first collection.
+  resume decided **after the first complete collection**. It does not cover
+  a decision taken earlier with other scores already readable in the runs
+  directory; see the open decision on retries below.
+- A non-succeeded HPO attempt that already wrote `predictions.json` or
+  `results.json` is `collection_invalid` (audit B-1''): a job stopped after
+  writing its score never becomes a plain failed row.
 - `seal-freeze` **and** `anchor --kind recipe_freeze --freeze-kind hpo_d`
   recompute the evidence from the current queue. They require it to equal
   the pin and the freeze's `selection_evidence_sha256`. An `hpo_d` anchor
   therefore takes the same collection arguments as `collect-hpo`.
+
+**Open decision (retry policy):** whether to retry an infrastructure
+failure before the first collection is still the operator's choice, made
+while other scores are readable on disk. Removing that discretion requires a
+rule Eduardo has not decided yet: mandatory retries up to a fixed K recorded
+in the search space, or no HPO retries at all. Until then the runbook fixes
+an operator rule.
 
 The pin lives in the operator's private store. Like every private document,
 it protects against mistakes and post-hoc choices, not against a repository
@@ -180,9 +191,11 @@ requires the Q6 evidence it re-derives to equal the one `seed-hpo` stored.
 
 **Pools (`make-pools`).**
 - It reads the acquisition config and the split amendment with `git show
-  HEAD:<path>` from a clean `--code` checkout whose HEAD is on a
-  remote-tracking branch. A local-only commit or a `skip-worktree` edit is
-  never the pre-registered version.
+  HEAD:<path>` from a clean `--code` checkout, and requires both blobs to be
+  identical to `origin/main` (run `git fetch origin` first). A `skip-worktree`
+  edit, a local-only commit or a pushed feature branch is therefore refused.
+  Local refs remain operator-controlled; the anchored pools record the seeds,
+  so a reviewer can always compare them with the public amendment.
 - It requires `--source` to be the `manifest.csv` that `READY.json` verified.
 - It binds them to the `READY.json` config identity of `--acquisition-root`.
 - It requires the spec to equal the derivation from that root.
