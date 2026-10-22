@@ -57,7 +57,7 @@ class HpoCase(CliCase):
         return ["--search-space-sha256", self.space["search_space_sha256"], "--plan-sha256", self.plan["plan_sha256"],
                 "--view-sha256", self.view["hpo_view_sha256"]]
 
-    def finish_hpo(self, queue, job, scores, image=IMAGE):
+    def finish_hpo(self, queue, job, scores, image=IMAGE, end_state="succeeded"):
         """Play the HPO worker: claim, run, write the D_select artifacts, succeed."""
         env = self.env
         claimed = queue.claim(job["job_id"], {"server": "fixture"})
@@ -87,7 +87,7 @@ class HpoCase(CliCase):
             encoding="utf-8")
         (out / "docker.log").write_text("fixture docker log\n", encoding="utf-8")
         queue.update(job["job_id"], running["attempt_id"], running["token"], running["version"],
-                     {"event_id": "end-" + claimed["attempt_id"], "state": "succeeded"})
+                     {"event_id": "end-" + claimed["attempt_id"], "state": end_state})
 
     def fail_hpo(self, queue, job):
         """Play an HPO attempt that fails before writing any predictions (retry policy allows a retry)."""
@@ -289,6 +289,29 @@ class FreezeSnapshotTests(HpoCase):
                                                    "recipe_freeze", "--freeze-kind", "hpo_d", "--document-sha256",
                                                    stale["freeze_sha256"]], code=2)
         self.assertTrue(error.startswith("cli_input_invalid:"), error)  # hpo_d anchors need the collection
+
+    def test_a_failed_attempt_that_already_wrote_scores_is_refused(self):
+        # Audit B-1'': a job stopped after writing a (winning) score must not become a plain failed row.
+        self.to_seeded_hpo()
+        queue, jobs = self.hpo_jobs()
+        for candidate in ("c00", "c02", "c03"):
+            self.finish_hpo(queue, jobs[candidate], TIE)
+        for end_state in ("failed",):
+            self.finish_hpo(queue, jobs["c01"], GOOD, end_state=end_state)
+        error = self.run_cli(self.collect_args(), code=2)
+        self.assertTrue(error.startswith("collection_invalid:"), error)
+        self.assertIn("already wrote scores", error)
+
+    def test_an_edited_pin_is_refused(self):
+        self.to_seeded_hpo()
+        self.run_hpo()
+        self.run_cli(self.collect_args())
+        pin = next((self.env.data / "global" / DATASET).glob("hpo-evidence-pin-*.json"))
+        document = json.loads(pin.read_text())
+        document["evidence_sha256"] = "0" * 64  # checksum left stale
+        pin.write_text(json.dumps(document))
+        error = self.run_cli(self.collect_args(), code=2)
+        self.assertIn("collection_invalid: the HPO evidence pin fails its checksum", error)
 
     def test_a_second_seeding_at_another_configs_commit_is_refused(self):
         env = self.env

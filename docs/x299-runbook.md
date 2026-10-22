@@ -59,8 +59,8 @@ Regras de operação válidas em todas as partes:
 1. Os PRs #3 e #4 precisam estar mergeados, nesta ordem, num commit que o Eduardo revisou.
    `COMMIT` é esse commit, ou um descendente que mude só `configs/global/**`.
 2. `git -C "$CODE" fetch origin && git -C "$CODE" checkout "$COMMIT" && git -C "$CODE" status --porcelain`
-   tem de sair vazio. `COMMIT` precisa estar numa branch publicada (`git -C "$CODE" branch -r
-   --contains HEAD` não vazio), porque o `make-pools` só aceita a emenda publicada.
+   tem de sair vazio. O `make-pools` exige que o config e a emenda em `COMMIT` sejam
+   idênticos aos de `origin/main` (por isso o `fetch`).
 3. `IMAGE`: a imagem pinada nos aceites anteriores (`docs/acceptance-v2.md`, também em
    `docs/isic-acquisition.md` §2). Confira com `docker image inspect --format '{{.Id}}' "$IMAGE"`,
    que precisa devolver exatamente `$IMAGE`. Uma tag não basta.
@@ -260,12 +260,18 @@ Workers HPO: checkout em `Xh`, `settings` privados com `"phase": "hpo"`, `"views
 ./scripts/worker.sh --settings $PRIV/worker-hpo.json --phase hpo        # um treino por vez; tmux
 ```
 
-**Retries de HPO só antes da primeira coleta.** Um job que falhou por infraestrutura, sem
-predições, pode receber retry manual (`README.md`) **antes** do primeiro `collect-hpo`. A
-primeira coleta completa de um plano é vinculante: ela grava o pin
-`hpo-evidence-pin-<plan>.json`, e qualquer coleta posterior com outra evidência, por exemplo
-depois de um retry ou de um `--resume` decidido com os scores visíveis, é recusada com
-`collection_invalid`. Nesse caso, **pare e escale**; não há nova rodada.
+**Retries de HPO: regra fixa do operador, enquanto a política não for decidida.**
+- Todo job HPO que terminar `failed`/`cancelled`/`interrupted` **sem** `predictions.json`
+  recebe **exatamente um** retry manual (`README.md`), **antes** do primeiro `collect-hpo`.
+  Isso vale para todos, sem exceção, e sem abrir os `results.json` dos outros jobs.
+- Se o retry falhar de novo, a linha fica `failed`.
+- Um job não aprovado que **já escreveu** predições faz o `collect-hpo` recusar com
+  `collection_invalid` (B-1''). **Pare e escale.**
+- A primeira coleta completa de um plano é vinculante: ela grava o pin
+  `hpo-evidence-pin-<plan>.json`, e qualquer coleta posterior com outra evidência é
+  recusada com `collection_invalid`. **Pare e escale**; não há nova rodada.
+- O código ainda não impõe a regra do "exatamente um retry". Essa é uma decisão pendente
+  (`cloud-context.md` §5).
 
 Quando os 4 jobs estiverem terminais (o `collect-hpo` recusa com `collection_incomplete`
 enquanto algum faltar):

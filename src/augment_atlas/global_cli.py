@@ -331,20 +331,26 @@ def _acquisition_spec(args, amendment):
 
 
 def _tracked(args, path, what):
-    """(document, sha256 of its bytes) as committed at the published HEAD of --code.
+    """(document, sha256 of its bytes) as committed at HEAD of --code AND identical to origin/main.
 
     Read with ``git show HEAD:<path>`` (not from disk: skip-worktree edits are invisible to
-    ``git status``), and HEAD must be on a remote-tracking branch, so the pre-registered
-    bytes are the published ones rather than a local-only commit.
+    ``git status``), and the blob must equal the one on ``origin/main`` (run ``git fetch origin``
+    first), so the pre-registered bytes are the reviewed, merged ones rather than a local or
+    feature-branch commit. Local refs are operator-controlled: this guards against mistakes;
+    the anchored pools record the seeds, so a reviewer can compare them with the public file.
     """
     import hashlib
     root = Path(args.code).resolve()
     target = Path(path).resolve()
     if not target.is_relative_to(root):
         _fail("split_spec_invalid", f"{what} must be the committed file inside --code")
-    if not _git(root, "branch", "-r", "--contains", "HEAD"):
-        _fail("split_spec_invalid", "HEAD of --code is not on a published (remote-tracking) branch")
-    shown = subprocess.run(["git", "-C", str(root), "show", "HEAD:" + target.relative_to(root).as_posix()],
+    relative = target.relative_to(root).as_posix()
+    blobs = [subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{ref}:{relative}"],
+                            capture_output=True, text=True, timeout=60).stdout.strip() for ref in ("HEAD", "origin/main")]
+    if not blobs[0] or blobs[0] != blobs[1]:
+        _fail("split_spec_invalid", f"{what} at HEAD is not the published version on origin/main "
+                                    "(git fetch origin; use the merged pre-registration)")
+    shown = subprocess.run(["git", "-C", str(root), "show", "HEAD:" + relative],
                            capture_output=True, timeout=60)
     if shown.returncode:
         _fail("split_spec_invalid", f"{what} is not committed at HEAD of the code repository")
@@ -559,6 +565,9 @@ def _collect(args):
            "code_identity_sha256": canonical_hash(identity)}
     if pin_path.exists():
         pinned = _read(pin_path, "HPO evidence pin")
+        if type(pinned) is not dict or pinned.get("sha256") != canonical_hash(
+                {k: v for k, v in pinned.items() if k != "sha256"}):
+            _fail("collection_invalid", "the HPO evidence pin fails its checksum")
         if {k: pinned.get(k) for k in pin} != pin:
             _fail("collection_invalid", "the evidence of this plan was pinned by its first complete collection; "
                                         "the HPO jobs changed afterwards (retry/resume after scores were visible)")
