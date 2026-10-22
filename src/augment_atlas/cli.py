@@ -88,7 +88,7 @@ def fleet_explain(a):
 def main(argv=None):
     p=argparse.ArgumentParser(description='AugmentAtlas provisional smoke prototype')
     sub=p.add_subparsers(dest='action',required=True)
-    w=sub.add_parser('worker'); w.add_argument('--settings',required=True); w.add_argument('--phase',required=True,choices=['smoke'])
+    w=sub.add_parser('worker'); w.add_argument('--settings',required=True); w.add_argument('--phase',required=True,choices=['smoke','hpo','final'])
     w.add_argument('--once',action='store_true'); w.add_argument('--resume',action='store_true',help='Explicitly resume the stopped checkpoint in the current attempt')
     s=sub.add_parser('seed',help='Add exactly one explicit technical job')
     s.add_argument('--config',required=True); s.add_argument('--phase',required=True,choices=['smoke'])
