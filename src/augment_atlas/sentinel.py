@@ -415,6 +415,8 @@ class GpuStream:
                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
                                   bufsize=1, env=env)
             except (FileNotFoundError, PermissionError) as exc:
+                if isinstance(exc, PermissionError):
+                    exc = tv.absent_or_denied(argv, exc)
                 status = "tool_absent" if isinstance(exc, FileNotFoundError) else "permission_denied"
                 if self._set_status(status):
                     self.emit("gpu_stream_gap", reason=status, gap_s=0.0, returncode=None, restart_in_s=backoff,

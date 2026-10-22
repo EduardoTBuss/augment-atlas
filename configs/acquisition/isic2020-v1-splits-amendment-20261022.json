@@ -1,0 +1,27 @@
+{
+  "schema": "augment-atlas/split-amendment/v1",
+  "dataset": "isic2020",
+  "amends": {
+    "config": "configs/acquisition/isic2020-v1.json",
+    "config_identity_sha256": "605233a82acfa4b85f28488590bfdfdd61b4d61a683daf46dbc48d1cef33283b",
+    "block": "splits"
+  },
+  "decided_by": "Eduardo",
+  "decided_on": "2026-10-22",
+  "before_any_score": true,
+  "algorithm": "global-dev-eval-v1",
+  "eval_folds": 5,
+  "seeds": {"development": 20261019, "selection": 20261019, "evaluation": 20261022},
+  "fractions": {"D": 0.2, "D_select_given_D": 0.3},
+  "thresholds": {"min_select_positive_groups": 15, "min_eval_fold_positive_groups": 50},
+  "rules": {
+    "quartiles": "nearest-rank over the image counts of ALL groups: cut_k = sizes[ceil(k*n/4) - 1], k = 1..3; bucket = number of cuts strictly below the size",
+    "d_select_strata": "D_select reuses the strata of D (same cut points), restricted to D",
+    "rounding": "exact half-up: floor(f*n + 1/2) in decimal arithmetic",
+    "folds": "one round-robin counter 0..4 that continues across strata (strata in sorted order)",
+    "hash_order": "canonical_hash([algorithm, seed_of_stage, stage, group]) with stages DE, D-select, E-folds"
+  },
+  "seed_rationale": "development and selection keep the split_seed pre-registered before the download (20261019); evaluation is the new, distinct seed Q3 requires, fixed on the decision date. Chosen before any split, score or model output.",
+  "no_reseed": "No other seed is tried after any split audit, score or result is seen; a failed audit stops and is escalated.",
+  "supersedes": "the single splits.split_seed of the acquisition config (kept unchanged because it is part of the identity pinned in the existing download ledger) and the single-seed splits/global-dev-eval-v1 output of acquisition verify, which is a pre-amendment diagnostic and is never imported as pools"
+}

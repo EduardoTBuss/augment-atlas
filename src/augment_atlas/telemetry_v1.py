@@ -46,11 +46,29 @@ def run_command(argv, timeout):
     reaps the child on timeout, so no zombie is left behind.
     """
     env = dict(os.environ, LC_ALL="C", LANG="C")
-    result = subprocess.run([str(part) for part in argv], stdin=subprocess.DEVNULL, capture_output=True,
-                            text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
+    try:
+        result = subprocess.run([str(part) for part in argv], stdin=subprocess.DEVNULL, capture_output=True,
+                                text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
+    except PermissionError as exc:
+        raise absent_or_denied(argv, exc) from exc
     if result.returncode != 0:
         raise CommandFailed(argv, result.returncode, result.stderr[-400:])
     return result.stdout
+
+
+def absent_or_denied(argv, exc):
+    """execvp reports EACCES, not ENOENT, for a bare name missing from PATH when
+    some PATH entry is unreadable; that is an absent tool, not a denied one."""
+    name = str(argv[0])
+    if os.sep in name:
+        return exc
+    for directory in os.get_exec_path():
+        try:
+            if os.path.isfile(os.path.join(directory, name)):
+                return exc  # present but not executable (or not searchable): really denied
+        except OSError:
+            continue
+    return FileNotFoundError(2, "No such file or directory", name)
 
 
 def read_text_file(path):

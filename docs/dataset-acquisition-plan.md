@@ -455,6 +455,15 @@ paciente, listas, hashes por grupo ou caminhos.
 O algoritmo `global-dev-eval-v1` é novo e só stdlib, sem dependência de versão do
 sklearn. Ele é distinto do `stratified-group-outer-v1`, que é within-outer-fold.
 
+**Emenda de 22/10/2026 (S1/S2).** Valem as seeds explícitas (development, selection,
+evaluation) e as regras de `configs/acquisition/isic2020-v1-splits-amendment-20261022.json`:
+- quartis nearest-rank sobre todos os grupos;
+- D_select nos estratos de D;
+- `round` lido como meio-para-cima exato;
+- um contador único de folds entre estratos.
+
+O texto abaixo é o plano original, com `split_seed` única.
+
 1. **Unidade:** o grupo do §3.5. **Estratos:** `positivo = ∃ imagem target=1` × quartil
    de nº de imagens por grupo.
 2. **D/E:** em cada estrato, ordenar os grupos por `sha256([alg, split_seed, "DE", group])`
@@ -483,7 +492,11 @@ sklearn. Ele é distinto do `stratified-group-outer-v1`, que é within-outer-fol
 8. **Limite do código atual.** `manifest_csv` + `splits.json` exigem train/selection/test
    cobrindo o manifest inteiro, e `selection-only` exige `within-outer-fold`. Os pools
    D/E dependem da extensão já listada como pendente em dataset-protocol-update.md. Aqui
-   só fica especificado o artefato.
+   só fica especificado o artefato. **Atualização (22/10/2026):** implementado em
+   `global_splits.py` / `global_cli make-pools` (`docs/global-cli.md`). A saída é um
+   candidato de pools v1, com folds dentro do mesmo documento, gravado no store
+   privado `global/<ds>/pools-candidate-<sha>.json`. Pendente: uma seed de avaliação
+   distinta (Q3) e a confirmação do arredondamento e do round-robin.
 
 ---
 

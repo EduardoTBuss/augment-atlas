@@ -210,6 +210,26 @@ download), D=0,20, `f_sel`=0,30, 5 folds em E e limiares pré-registrados (D_sel
 grupos positivos, cada E_f ≥ 50). Se a auditoria reprovar: exit 3, sem `pools.json`, e
 sem nova seed.
 
+**Emenda de 22/10/2026 (decisões S1/S2 do Eduardo).** Os pools usados pelo protocolo não
+saem mais deste split de seed única. Eles vêm de `global_cli make-pools` com a emenda
+pré-registrada `configs/acquisition/isic2020-v1-splits-amendment-20261022.json`, que fixa:
+- seeds explícitas: development = selection = 20261019 e evaluation = 20261022;
+- quartis nearest-rank;
+- arredondamento meio-para-cima exato;
+- um contador único de folds.
+
+A saída `splits/global-dev-eval-v1/` do `verify` continua sendo escrita, mas é um
+diagnóstico pré-emenda: não é importada. Um exit 3 do `verify` causado **só** pela
+auditoria desse split antigo, com o `READY.json` já escrito, não bloqueia nada
+(`docs/x299-runbook.md` §B1). O bloco `splits` do config não foi editado, porque faz
+parte da identidade gravada no ledger do download.
+
+**Oito pares extras (22/10/2026).** Na verificação apareceram 8 pares de originais
+byte-idênticos que não estão na lista oficial. Eles foram aceitos em
+`accepted_divergences` (`duplicates.identical_originals_not_listed`, `observed: 8`), que é
+uma chave operacional, então a identidade não muda. O `verify` une esses pares no
+union-find e aplica `keep-min-image-name-v1`. Não há novo download.
+
 ## 8. Diferenças em relação ao plano (deliberadas)
 
 | Plano | Implementado | Motivo |

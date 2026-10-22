@@ -35,15 +35,19 @@ share folds and recipe. D is never a test set.
 
 ## State of the work
 
+Current status, decisions pending and next steps: [`cloud-context.md`](cloud-context.md)
+(updated at the end of every session).
+
 | Slice | Branch / state |
 |---|---|
 | S0, S1a/b/c, S3 | done, `feature/global-protocol-20261016` |
-| S4 report + article export | partial, on `wip/s4-telemetry-20261021`, unverified |
-| Train telemetry | partial, same branch, `train.py` patch possibly incomplete |
-| S2 HPO producer (`global_hpo.py`) | **not started** |
+| S4 report + article export, train telemetry | done and reviewed, `wip/s4-telemetry-20261021` |
+| S2 HPO producer (`global_hpo.py`) | done; B1 decided and implemented 22/10/2026 (HPO configs commit after the plan under Q6), HPO CLI in PR #4 |
 | AVX2 CPU limit | done, `fix/cpu-isa-avx2-20261020` (`cpu_isa_max`, default AVX2) |
 | ISIC acquisition tooling | done, `feature/isic-acquisition-20261019` |
 | Fleet tooling | done, `feature/fleet-20261019` |
+| Integration (task C) | done, PR #3 (`claude/tarefa-c-merge-branches-pwmlw1`) |
+| Global CLI, final collector, D/E pools generator | done, PR #4 (`claude/magical-bardeen-vkyubk`) |
 | S6 multilabel | out of scope for now |
 
 Merge rule (Q6): HPO and final jobs run from the same code commit, so S2, S4,

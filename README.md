@@ -2,8 +2,11 @@
 
 Usable prototype for a **technical smoke test**, coordinating Docker ResNet-50
 classification jobs through a Git branch. Scientific status: **provisional**.
-The executable launcher only accepts explicit `--phase smoke`. There is no final
-campaign launcher. No scientific HPO or parameter optimization has been performed.
+The worker accepts an explicit `--phase smoke|hpo|final`. Global `hpo`/`final`
+jobs are prepared and seeded only through the audited global CLI
+([`docs/global-cli.md`](docs/global-cli.md), server procedure in
+[`docs/x299-runbook.md`](docs/x299-runbook.md)). No scientific HPO or parameter
+optimization has been performed.
 
 One GPU worker reads pending compatible jobs, creates a normal fast-forward Git
 reservation, confirms its attempt token remotely, and starts a detached container.

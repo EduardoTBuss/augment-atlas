@@ -4,7 +4,8 @@
 set -euo pipefail
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   sed -n '2,3p' "$0"
-  echo 'Required: --settings FILE --phase smoke. Optional: --once, --resume.'
+  echo 'Required: --settings FILE --phase smoke|hpo|final (must equal settings.phase). Optional: --once, --resume.'
+  echo 'hpo needs settings.views; final needs settings.campaign_sha256 and campaign_commit (docs/x299-runbook.md).'
   echo 'The settings file contains local paths and the remote URL; keep it private.'
   exit 0
 fi
