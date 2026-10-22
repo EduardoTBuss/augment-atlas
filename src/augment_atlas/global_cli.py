@@ -305,14 +305,33 @@ def cmd_identity(args):
     return _emit({"records": len(records), "records_sha256": canonical_hash(records), **extra}, records)
 
 
+def cmd_split_spec(args):
+    """Split spec from a verified acquisition root (READY + manifest-private), hashes only."""
+    root = Path(args.acquisition_root).resolve()
+    ready = _read(root / "manifest" / "READY.json", "READY.json")
+    private_path = root / "manifest" / "manifest-private.json"
+    if type(ready) is not dict or ready.get("files", {}).get("manifest-private.json") != file_hash(private_path):
+        _fail("split_spec_invalid", "manifest-private.json differs from the hash READY.json records")
+    amendment = _read(args.split_amendment, "split amendment")
+    spec = gs.spec_from_acquisition(ready, _read(private_path, "manifest-private.json"), amendment,
+                                    dataset_id=args.dataset)
+    out = Path(args.out)
+    if out.exists():
+        _fail("cli_input_invalid", "--out exists; split specs are never overwritten")
+    out.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return _emit({"out": str(out), "spec_sha256": canonical_hash(spec), "seeds": spec["seeds"],
+                  "dataset": spec["dataset"], "manifest_csv_sha256": ready["files"].get("manifest.csv")}, [])
+
+
 def cmd_make_pools(args):
     spec = _read(args.spec, "split spec")
     config = _read(args.acquisition_config, "acquisition config")
+    amendment = _read(args.split_amendment, "split amendment")
     if type(spec) is not dict or type(spec.get("dataset")) is not dict or spec["dataset"].get("id") != args.dataset:
         _fail("cli_input_invalid", "split spec belongs to another dataset")
     if type(config) is not dict:
         _fail("cli_input_invalid", "acquisition config must be a JSON object")
-    gs.check_preregistered(spec, config.get("splits"))
+    gs.check_amendment(spec, amendment, config)
     _, records, _ = _records(args, len(spec["task"]["classes"]))
     candidate, report = gs.generate_dev_eval_pools(records, spec)
     path = _private(args, "pools-candidate", report["candidate_sha256"])
@@ -320,6 +339,7 @@ def cmd_make_pools(args):
     return _emit({**report, "path": str(path), "seeds": spec["seeds"],
                   "spec_file_sha256": file_hash(Path(args.spec)),
                   "acquisition_config_sha256": file_hash(Path(args.acquisition_config)),
+                  "split_amendment_sha256": file_hash(Path(args.split_amendment)),
                   "next": "approve the hashes, then import-pools --file <path> --expected-manifest "
                           "<global_manifest_sha256>"}, records)
 
@@ -682,6 +702,12 @@ def _parser():
     s.add_argument("--spec", required=True, help="split spec JSON (seeds, fractions, thresholds, metadata)")
     s.add_argument("--acquisition-config", required=True,
                    help="pre-registered config whose splits block the spec must reproduce")
+    s.add_argument("--split-amendment", required=True,
+                   help="committed pre-registration amendment (explicit seeds, S2 rules) the spec must reproduce")
+    s = command("split-spec", cmd_split_spec, "write the split spec of a verified acquisition (hashes only)",
+                pools=False)
+    s.add_argument("--acquisition-root", required=True, help="the verified acquisition root (READY.json present)")
+    s.add_argument("--split-amendment", required=True); s.add_argument("--out", required=True)
     s = command("import-pools", cmd_import_pools, "seal an approved pools document into the private store",
                 pools=False)
     s.add_argument("--file", required=True); s.add_argument("--expected-manifest", required=True)

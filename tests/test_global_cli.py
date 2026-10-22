@@ -407,14 +407,23 @@ class ExternalPathTests(CliCase):
         splits = {"algorithm": "global-dev-eval-v1", "split_seed": 5, "dev_fraction": 0.2, "select_fraction": 0.3,
                   "eval_folds": 5, "min_select_positive_groups": 1, "min_eval_fold_positive_groups": 1}
         config.write_text(json.dumps({"splits": splits}), encoding="utf-8")
+        from augment_atlas.acquisition.config import identity_of
+        amendment = json.loads((ROOT / "configs/acquisition/isic2020-v1-splits-amendment-20261022.json").read_text())
+        amendment.update(seeds=split_spec["seeds"], fractions=split_spec["fractions"],
+                         thresholds=split_spec["thresholds"])
+        amendment["amends"]["config_identity_sha256"] = identity_of({"splits": splits})
+        amendment_path = Path(env.data).parent / "amendment.json"
+        amendment_path.write_text(json.dumps(amendment), encoding="utf-8")
         lax = dict(split_spec, fractions={"D": 0.5, "D_select_given_D": 0.3})
         lax_path = Path(env.data).parent / "lax-spec.json"
         lax_path.write_text(json.dumps(lax), encoding="utf-8")
         error = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(lax_path),
-                                                                    "--acquisition-config", str(config)], code=2)
+                                                                    "--acquisition-config", str(config),
+                                                                    "--split-amendment", str(amendment_path)], code=2)
         self.assertTrue(error.startswith("split_spec_invalid:"), error)
         made = self.run_cli(env.base("make-pools", pools=False) + ["--spec", str(path),
-                                                                   "--acquisition-config", str(config)])
+                                                                   "--acquisition-config", str(config),
+                                                                   "--split-amendment", str(amendment_path)])
         self.assertEqual(made["acquisition_config_sha256"], hashlib.sha256(config.read_bytes()).hexdigest())
         self.assertEqual(made["seeds"], {"development": 5, "selection": 6, "evaluation": 7})
         self.assertEqual(made["algorithm"], "global-dev-eval-v1")
