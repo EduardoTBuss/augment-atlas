@@ -63,6 +63,9 @@ opts a node out, any other value fails preflight. `runtime.json` records the val
 Send SIGTERM to the worker to request a checkpoint at the end of the current epoch.
 After confirming the container stopped, resume with the same settings and explicit
 `--resume`. The same attempt, token, directory and checkpoint are preserved.
+A manual queue retry is a different operation: it returns a failed, cancelled or interrupted
+job to pending and the next claim starts a fresh attempt from scratch
+(`docs/queue.md`; for global HPO jobs `docs/x299-runbook.md` C2.1). It is not `--resume`.
 If the coordinator died while the container is alive, starting the worker again
 reattaches to the recorded container. Missing local journals or disappeared
 containers require operator inspection. An old heartbeat never reallocates a job.
