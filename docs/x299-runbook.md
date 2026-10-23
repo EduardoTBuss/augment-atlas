@@ -255,6 +255,10 @@ Ele recusa nestes casos:
 
 Workers HPO: checkout em `Xh`, `settings` privados com `"phase": "hpo"`, `"views": "$VIEWS"`,
 `"data": "$INB"` e `"datasets": ["inbreast"]`, mais os campos de sempre (`configs/worker.example.json`).
+O worker HPO confere, antes do claim e de novo antes de criar o contêiner, que a imagem e o probe
+que ele mesmo executou reproduzem o `environment_sha256` do plano. Outra imagem, ou outro probe
+(por exemplo, outra capacidade de GPU), faz o worker parar com `code_identity_mismatch`. Nesse caso, **pare**:
+não troque o plano nem o probe.
 
 ```bash
 ./scripts/worker.sh --settings $PRIV/worker-hpo.json --phase hpo        # um treino por vez; tmux
@@ -262,7 +266,8 @@ Workers HPO: checkout em `Xh`, `settings` privados com `"phase": "hpo"`, `"views
 
 **Retries de HPO: regra fixa do operador, enquanto a política não for decidida.**
 - Todo job HPO que terminar `failed`/`cancelled`/`interrupted` **sem** `predictions.json`
-  recebe **exatamente um** retry manual (`README.md`), **antes** do primeiro `collect-hpo`.
+  recebe **exatamente um** retry manual (procedimento em **C2.1**; retry **não** é `--resume`),
+  **antes** do primeiro `collect-hpo`.
   Isso vale para todos, sem exceção, e sem abrir os `results.json` dos outros jobs.
 - Se o retry falhar de novo, a linha fica `failed`.
 - Um job não aprovado que **já escreveu** predições faz o `collect-hpo` recusar com
@@ -292,6 +297,85 @@ $G anchor $N --pools-sha256 $P $C --kind recipe_freeze --freeze-kind hpo_d --doc
   freeze. Se a fila mudou depois do pin, os dois recusam com `collection_invalid`.
 - Linhas `missing`, `failed` ou `timeout` são explícitas, nunca zero.
 - Se nenhum candidato ficar definido, o `seal-freeze` falha. **Pare**: não há nova rodada.
+
+#### C2.1. Retry manual de um job HPO (não é `--resume`)
+
+São duas operações diferentes. Não use uma no lugar da outra.
+
+| | Retry manual | `--resume` |
+|---|---|---|
+| O que faz | Devolve o job terminal a `pending`. O próximo claim cria uma tentativa **nova** (novo `attempt_id`, novo token, novo diretório) e o treino recomeça **do zero**. | Continua a **mesma** tentativa (mesmo `attempt_id`, token, diretório e checkpoint) a partir do checkpoint. |
+| Estados | `failed`, `cancelled` ou `interrupted`. Nunca `succeeded`, `claimed` ou `running`. | Só `interrupted`, com checkpoint válido. |
+| Como | `GitQueue.retry(job_id, expected_version, reason)` (`docs/queue.md`, "Manual recovery and restart"). **Não há comando de CLI para o retry.** | `./scripts/worker.sh ... --resume` (`README.md`). |
+| Registro | A fila grava `manual_retry` com o motivo e o `previous_attempt_id`. | A fila grava um evento `running` com `manual_resume` na mesma tentativa. |
+
+O retry da regra provisória acima é só o retry manual. Se um job HPO `interrupted` com
+checkpoint válido deve ser retomado com `--resume` em vez de refeito, a decisão R
+(`cloud-context.md` §5) ainda não diz se isso conta como o retry permitido: **registre qual
+operação foi usada e pergunte ao Eduardo.**
+
+Procedimento do retry manual (um job por vez):
+
+**Passo 1 — Confira o estado e as predições.** O job tem de estar `failed`, `cancelled` ou
+`interrupted`. Em `$RUNS/<job_id>/<attempt_id>/` não pode existir `predictions.json` nem
+`results.json`. Se existir, **pare e escale**: o `collect-hpo` recusa esse job com
+`collection_invalid` (B-1''), e também recusa um job repetido cuja tentativa anterior já tinha
+`predictions.json`. Não apague nada.
+
+**Passo 2 — Confirme que a execução parou.** O worker daquele job foi encerrado, e o contêiner
+`atlas-<attempt_id>` (o nome é o `attempt_id` de 32 hex) está parado ou ausente:
+`docker inspect atlas-<attempt_id> --format '{{.State.Status}}'`. Um contêiner `running`
+significa parar aqui. A fila nunca reatribui trabalho por tempo ou heartbeat.
+
+**Passo 3 — Preserve as evidências antes do retry.** Copie para um diretório privado de
+preservação o diretório da tentativa (`docker.log`, `runtime.json`, `completed.json`,
+`failed.json`, checkpoint, telemetria), o journal `$RUNS/worker-<GPU uuid>/active.json` com o
+`events-pending.json` da tentativa e o `docker logs` do contêiner. **Não apague o journal, o
+clone da fila, o contêiner nem o diretório da tentativa.** O `collect-hpo` procura
+`predictions.json` nas tentativas anteriores desse diretório.
+
+**Passo 4 — Leia a versão atual do job.** O retry exige a `version` exata do registro, e o
+`cli status` mostra só o estado:
+
+```bash
+python3 - "$ADMIN" "$REMOTE" <<'EOF'
+import sys
+from augment_atlas.queue import GitQueue
+for job in GitQueue(sys.argv[1], sys.argv[2]).list_jobs():
+    if job["spec"]["phase"] == "hpo":
+        print(job["job_id"], job["state"], job["attempt_id"], job["version"])
+EOF
+```
+
+**Passo 5 — Aplique o retry** com o `job_id` e a `version` do passo 4 e um motivo curto. O
+motivo vai para o histórico da fila (um branch Git): sem caminhos, hostnames, credenciais nem
+resultados. Um motivo vazio é recusado.
+
+```bash
+python3 - "$ADMIN" "$REMOTE" <job_id> <version> "infrastructure failure before predictions" <<'EOF'
+import sys
+from augment_atlas.queue import GitQueue
+job = GitQueue(sys.argv[1], sys.argv[2]).retry(sys.argv[3], int(sys.argv[4]), sys.argv[5])
+print(job["job_id"], job["state"], job["version"])
+EOF
+```
+
+`QueueConflict` ("state version changed") significa que o registro mudou: releia o passo 4 e
+reavalie. `InvalidTransition` significa que o estado não permite retry: pare.
+
+**Passo 6 — Confirme.** O job volta `pending`, sem `attempt_id`, e o histórico traz o evento
+`manual_retry` com o `previous_attempt_id`. Anote no recibo privado: `job_id`, tentativa
+anterior, motivo e versão.
+
+**Passo 7 — Religue o worker sem `--resume`.** Se a tentativa anterior terminou `interrupted`,
+o `active.json` dela continua em `$RUNS/worker-<GPU uuid>/` e o worker se recusa a seguir sem
+`--resume` (`Attempt interrupted; use explicit --resume`). Depois dos passos 2 e 3, **mova**
+(não apague) esse `active.json` para o diretório de preservação. Numa tentativa `failed` que o
+worker encerrou, o journal já foi removido; qualquer `active.json` que sobrar (por exemplo, de
+um `cancelled` publicado por fora) recebe o mesmo tratamento.
+
+O retry não cria exceção para predições já escritas, não escolhe o job a repetir pelo
+resultado de outros jobs e não substitui a decisão R.
 
 ### C3. Configs finais de (b) e campanha (b)
 
@@ -327,7 +411,8 @@ O worker refaz a auditoria da campanha e da cronologia antes de cada claim.
 Interrupção (guardião, SIGTERM, temperatura):
 - o worker pede checkpoint no fim da época;
 - depois de confirmar que o contêiner parou, retome com os mesmos settings e `--resume`
-  (`README.md`);
+  (`README.md`). Isso continua a mesma tentativa; **não** é o retry manual (C2.1), que cria uma
+  tentativa nova;
 - nunca apague o journal, o clone da fila ou o contêiner antes da reconciliação.
 
 ### C5. Cronologia, relatórios e exportação
