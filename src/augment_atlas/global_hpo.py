@@ -787,6 +787,11 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
         has_log = log_path.is_file() and not log_path.is_symlink()
         if state != "succeeded" and (out / "runtime.json").is_file():  # a mis-mounted job that failed is still unproven
             _check_mount(_read_json(out / "runtime.json", "runtime.json"), view, pools_sha, views_root)
+        if state != "succeeded" and any(os.path.lexists(out / name) for name in (ge.ARTIFACT_NAME, "results.json")):
+            # B-1'': scores were written and then the job ended without success. This runs BEFORE the cap and
+            # timeout shortcuts below, which would otherwise turn such a row into a plain timeout (a candidate
+            # dropped after its own score was visible). A succeeded attempt keeps its legitimate timeout row.
+            _fail("collection_invalid", f"non-succeeded HPO job {job_id[:12]} already wrote scores")
         if over_cap or spent + seconds > cap * 60:
             over_cap = True  # monotone: once the cap is crossed every later row is a timeout
             reason = "gpu_minutes_cap_exceeded"
@@ -805,10 +810,6 @@ def collect_hpo_evidence(search_space, plan, plan_sha256, view, queue_snapshot, 
                                                docker_log_sha256=file_hash(log_path) if has_log else None, **common))
             continue
         if state != "succeeded":
-            if any((out / name).exists() for name in (ge.ARTIFACT_NAME, "results.json")):
-                # Scores were written and then the job ended without success: counting it as a plain
-                # failure would let a candidate be dropped after its own score was visible.
-                _fail("collection_invalid", f"non-succeeded HPO job {job_id[:12]} already wrote scores")
             status = "timeout" if _timed_out(record) else "failed"
             reason = f"job_{'timeout' if status == 'timeout' else state}"
             ledger.append(_row(candidate, seed, pools, endpoint, status, metric_state="unavailable", reason=reason,
