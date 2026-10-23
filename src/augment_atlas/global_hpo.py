@@ -290,6 +290,38 @@ def environment_sha256(image_id, probe):
     return canonical_hash({"image_id": image_id, "probe": probe})
 
 
+def audit_worker_environment(host, spec):
+    """Decision Q6 (same immutable image) on the worker side: HPO jobs only (F2).
+
+    ``environment_sha256(host.image, host.environment)`` -- the image the worker actually
+    runs and the probe it just executed in it -- must equal ``plan.runtime.environment_sha256``
+    of the anchored plan the job is bound to. Called by ``runtime.worker`` BEFORE
+    ``queue.claim`` and again BEFORE the container is created, so another image is refused
+    before any ownership or Docker create. The plan is the private document in the host data
+    root, accepted only when its canonical hash is the job's ``plan_sha256``. Final jobs are
+    pinned to the campaign image by the campaign gate and smoke jobs have no plan.
+    """
+    if type(spec) is not dict or spec.get("phase") != "hpo":
+        return
+    bound = spec.get("global") if type(spec.get("global")) is dict else {}
+    plan_sha, dataset = bound.get("plan_sha256"), spec.get("dataset")
+    if not (isinstance(plan_sha, str) and re.fullmatch(r"[0-9a-f]{64}", plan_sha) and isinstance(dataset, str)):
+        _fail("plan_invalid", "an HPO job must name its anchored plan (global.plan_sha256) and dataset")
+    from . import runtime
+    plan = runtime._read_host_json(host.data, gj._private_name("plan", dataset, plan_sha), "plan_invalid")
+    if type(plan) is not dict or canonical_hash(plan) != plan_sha:
+        _fail("plan_invalid", "the host plan is not the anchored plan of this job")
+    pinned = plan.get("runtime", {}).get("environment_sha256") if type(plan.get("runtime")) is dict else None
+    if not (isinstance(pinned, str) and re.fullmatch(r"[0-9a-f]{64}", pinned)):
+        _fail("plan_invalid", "the anchored plan records no environment_sha256")
+    image, probe = getattr(host, "image", None), getattr(host, "environment", None)
+    if not isinstance(image, str) or not image or type(probe) is not dict:
+        _fail("code_identity_mismatch", "the worker has not recorded its image and environment probe")
+    if environment_sha256(image, probe) != pinned:
+        _fail("code_identity_mismatch", "the worker image/probe do not reproduce the plan environment_sha256 "
+                                        "(another image than the one pinned for this HPO search)")
+
+
 def make_producer(*, code_sha256, environment_sha256, view_files_sha256):
     """The real producer declaration (lacuna L8: ``logs_sha256`` hashes the POLICY, not logs)."""
     return {"id": PRODUCER_ID, "code_sha256": code_sha256, "environment_sha256": environment_sha256,
