@@ -628,6 +628,11 @@ class DockerRuntime:
             raise ValueError('Job/config version or fold mismatch')
         return name,cfg
 
+    def check_environment(self,spec):
+        """HPO jobs: image + probe must reproduce plan.runtime.environment_sha256 (Q6); worker calls it before claim and create."""
+        from . import global_hpo
+        global_hpo.audit_worker_environment(self,spec)
+
     def compatible(self,spec):
         c=spec.get('compatibility',{})
         return (spec['phase']==self.s['phase'] and spec['code_commit']==self.commit
@@ -1284,6 +1289,7 @@ def worker(settings,once=False):
                     for candidate in jobs:
                         if candidate['state']!='pending' or not runtime.compatible(candidate['spec']): continue
                         runtime.config_for(candidate['spec']) # invalid inputs fail BEFORE claim
+                        runtime.check_environment(candidate['spec']) # another image fails BEFORE claim
                         record=queue.claim(candidate['job_id'],owner)
                         if record: break
                     if not record:
@@ -1320,6 +1326,7 @@ def worker(settings,once=False):
                 if container is None:
                     if local['stage']!='prepared':
                         raise RuntimeError('Container disappeared; inspect previous execution before recovery')
+                    runtime.check_environment(record['spec']) # and before any container exists
                     runtime.create(name,record['spec'],out)
                     container=runtime.inspect(name)
                 if container['State']['Status']=='created':
