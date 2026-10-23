@@ -1,4 +1,4 @@
-# Contexto do trabalho na nuvem — estado em 22/10/2026 (2ª sessão do dia)
+# Contexto do trabalho na nuvem — estado em 23/10/2026 (correção dos achados da revisão dos PRs #3 e #4)
 
 Este arquivo existe para que qualquer IA, local ou na nuvem, saiba o que já foi feito, o que
 está pendente e qual é o próximo passo sem reler toda a conversa. Leia junto com:
@@ -207,6 +207,117 @@ toda falha sem predições. O código ainda não impõe essa regra.
 **`9d8125c` não passou por nova revisão independente.** Cada correção tem teste próprio, que
 falha sem ela.
 
+### 4.3 Sessão de 23/10/2026: achados da revisão dos PRs #3 e #4
+
+**Identificação:** `TASK_ID: augment-atlas-review-pr3-pr4-2026-10-23`.
+
+**Heads confirmados no GitHub antes de editar** (os dois PRs seguem em draft, na ordem #3 → #4,
+o #3 é a base do #4):
+
+| PR | Branch | Head |
+|---|---|---|
+| #3 | `claude/tarefa-c-merge-branches-pwmlw1` | `34627c4d2ce71ba236d4e94338320670eb44d34d` |
+| #4 | `claude/magical-bardeen-vkyubk` | `c537b3c68bbde469f615eee5f56a15f15557e16f` |
+
+**Lacuna de rastreabilidade (a preencher pelo Eduardo).** O anexo do handoff de revisão não
+chegou a esta sessão: não está na conversa, no repositório, nos comentários nem nas revisões dos
+PRs. O contrato foi o texto da tarefa. Por isso **os SHAs que o revisor de origem revisou e o
+nome desse revisor não estão registrados aqui**; só os heads atuais acima, confirmados. Quem
+tiver o handoff deve acrescentar essas duas linhas. Nada foi inferido.
+
+**Onde estão os commits.** Em `claude/nifty-feynman-x7g9hi`, criada a partir do head do #4
+(`c537b3c`). **Os branches dos PRs não foram alterados** e nada foi enviado para eles: a sessão
+só tinha autorização para empurrar esta branch. Para entrar no PR #4 basta mergear (ou
+avançar) esta branch nele. O commit do F2 mexe só em arquivos que já existem no #3 e foi
+aplicado em um worktree descartável sobre `34627c4` por `cherry-pick`, sem conflito, com os
+testes do runtime e do HPO passando (174 testes); ele pode ser levado ao #3 e depois ao #4.
+
+| Achado | Estado | Onde |
+|---|---|---|
+| **F1** guard B-1'' depois dos atalhos de timeout/cap | **corrigido** | `global_hpo.collect_hpo_evidence`, commit `c2ff5b3` |
+| **F2** imagem e probe do worker HPO contra `plan.runtime.environment_sha256` | **corrigido** | `global_hpo.audit_worker_environment`, gancho em `runtime.py`, commit `4b590cb` |
+| **F3** runbook confundia retry com `--resume` | **corrigido** | `x299-runbook.md` C2.1, `README.md`, commit `22fe609` |
+| **V1** `test_two_workers_with_tiny_spool_apply_backpressure` | **não reproduzido; nada alterado** | §4.3.2 |
+| **R1** política de retry de HPO | **pendente, decisão do Eduardo; nada implementado** | §6.1, linha R |
+
+#### 4.3.1 O que cada correção faz
+
+- **F1.** A checagem "attempt não aprovado que já escreveu `predictions.json` ou `results.json`"
+  agora roda **antes** dos atalhos de timeout por job e de teto de GPU-minutos. Antes, um attempt
+  `failed`/`cancelled`/`interrupted` que passasse do timeout ou do teto virava uma linha
+  `timeout` comum e o candidato era descartado depois de o próprio score ter aparecido. Agora é
+  `collection_invalid`, antes de qualquer pin ou freeze (o pin e o freeze só existem depois de
+  uma coleta bem-sucedida). A detecção usa `lexists`, então um `results.json` que seja symlink
+  quebrado também conta. Preservado: o timeout legítimo de attempts `succeeded` (a linha
+  `timeout` continua sem score), as falhas sem scores (linha `failed`) e o teto monótono.
+- **F2.** `DockerRuntime.check_environment(spec)` (a lógica está em
+  `global_hpo.audit_worker_environment`) compara `environment_sha256(imagem do worker, probe que
+  ele mesmo executou)` com `plan.runtime.environment_sha256`. O plano é o documento privado do
+  data root e só vale se o hash canônico dele for o `plan_sha256` do job. O `runtime.worker`
+  chama a checagem depois de `config_for` e **antes de `queue.claim`**, e de novo **antes de
+  `runtime.create`** no caminho de recuperação. Imagem ou probe divergente, ou worker sem probe
+  registrado, é `code_identity_mismatch`; plano ausente ou adulterado é `plan_invalid`. Jobs
+  `final` e `smoke` não são afetados (o final já era preso à imagem da campanha). `PROBE`, a
+  fórmula de `environment_sha256` e os hashes de Q6 não mudaram.
+  - **Por que não em `config_for`/`create`:** os testes legados do runtime montam o
+    `DockerRuntime` com imagem e probe de mentira, que não reproduzem o hash do plano. Em um
+    experimento descartado, a checagem dentro de `global_config_for` quebrou 5 testes legados
+    (`test_global_runtime`: `test_hpo_config_for_checks_everything_on_the_host_without_torch`,
+    `test_mock_create_mounts_only_the_d_view_as_data_and_records_it`,
+    `test_d_view_listing_is_recomputed_before_mount`,
+    `test_hpo_without_d_view_mount_is_isolation_unproven_and_never_falls_back`,
+    `test_invalid_hpo_job_fails_real_worker_selection_before_mock_claim`). Como testes antigos não
+    são editados, o gancho fica no `worker()`, que é o caminho de produção.
+  - **Consequência:** quem chamar `DockerRuntime.create` direto, fora do `worker()`, não passa por
+    essa checagem. O `scripts/worker.sh` e a CLI sempre passam pelo `worker()`.
+  - **Efeito prático:** o probe inclui a capacidade da GPU. Um worker com GPU de outra
+    capacidade que a do probe do plano é recusado, de propósito.
+- **F3.** `x299-runbook.md` ganhou C2.1: uma tabela retry manual × `--resume` e um procedimento
+  em 7 passos (estado, ausência de scores, confirmação de parada, preservação do journal e dos
+  artefatos, leitura da `version` exata, motivo de auditoria, confirmação, e o caso do
+  `active.json` de uma tentativa `interrupted`). O runbook apontava o retry para o `README.md`,
+  que só descreve `--resume`; não existe comando de CLI para o retry, só
+  `GitQueue.retry(job_id, expected_version, reason)`. Os dois trechos Python do runbook foram
+  executados contra uma fila Git local sintética (`failed` v3 → `pending` v4, evento
+  `manual_retry` com `previous_attempt_id`; versão velha → `QueueConflict`). A regra provisória
+  ("exatamente um retry") e a decisão R ficaram como estavam; o runbook diz que ainda não está
+  decidido se um `--resume` conta como esse retry.
+
+#### 4.3.2 V1: o teste de backpressure
+
+Teste intacto, sem alterar delays, sem excluir e sem editar nenhum teste legado.
+
+| Condição | Execuções | Falhas |
+|---|---|---|
+| isolado, sequencial | 3 + 40 | 0 |
+| 8 processos em paralelo, 5 rodadas, 4 núcleos | 40 | 0 |
+| 1 núcleo (`taskset`) com 3 processos de CPU concorrentes | 12 | 0 |
+| módulo `test_acquisition_isic_e2e` inteiro | 1 (19 testes) | 0 |
+| suíte completa como root (931 testes, antes das mudanças) | 1 | 0 neste teste |
+| suíte completa como `nobody` (952 testes, com as mudanças) | 1 | 0 neste teste |
+
+**Não consegui reproduzir a falha**, e por isso não alterei código nem teste. A medição de
+sanidade mostra 63–64 reaberturas do stream por execução contra o limiar do teste (`> 3`), uma
+folga de mais de 15 vezes; uma falha por "poucas pausas" é improvável por temporização. Não
+tenho a saída original da falha (o anexo não chegou). **Para continuar preciso do traceback ou
+da mensagem de asserção, do usuário, do Python e do modo de execução (isolado, suíte inteira,
+paralelo) em que ela apareceu.** Sem isso, qualquer correção seria um palpite. Se a causa exigir
+editar o teste legado, vou parar e trazer evidências e uma proposta ao Eduardo antes.
+
+#### 4.3.3 Arquivos alterados
+
+| Arquivo | Tipo | Achado |
+|---|---|---|
+| `src/augment_atlas/global_hpo.py` | código | F1, F2 |
+| `src/augment_atlas/runtime.py` | gancho (1 método, 2 chamadas no `worker()`) | F2 |
+| `tests/test_global_hpo_f1.py` | novo | F1 |
+| `tests/test_global_hpo_f2.py` | novo | F2 |
+| `docs/x299-runbook.md`, `README.md`, `docs/cloud-context.md` | documentação | F3, F2, este registro |
+
+Nenhum teste legado foi alterado. Os dois arquivos de teste novos falham sem as correções:
+`test_global_hpo_f1.py` teve 16 falhas de 11 testes sem o guard reordenado, e
+`test_global_hpo_f2.py` teve 3 falhas e 1 erro de 10 testes sem os ganchos do `worker()`.
+
 ## 5. Testes
 
 Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch,
@@ -235,9 +346,10 @@ no commit `9d8125c`.
   então não há falha aberta. A correção sugerida, num PR separado, é
   `git cat-file blob HEAD:<path>`.
 - **Q6:** o token `pending_eduardo_confirmation` continua no código (§3).
-- **Ponta do HPO no worker:** o worker HPO não confere sozinho a identidade Q6 entre P e o
-  seu HEAD. A proteção está no `seed-hpo`, que recusa semear, e no `collect-hpo`, que recusa
-  coletar. Um gancho no `runtime.py` seria mais cedo, mas mexe em arquivo central.
+- **Ponta do HPO no worker:** desde 23/10 (F2, §4.3) o worker HPO confere a imagem e o probe
+  contra o `environment_sha256` do plano, antes do claim e antes de criar o contêiner. Ele
+  **ainda não** confere sozinho a identidade de código Q6 entre P e o seu HEAD: essa proteção
+  continua no `seed-hpo`, que recusa semear, e no `collect-hpo`, que recusa coletar.
 - **Rastro do commit HPO:** o freeze `hpo_d` (schema v1 fechado) não grava o commit X dos
   configs HPO nem o hash da evidência Q6. Eles ficam no manifesto privado
   `hpo-collection-<sha>.json` e no `hpo-code-identity-<sha>.json`.
