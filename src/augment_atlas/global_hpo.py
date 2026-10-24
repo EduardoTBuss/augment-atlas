@@ -615,7 +615,7 @@ def _check_retries(record, runs_root):
     for attempt in _attempt_ids(record):
         if not _ATTEMPT_ID.fullmatch(attempt):
             _fail("collection_invalid", "queue history holds a malformed attempt id")
-        if attempt != current and (Path(runs_root) / record["job_id"] / attempt / ge.ARTIFACT_NAME).exists():
+        if attempt != current and os.path.lexists(Path(runs_root) / record["job_id"] / attempt / ge.ARTIFACT_NAME):
             _fail("collection_invalid", "a retried job already had a predictions.json in an earlier attempt")
 
 
