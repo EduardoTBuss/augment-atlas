@@ -234,7 +234,7 @@ testes do runtime e do HPO passando (174 testes); ele pode ser levado ao #3 e de
 
 | Achado | Estado | Onde |
 |---|---|---|
-| **F1** guard B-1'' depois dos atalhos de timeout/cap | **corrigido** | `global_hpo.collect_hpo_evidence`, commit `c2ff5b3` |
+| **F1** guard B-1'' depois dos atalhos de timeout/cap | **corrigido** | `global_hpo.collect_hpo_evidence`, commits `c2ff5b3` e `5efb412` |
 | **F2** imagem e probe do worker HPO contra `plan.runtime.environment_sha256` | **corrigido** | `global_hpo.audit_worker_environment`, gancho em `runtime.py`, commit `4b590cb` |
 | **F3** runbook confundia retry com `--resume` | **corrigido** | `x299-runbook.md` C2.1, `README.md`, commit `22fe609` |
 | **V1** `test_two_workers_with_tiny_spool_apply_backpressure` | **não reproduzido; nada alterado** | §4.3.2 |
@@ -283,7 +283,35 @@ testes do runtime e do HPO passando (174 testes); ele pode ser levado ao #3 e de
   ("exatamente um retry") e a decisão R ficaram como estavam; o runbook diz que ainda não está
   decidido se um `--resume` conta como esse retry.
 
-#### 4.3.2 V1: o teste de backpressure
+#### 4.3.2 Revisão independente desta sessão
+
+- **Reviewer:** subagente de contexto novo, somente leitura, sem acesso a este raciocínio
+  (agente `general-purpose` da própria sessão; não é o revisor de origem do handoff).
+- **Escopo:** os 4 commits `c2ff5b3`, `4b590cb`, `22fe609` e `1dabfd8` (`git diff c537b3c..HEAD`).
+- **Perguntas (Q1–Q9):**
+  - F1 (Q1–Q3): o attempt não aprovado com scores é sempre `collection_invalid`, antes de
+    timeout, 1º cap e jobs após o cap? O comportamento legítimo foi preservado? Os testes novos
+    falham no código antigo?
+  - F2 (Q4–Q6): imagem divergente é recusada antes do `queue.claim` e do Docker nos dois
+    caminhos do `worker()`? Q6, hashes e `PROBE` ficaram intactos, e a regra 4 foi respeitada?
+    Algum teste legado mudou?
+  - F3 (Q7–Q8): retry × `--resume` está correto e seguro frente ao código? A política R segue
+    pendente?
+  - Geral (Q9): há excesso de afirmação, mudança nas flags científicas, dado privado ou trailer?
+- **Resultado:** Q1–Q9 **OK**, nenhum bloqueador e nenhum maior. Ele rodou os 11 módulos de
+  teste relevantes (todos passaram) e confirmou que `test_global_hpo_f1` dá 16 falhas em 11
+  testes contra o código anterior. Três achados menores:
+
+| # | Achado | Tratamento |
+|---|---|---|
+| 1 | A checagem de tentativas **anteriores** de um job repetido (`_check_retries`) só olha `predictions.json` e usa `.exists()`: ignora symlink quebrado e `results.json` | **Parcial.** Symlink quebrado em `predictions.json` agora também bloqueia (`5efb412`, com teste novo). **`results.json` sozinho numa tentativa anterior não foi bloqueado:** o teste legado `test_global_hpo.CollectorTests.test_unfinished_retry_cannot_hide_an_earlier_attempt_with_predictions` fixa que isso passa (ao apagar só o `predictions.json`, a coleta segue). Estender a regra exige editar esse teste legado, então **precisa de autorização do Eduardo**. Proposta: o teste passar a apagar também o `results.json` antes da asserção de sucesso |
+| 2 | Um job `claimed`/`running` que já escreveu scores vira linha `missing`, não `collection_invalid` | **Não alterado**, fora dos estados do F1. Decisão do Eduardo: recusar também, ou deixar como `missing` (a coleta já exige todos os jobs terminais para o `seal-freeze`) |
+| 3 | O cherry-pick sobre `34627c4` e a confirmação dos heads no GitHub não são reproduzíveis offline | Aceito: foram verificados por esta sessão, não pelo revisor. O revisor também não pôde reproduzir esses dois itens |
+
+A revisão foi feita **antes** de `5efb412`; esse commit (achado 1) tem testes próprios, que
+falham sem ele, mas **não passou por nova revisão independente**.
+
+#### 4.3.3 V1: o teste de backpressure
 
 Teste intacto, sem alterar delays, sem excluir e sem editar nenhum teste legado.
 
@@ -294,7 +322,8 @@ Teste intacto, sem alterar delays, sem excluir e sem editar nenhum teste legado.
 | 1 núcleo (`taskset`) com 3 processos de CPU concorrentes | 12 | 0 |
 | módulo `test_acquisition_isic_e2e` inteiro | 1 (19 testes) | 0 |
 | suíte completa como root (931 testes, antes das mudanças) | 1 | 0 neste teste |
-| suíte completa como `nobody` (952 testes, com as mudanças) | 1 | 0 neste teste |
+| suíte completa como `nobody` (954 testes, árvore final) | 1 | 0 neste teste |
+| 4 rodadas de 4 processos em paralelo, durante a suíte completa como root | 16 | 0 |
 
 **Não consegui reproduzir a falha**, e por isso não alterei código nem teste. A medição de
 sanidade mostra 63–64 reaberturas do stream por execução contra o limiar do teste (`> 3`), uma
@@ -304,13 +333,13 @@ da mensagem de asserção, do usuário, do Python e do modo de execução (isola
 paralelo) em que ela apareceu.** Sem isso, qualquer correção seria um palpite. Se a causa exigir
 editar o teste legado, vou parar e trazer evidências e uma proposta ao Eduardo antes.
 
-#### 4.3.3 Arquivos alterados
+#### 4.3.4 Arquivos alterados
 
 | Arquivo | Tipo | Achado |
 |---|---|---|
 | `src/augment_atlas/global_hpo.py` | código | F1, F2 |
 | `src/augment_atlas/runtime.py` | gancho (1 método, 2 chamadas no `worker()`) | F2 |
-| `tests/test_global_hpo_f1.py` | novo | F1 |
+| `tests/test_global_hpo_f1.py` | novo | F1 e achado 1 da revisão |
 | `tests/test_global_hpo_f2.py` | novo | F2 |
 | `docs/x299-runbook.md`, `README.md`, `docs/cloud-context.md` | documentação | F3, F2, este registro |
 
@@ -320,21 +349,38 @@ Nenhum teste legado foi alterado. Os dois arquivos de teste novos falham sem as 
 
 ## 5. Testes
 
-Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch,
-no commit `9d8125c`.
+Comando: `PYTHONPATH=src python3 -m unittest discover -s tests`. Python 3.13, sem torch.
+
+**Estado de 23/10/2026**, na árvore de `5efb412` (os dois arquivos de código e de teste desta
+sessão; os commits seguintes só mudam este documento):
 
 | Execução | Rodados | Passaram | Pulados | Falharam |
 |---|---|---|---|---|
-| root | 931 | 895 | 35 | 1 (F1) |
-| usuário sem privilégios (`nobody`), com o PATH do root | 931 | 897 | 34 | 0 |
+| root | 954 | 918 | 35 | 1 (F1 do sentinel, abaixo) |
+| usuário sem privilégios (`nobody`), PATH padrão do sistema | 954 | 920 | 34 | 0 |
 
-- **Pulados:** testes de torch/contêiner, mais (só como root) o teste de exec real de
-  EACCES. Pulado não é aprovado.
-- **F1:** `test_sentinel.CliAndScriptTests.test_cli_run_report_latest` falha como root
-  porque o sentinel recusa root de propósito. **Rode a suíte com um usuário sem
-  privilégios.**
-- **Testes legados:** os 6 arquivos de teste que diferem de `main` e das branches de
-  origem são todos novos neste PR. Nenhum teste antigo foi alterado.
+- Contagem de "passaram" = rodados − pulados − falhas. A base (`c537b3c`, root) tinha 931
+  rodados, 895 passaram, 35 pulados e 1 falha; a diferença de 23 testes são os novos:
+  `test_global_hpo_f1.py` (13) e `test_global_hpo_f2.py` (10).
+- **Pulados:** testes de torch/contêiner, mais (só como root) o teste de exec real de EACCES.
+  Pulado não é aprovado, e **nenhum deles foi executado**.
+- **Não executado:** nada no X299, com GPU, com Docker real, com dados reais, treino ou HPO real.
+- A primeira rodada como `nobody` desta sessão teve 1 erro (`test_fleet.SeedTests`), que era da
+  minha cópia de trabalho sem commit Git, não do código; o teste passa numa cópia correta, e a
+  rodada final acima já usa a árvore com repositório.
+- A tabela abaixo é a de `9d8125c`, mantida como histórico:
+
+| Execução (histórico, `9d8125c`) | Rodados | Passaram | Pulados | Falharam |
+|---|---|---|---|---|
+| root | 931 | 895 | 35 | 1 (F1) |
+| `nobody`, com o PATH do root | 931 | 897 | 34 | 0 |
+
+- **F1 (sentinel):** `test_sentinel.CliAndScriptTests.test_cli_run_report_latest` falha como
+  root porque o sentinel recusa root de propósito. **Rode a suíte com um usuário sem
+  privilégios.** Esta falha é anterior a esta sessão e não tem relação com os achados F1–F3
+  da revisão (o nome "F1" aqui é o do PR #3).
+- **Testes legados:** nenhum foi alterado (`git diff --stat c537b3c..HEAD -- tests` só mostra
+  dois arquivos novos).
 - **O que os testes provam:** só caminhos sintéticos (arquivos reais em diretório
   temporário, repositório Git local, fila Git bare, servidor HTTP em loopback). Não provam
   nada sobre o X299, a GPU, a imagem real ou os dados reais.
