@@ -14,7 +14,7 @@ from augment_atlas import global_evaluation as ge
 from test_global_cli import DATASET
 from augment_atlas.queue import GitQueue
 from test_global_cli_hpo import GOOD, TIE, HpoCase
-from test_global_hpo import DEFAULT_PROFILE, Base
+from test_global_hpo import DEFAULT_PROFILE, RETRIED, Base
 
 NON_SUCCEEDED = ("failed", "cancelled", "interrupted")
 KEYS = [("c00", 101), ("c01", 101), ("c02", 101), ("c03", 101)]
@@ -155,6 +155,42 @@ class ScoresBeforeShortcutsTests(Base):
             records.append(fx.record(key, state, minutes=2.0))
         with self.assertRaisesRegex(ValueError, "^collection_invalid:"):
             fx.collect(records)
+
+
+class EarlierAttemptTests(Base):
+    """A retry is allowed only for an attempt WITHOUT predictions: a dangling symlink named
+    ``predictions.json`` in an earlier attempt counts as one (reviewer finding, adjacent to F1).
+
+    ``results.json`` alone in an earlier attempt is deliberately NOT refused here: the legacy test
+    ``test_unfinished_retry_cannot_hide_an_earlier_attempt_with_predictions`` pins that behavior, so
+    changing it needs Eduardo's authorization to edit that test (see docs/cloud-context.md 4.3).
+    """
+
+    def collect_retried(self, earlier):
+        fx = self.fixture()
+        key = ("c01", 101)
+        records = []
+        for other in sorted(fx.jobs):
+            fx.write_attempt(other, DEFAULT_PROFILE[other[0]])
+            records.append(fx.retried_record(other) if other == key else fx.record(other, "succeeded"))
+        out = fx.attempt_dir(key, RETRIED)
+        out.mkdir(parents=True)
+        earlier(out)
+        return fx.collect(records)
+
+    def test_earlier_attempt_with_a_predictions_file_or_dangling_link_is_invalid(self):
+        cases = {
+            "file": lambda out: (out / ge.ARTIFACT_NAME).write_text("{}"),
+            "dangling_symlink": lambda out: os.symlink(out / "nowhere", out / ge.ARTIFACT_NAME),
+        }
+        for name, make in cases.items():
+            with self.subTest(earlier=name):
+                with self.assertRaisesRegex(ValueError, "^collection_invalid: a retried job already had"):
+                    self.collect_retried(make)
+
+    def test_earlier_attempt_without_predictions_still_collects(self):
+        evidence, _ = self.collect_retried(lambda out: (out / "docker.log").write_text("OOM killed\n"))
+        self.assertEqual({r["status"] for r in evidence["rows"]}, {"completed"})
 
 
 class NoPinNoFreezeTests(HpoCase):
