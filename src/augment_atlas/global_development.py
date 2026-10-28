@@ -29,10 +29,22 @@ QUEUE_COLLECTED_KIND = "queue_collected_v1"
 QUEUE_PRODUCER_ID = "augment-atlas-global-hpo-v1"
 # Hash of the DECLARATION of the log policy (lacuna L8), never of real logs.
 QUEUE_LOGS_DECLARATION = {"docker_log": "docker.log", "per_row": True}
+FORCED_DEVELOPMENT_ALGORITHM = "global-dev-eval-v1+forced-d-v1"
 POOL_NAMES = ("D", "D_fit", "D_select", "E")
 _POOL_KEYS = {"schema_version", "protocol", "scientific_status", "dataset",
               "records_sha256", "source_sha256", "provenance", "grouping", "task",
               "partition_provenance", "lists", "evaluation_folds", "sha256"}
+
+
+def _pool_keys(document):
+    # The extension is inseparable from its algorithm identity. Legacy v1 stays closed.
+    if type(document) is dict and ("forced_development" in document
+                                  or "forced_development_groups" in document
+                                  or (type(document.get("partition_provenance")) is dict
+                                      and document["partition_provenance"].get("algorithm")
+                                      == FORCED_DEVELOPMENT_ALGORITHM)):
+        return _POOL_KEYS | {"forced_development", "forced_development_groups"}
+    return _POOL_KEYS
 
 
 def _object(value, keys, name):
@@ -122,7 +134,7 @@ def global_manifest_sha256(records, document):
     canonical records. Lists/folds have their separate persisted pools anchor.
     """
     rows = _records(records)
-    keys = _POOL_KEYS - {"records_sha256", "lists", "evaluation_folds", "sha256"}
+    keys = _pool_keys(document) - {"records_sha256", "lists", "evaluation_folds", "sha256"}
     if not keys <= set(document):
         raise ValueError("manifest metadata missing")
     return canonical_hash({"records": rows, "metadata": {k: document[k] for k in keys}})
@@ -194,6 +206,18 @@ def _pool_metadata(document):
         raise ValueError("explicit prior exposure required")
     if document["dataset"]["id"].lower() == "inbreast" and grouping["prior_exposure"] != "known":
         raise ValueError("INbreast pilot exposure is known in this protocol version")
+    if "forced_development" in document:
+        if (type(document["partition_provenance"]) is not dict
+                or document["partition_provenance"].get("algorithm") != FORCED_DEVELOPMENT_ALGORITHM):
+            raise ValueError("forced_development_invalid: forced groups require the forced-D algorithm")
+        forced = document["forced_development"]
+        _object(forced, {"sha256", "count"}, "forced_development")
+        _hash(forced["sha256"], "forced_development.sha256")
+        _int(forced["count"], "forced_development.count", minimum=1)
+        groups = document["forced_development_groups"]
+        validate_forced_development_groups(groups)
+        if groups != sorted(groups) or len(groups) != forced["count"]:
+            raise ValueError("forced_development_invalid: sorted groups must match the declared count")
     _task(document["task"])
     provenance = document["partition_provenance"]
     _object(provenance, {"algorithm", "version", "source", "generator_version", "seeds",
@@ -238,10 +262,18 @@ def _counts(ids, lookup, classes):
             "missing_classes": absent, "endpoint_feasible": not absent}
 
 
+def validate_forced_development_groups(groups):
+    """Validate private IDs without echoing any of them in an error."""
+    if (type(groups) is not list or not groups
+            or any(type(g) is not str or not g or g != g.strip() for g in groups)
+            or len(set(groups)) != len(groups)):
+        raise ValueError("forced_development_invalid: nonempty list of unique trimmed group IDs required")
+
+
 def audit_global_pools(records, document, *, expected_manifest_sha256):
     """Return derived diagnostics; structural corruption raises ValueError."""
     rows = _records(records)
-    _object(document, _POOL_KEYS, "global pools")
+    _object(document, _pool_keys(document), "global pools")
     _pool_metadata(document)
     _checksum(document)
     _hash(expected_manifest_sha256, "expected_manifest_sha256")
@@ -261,6 +293,12 @@ def audit_global_pools(records, document, *, expected_manifest_sha256):
         raise ValueError("D/E must cover every eligible record")
     if pools["D_fit"] | pools["D_select"] != pools["D"]:
         raise ValueError("D_fit/D_select must partition D")
+    if "forced_development" in document:
+        forced = set(document["forced_development_groups"])
+        if not forced <= {row["group"] for row in rows}:
+            raise ValueError("forced_development_unknown_group: forced group absent from manifest")
+        if not forced <= {lookup[item]["group"] for item in pools["D"]}:
+            raise ValueError("forced_development_not_in_d: every forced group must be in D")
     folds = document["evaluation_folds"]
     if type(folds) is not list or len(folds) != 5:
         raise ValueError("exactly five evaluation folds required")

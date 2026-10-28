@@ -29,6 +29,14 @@ Algorithm (binary tasks; other task types have no specified stratification yet):
    the pre-registered thresholds (positive groups in D_select and in each E
    fold). A failure raises ``split_audit_failed`` and must be escalated.
 
+Optional forced-D extension (disabled by default): a private JSON list pinned by
+its file SHA256 reserves D places BEFORE the per-stratum draw. Quotas keep the
+same half-up rule over ALL groups; excess forced groups fail without fallback.
+D_select is still drawn from all of D, including forced groups, so they may land
+in D_fit or D_select. The distinct algorithm identity is used for every stage's
+hash ordering. Private IDs are persisted for re-audit; public reports contain
+only their file SHA256 and count. With no option, legacy v1 bytes are unchanged.
+
 The evaluation seed must differ from the development and selection seeds (Q3,
 ``seed_reuse_forbidden``).
 
@@ -41,12 +49,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 from fractions import Fraction
+import hashlib
+import json
 import math
+from pathlib import Path
 
 from . import global_development as gd
 from .contracts import canonical_hash
 
 ALGORITHM = "global-dev-eval-v1"
+FORCED_ALGORITHM = gd.FORCED_DEVELOPMENT_ALGORITHM
 VERSION = "1"
 GENERATOR_VERSION = "augment_atlas.global_splits v1"
 FOLDS = 5
@@ -182,8 +194,8 @@ def _half_up_count(fraction, n):
     return math.floor(Fraction(str(fraction)) * n + Fraction(1, 2))
 
 
-def _key(seed, stage, group):
-    return canonical_hash([ALGORITHM, seed, stage, group])
+def _key(seed, stage, group, algorithm=ALGORITHM):
+    return canonical_hash([algorithm, seed, stage, group])
 
 
 def _strata(groups, members, positive_class):
@@ -196,11 +208,18 @@ def _strata(groups, members, positive_class):
     return dict(sorted(strata.items()))
 
 
-def _take(strata, fraction, seed, stage):
+def _take(strata, fraction, seed, stage, *, forced=(), algorithm=ALGORITHM):
     chosen = set()
     for groups in strata.values():
-        ordered = sorted(groups, key=lambda g: (_key(seed, stage, g), g))
-        chosen.update(ordered[:_half_up_count(fraction, len(ordered))])
+        pinned = set(groups).intersection(forced)
+        quota = _half_up_count(fraction, len(groups))
+        if len(pinned) > quota:
+            _fail("forced_development_quota_exceeded",
+                  f"forced groups in a stratum ({len(pinned)}) exceed D quota ({quota}); no fallback")
+        ordered = sorted((g for g in groups if g not in pinned),
+                         key=lambda g: (_key(seed, stage, g, algorithm), g))
+        chosen.update(pinned)
+        chosen.update(ordered[:quota - len(pinned)])
     return chosen
 
 
@@ -208,9 +227,43 @@ def _ids(groups, members):
     return sorted(row["id"] for group in groups for row in members[group])
 
 
-def generate_dev_eval_pools(records, spec):
-    """Return (unsigned pools candidate, split report). Raises on any failed audit."""
+def load_forced_development(path, expected_sha256):
+    """Read/hash the SAME private file bytes once; never echo IDs in errors."""
+    try:
+        gd._hash(expected_sha256, "force-development-sha256")
+    except ValueError:
+        _fail("forced_development_invalid", "a lowercase 64-hex file SHA256 is required")
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        _fail("forced_development_invalid", "private forced groups file is unreadable")
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        _fail("forced_development_hash_mismatch", "private forced groups file differs from its SHA256 pin")
+    try:
+        groups = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        _fail("forced_development_invalid", "private forced groups file must be a JSON list of group IDs")
+    gd.validate_forced_development_groups(groups)
+    return groups
+
+
+def generate_dev_eval_pools(records, spec, *, forced_development_groups=None, forced_development_sha256=None):
+    """Return (unsigned pools candidate, split report). Raises on any failed audit.
+
+    Optional private IDs must come from ``load_forced_development``: the caller
+    verifies the raw file hash there, then supplies those IDs and that pin here.
+    """
     _check_spec(spec)
+    forced = set()
+    algorithm = ALGORITHM
+    if forced_development_groups is not None or forced_development_sha256 is not None:
+        gd.validate_forced_development_groups(forced_development_groups)
+        try:
+            gd._hash(forced_development_sha256, "forced_development.sha256")
+        except ValueError:
+            _fail("forced_development_invalid", "forced group IDs require their file SHA256")
+        forced = set(forced_development_groups)
+        algorithm = FORCED_ALGORITHM
     rows = gd._records(deepcopy(records))
     task = spec["task"]
     positive_class = task["positive_class"]
@@ -219,16 +272,20 @@ def generate_dev_eval_pools(records, spec):
         if row["label"] not in task["classes"]:
             _fail("split_spec_invalid", "record label outside the task classes")
         members.setdefault(row["group"], []).append(row)
+    if not forced <= set(members):
+        _fail("forced_development_unknown_group", "forced group absent from manifest")
     groups = sorted(members)
     seeds, fractions = spec["seeds"], spec["fractions"]
     strata = _strata(groups, members, positive_class)
-    d_groups = _take(strata, fractions["D"], seeds["development"], "DE")
+    d_groups = _take(strata, fractions["D"], seeds["development"], "DE",
+                     forced=forced, algorithm=algorithm)
     d_strata = {key: [g for g in value if g in d_groups] for key, value in strata.items()}
-    select_groups = _take(d_strata, fractions["D_select_given_D"], seeds["selection"], "D-select")
+    select_groups = _take(d_strata, fractions["D_select_given_D"], seeds["selection"], "D-select",
+                          algorithm=algorithm)
     fold_of, counter = {}, 0
     for value in strata.values():
         for group in sorted((g for g in value if g not in d_groups), key=lambda g: (_key(seeds["evaluation"],
-                                                                                      "E-folds", g), g)):
+                                                                                      "E-folds", g, algorithm), g)):
             fold_of[group] = counter % FOLDS
             counter += 1
     lists = {"D": _ids(d_groups, members), "D_fit": _ids(d_groups - select_groups, members),
@@ -239,13 +296,17 @@ def generate_dev_eval_pools(records, spec):
         "dataset": deepcopy(spec["dataset"]), "records_sha256": canonical_hash(rows),
         "source_sha256": spec["source_sha256"], "provenance": deepcopy(spec["provenance"]),
         "grouping": deepcopy(spec["grouping"]), "task": deepcopy(task),
-        "partition_provenance": {"algorithm": ALGORITHM, "version": VERSION,
+        "partition_provenance": {"algorithm": algorithm, "version": VERSION,
                                  "source": "stdlib hash-ordered stratified groups (dataset-acquisition-plan 5)",
                                  "generator_version": GENERATOR_VERSION, "seeds": deepcopy(seeds),
                                  "intended_fractions": {"D": fractions["D"],
                                                         "D_fit_given_D": 1 - fractions["D_select_given_D"],
                                                         "E_test_given_E": 1 / FOLDS}},
         "lists": lists, "evaluation_folds": folds}
+    if forced:
+        candidate["forced_development"] = {"sha256": forced_development_sha256, "count": len(forced)}
+        # Private audit evidence; excluded from the public split report.
+        candidate["forced_development_groups"] = sorted(forced)
     report = _audit(candidate, rows, members, positive_class, spec["thresholds"])
     return candidate, report
 
@@ -284,6 +345,9 @@ def _audit(candidate, rows, members, positive_class, thresholds):
                                                           else pools[name], lookup, positive_class),
                       "class_counts": audit["diagnostics"][name]["class_counts"]}
                for name in ("D", "D_fit", "D_select", "E", *[f"E_test_{f}" for f in range(FOLDS)])}
-    return {"algorithm": ALGORITHM, "groups": len(members), "records": len(rows), "pools": summary,
+    return {"algorithm": candidate["partition_provenance"]["algorithm"],
+            **({"forced_development": deepcopy(candidate["forced_development"])}
+               if "forced_development" in candidate else {}),
+            "groups": len(members), "records": len(rows), "pools": summary,
             "global_manifest_sha256": gd.global_manifest_sha256(rows, candidate),
             "candidate_sha256": signed["sha256"], "eligibility": audit["eligibility"]}
