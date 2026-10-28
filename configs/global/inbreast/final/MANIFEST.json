@@ -1,0 +1,215 @@
+{
+  "dataset": {
+    "id": "inbreast",
+    "version": "legacy-proposal-v1-converted"
+  },
+  "files": [
+    {
+      "path": "configs/global/inbreast/final/basic-f0-s11.json",
+      "sha256": "50d72a7b04bb36700e88bc5fe20b1959c76d24e26498b122792943e1e6e7583f"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic-f1-s11.json",
+      "sha256": "10e85203e9882d5b8dfb830ef7d4134bdc48e574c31e34edefc41dd3f0d1580f"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic-f2-s11.json",
+      "sha256": "641b8279a9c8430f5c5d0a88456d2d299acda196d5ff748febdd0f6078c09e4d"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic-f3-s11.json",
+      "sha256": "d4945b796959b1a06b1bcaa6999295b5dfa19553db26ae94a7427d9c627711fd"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic-f4-s11.json",
+      "sha256": "b530ac7f5efd2ce6ab4de730e2c094f442378895e5626696fce9a294d843e4aa"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_heavy-f0-s11.json",
+      "sha256": "61d757a8307fccf0ff6b4ad75f5b37988a6ef319075a0a560ab1bf6c0abb3bb4"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_heavy-f1-s11.json",
+      "sha256": "bbca8f559b05ccb6aa8050a526c834829f028b2f450c75d6b56317c533969a65"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_heavy-f2-s11.json",
+      "sha256": "7a6b6728f57e380096db11de96006415398834f4b3f49d8e8ec00702a5a5d536"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_heavy-f3-s11.json",
+      "sha256": "ff6c1aa4f8219ceb2f6fde1f4040efa8c28fcf3229214768cc9bc30a7fb9414a"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_heavy-f4-s11.json",
+      "sha256": "628adc0bdbe049652f677ccec541ad32560de90af38d180cf584995faa6fd303"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_light-f0-s11.json",
+      "sha256": "cdf0cb539f8b854cb3a9e8f6cba0f3cf528e6eca09d90e37fe51c8e1b32eb590"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_light-f1-s11.json",
+      "sha256": "af5f6ab0bcbeaf5e0f538fca5dd8726effda1050543572704e7762c8ac9a252b"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_light-f2-s11.json",
+      "sha256": "7a51885eb70696e0ad85750ea9d21f02956e1c36ebabed853cd260e7dfff1233"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_light-f3-s11.json",
+      "sha256": "04b55a53f744e4e86322e19ff56cc13f2612c0eb74e2d342a8ac313d78f73241"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_clahe_light-f4-s11.json",
+      "sha256": "0675be7781e217ab43b0b6651d904109d3400b1d083f80bbf2d8d643bd273386"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_heavy-f0-s11.json",
+      "sha256": "db4eaa20c957dfa0954060a7ffa2b2de9bb68cbd7c78d1b122bfdd28999ebc98"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_heavy-f1-s11.json",
+      "sha256": "c6a0b63d48a6aadab7cd4294163887c906aa97ace4715debaffd2f9e76f936d0"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_heavy-f2-s11.json",
+      "sha256": "6ecbf22bd8548152f1cdc8d48d39377847179b2029fd69ad20afdb5221b7b83c"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_heavy-f3-s11.json",
+      "sha256": "3d6c9ffa4dc9ad77dd3069c2fabb0c99c19dab8234e42ce90d2abeb4c949e414"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_heavy-f4-s11.json",
+      "sha256": "df047c761707a7477e78b2ec273195940c38362f1213bf339f5e92e6cad0a174"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_light-f0-s11.json",
+      "sha256": "8ea607a258c94be24ce8ae3e90b8fdf28518cc2214f98c75e7fdd262e68ebc1d"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_light-f1-s11.json",
+      "sha256": "7ef39cafc64540f051a882e75ae6e73c50b2c6329458d478f17f45cd29dc45e1"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_light-f2-s11.json",
+      "sha256": "ade887648fe089fbf31269aaf46bcd62d7b139f5b335560786d7386ff8d8001f"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_light-f3-s11.json",
+      "sha256": "e6025d7b1b615cfaaab40dc607ddafb0e6c510f50ffd0024612110b137e8ba01"
+    },
+    {
+      "path": "configs/global/inbreast/final/basic_gamma_light-f4-s11.json",
+      "sha256": "ba92c0db6567ee801d1273303f9c0ebe7ea46553bdfc658c67ce354cf767ab65"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_heavy-f0-s11.json",
+      "sha256": "ffa42cb7deb3b4ff1b0fa7698d9e9a43fdc825a6d8f77a2e473962ecdfaff234"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_heavy-f1-s11.json",
+      "sha256": "71c533a93b72ab7d9b74d39a7702a4c59ca8b4e8a43001758aa427e23ba0e902"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_heavy-f2-s11.json",
+      "sha256": "99834e695205f02797b3dd266bee71876032b4fd723d7a5784758a2fba9965f4"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_heavy-f3-s11.json",
+      "sha256": "cde938d9eeab26020c99762e8510cfac5d877461bda5538802e5f44f0996c4a2"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_heavy-f4-s11.json",
+      "sha256": "4e7f2821afc1577ed0e52a8d7b38b4b11b1f153336ab47177125967650209a33"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_light-f0-s11.json",
+      "sha256": "ce0a0cd1839b40043caeec4bbb8fcaa71c1f9ce09bbe0e6980250e457712fc20"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_light-f1-s11.json",
+      "sha256": "fae72f15bd881c1251855f7f914edd06328ca8f1b60ae298fc22d54a2383b8a0"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_light-f2-s11.json",
+      "sha256": "a8c6eb4a1c099caf31cc7d55e4dc766fd35c2536fb3f3f6f11d5e5a593084fd1"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_light-f3-s11.json",
+      "sha256": "04627483e25648eb374396f6529eda6358bdcd367b5bf5a15a26b27c279e52f7"
+    },
+    {
+      "path": "configs/global/inbreast/final/clahe_light-f4-s11.json",
+      "sha256": "b1c6d8f4545cdf8a06a2e4a1ddb329a19ed16a6b7283bb733ea1713945d8d4b4"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_heavy-f0-s11.json",
+      "sha256": "e38c5d7c8b4831f6797016f242ad704342fee6fef6545b5a70e423ec5ceec238"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_heavy-f1-s11.json",
+      "sha256": "39381fbd0133d370d328d783024dd9f019e911b1f4fbc1f5bb67d9647e27846b"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_heavy-f2-s11.json",
+      "sha256": "494f1bf405e6763461f5333b4c3cfa2d5c96685814ab05c26237a77a03f5ceb3"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_heavy-f3-s11.json",
+      "sha256": "ad3d15909ae0d248356b433092ab536e9749c6b4dfb84c9c8b8077e837009118"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_heavy-f4-s11.json",
+      "sha256": "333e2a05593555b001dec0111154193a446f08409f4d68c8941ed612fed9bd05"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_light-f0-s11.json",
+      "sha256": "eadeb3fb3555abc1fd6d7d91bfe481177ab8549b48f03c9edc03aa0166bfd27d"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_light-f1-s11.json",
+      "sha256": "2a46f74916b7a64bf11ca35855727483c4cacf50db3123958cd66ec4fb1339d8"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_light-f2-s11.json",
+      "sha256": "4e0a8740c0e06413210f0ba9dbed04dc929a091c454d79af6cf6eac55aeaabd7"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_light-f3-s11.json",
+      "sha256": "79731efb9ebd0a20e46401a8b77754e731478c96778c0a885a014f8c19686848"
+    },
+    {
+      "path": "configs/global/inbreast/final/gamma_light-f4-s11.json",
+      "sha256": "c2aded5fcd4fd832207d4df58b51153a05dbf9fad89ad91750c7131fd2e945dd"
+    },
+    {
+      "path": "configs/global/inbreast/final/none-f0-s11.json",
+      "sha256": "a4a30afd8e33e9f91b6abee74fce31d6579e55ade34ef1399adcf827d8a700cf"
+    },
+    {
+      "path": "configs/global/inbreast/final/none-f1-s11.json",
+      "sha256": "6638cdc88f97832adb98938a5a4a95c90400099e6795d44c194290685b75a603"
+    },
+    {
+      "path": "configs/global/inbreast/final/none-f2-s11.json",
+      "sha256": "4a7dbed2c8c9b3cae8342967b50351518a192269593ba4d041678da5dfdd8f5e"
+    },
+    {
+      "path": "configs/global/inbreast/final/none-f3-s11.json",
+      "sha256": "85e00a9970fdb6b4ef8b9d66de227c09a0229a6663348ab89b4808c2939ffc76"
+    },
+    {
+      "path": "configs/global/inbreast/final/none-f4-s11.json",
+      "sha256": "54ac622b564643a89e76480bfd07944d82c088ec0a44b8e5944921aa3bf5fc72"
+    }
+  ],
+  "freeze_sha256": "1bed679a2e52315cdb3050c031e4f6ebd7f2deaf12ce705f19d0fbb29567c740",
+  "phase": "final",
+  "plan_sha256": null,
+  "pools_sha256": "d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f",
+  "protocol": "global-configs-manifest-v1",
+  "schema_version": 1,
+  "sha256": "c289fdafd923abc1edc5d48d6f2de8c780db6f53d4d98c2544268ce93982fbde"
+}
