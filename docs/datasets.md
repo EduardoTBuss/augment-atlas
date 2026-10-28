@@ -11,6 +11,10 @@ at `/code`, and the attempt output read-write at `/output`. `ATLAS_DATA_ROOT`
 overrides `dataset.root`; all manifest, image and supplied split paths must be
 relative to that root. Absolute paths, traversal and escaping symlinks fail.
 
+The smoke `dataset` section is a closed set of keys (`contracts.SMOKE_DATASET_KEYS`);
+an unknown key such as `max_images` fails validation instead of being ignored.
+Subsetting requires a separate group-closed private manifest.
+
 ## Adapters
 
 `synthetic` constructs a small deterministic image per synthetic group. Its

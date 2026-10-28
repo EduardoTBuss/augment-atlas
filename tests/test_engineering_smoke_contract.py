@@ -2,8 +2,8 @@
 
 Pins the behavior exercised by the 2026-10-28 engineering smoke and records the
 contract gaps found there. Synthetic fixtures only: no dataset identifier, path
-or image is used. Gaps are ``expectedFailure``; they document desired behavior
-without changing ``src/``.
+or image is used. Open gaps are ``expectedFailure``; they document desired
+behavior without changing ``src/``.
 
 Optional stack gates follow the existing suite:
   ATLAS_CONTAINER_CPU_TESTS=1  requires torch/torchvision/numpy/PIL
@@ -117,29 +117,50 @@ class SubsetByGroupTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "at least six independent groups"):
                 prepare_splits(cfg, load_records(cfg), root / "attempt")
 
-    def test_subset_intent_key_is_currently_ignored_and_loads_everything(self):
-        """Pins today's hazard: an unknown dataset key validates and changes nothing."""
+    def test_subset_intent_key_is_refused_before_any_record_is_loaded(self):
+        """Was the hazard pin: ``max_images`` validated and the full manifest was loaded."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             write_parent_manifest(root)
             cfg = candidate_config("none", root, "parent.csv", "rgb")
             cfg["dataset"]["max_images"] = 4
-            validate_config(cfg)
-            self.assertEqual(len(load_records(cfg)), GROUPS * IMAGES_PER_GROUP)
+            with self.assertRaisesRegex(ValueError, r"unknown dataset key\(s\) \['max_images'\]"):
+                validate_config(cfg)
 
-    @unittest.expectedFailure
     def test_gap_unknown_dataset_key_must_not_be_silently_ignored(self):
-        """GAP contracts.py:119-128: the smoke schema has no closed set of dataset keys.
+        """Closed gap (contracts.py dataset section): unknown dataset keys are refused.
 
-        An operator who writes a subset-like key (``max_images``) believes the run
-        is reduced, yet the full manifest is trained on. Desired: reject unknown
-        dataset keys (or implement the option). Subsetting today requires a
+        An operator who writes a subset-like key (``max_images``) believed the run
+        was reduced, yet the full manifest was trained on. Subsetting requires a
         private group-closed manifest instead.
         """
         cfg = load_config(CANDIDATE / "none.json")
         cfg["dataset"]["max_images"] = 4
         with self.assertRaises(ValueError):
             validate_config(cfg)
+
+    def test_unknown_dataset_keys_are_refused_for_every_adapter(self):
+        for adapter, extra in (("synthetic", {}), ("manifest_csv", {"manifest": "m.csv"}),
+                               ("inbreast_csv", {"manifest": "m.csv"})):
+            for key in ("max_images", "subset", "Manifest", "image_root"):
+                with self.subTest(adapter=adapter, key=key):
+                    cfg = load_config(CANDIDATE / "none.json")
+                    cfg["dataset"] = {"id": "synthetic-engineering", "version": "v1", "adapter": adapter,
+                                      **extra, key: 1}
+                    with self.assertRaisesRegex(ValueError, "unknown dataset key"):
+                        validate_config(cfg)
+
+    def test_every_versioned_smoke_config_still_validates(self):
+        """The closed key set must cover every dataset key used by configs/**."""
+        import json
+        checked = 0
+        for path in sorted((ROOT / "configs").rglob("*.json")):
+            document = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(document, dict) and document.get("phase") == "smoke" and "dataset" in document:
+                with self.subTest(config=str(path.relative_to(ROOT))):
+                    validate_config(document)
+                    checked += 1
+        self.assertGreater(checked, 30)
 
 
 class EvaluationPopulationTests(unittest.TestCase):
