@@ -1,0 +1,73 @@
+{
+  "schema": "augment-atlas/rsna2018-acquisition-config/v1",
+  "dataset": {
+    "name": "rsna2018",
+    "release": "RSNA Pneumonia Detection Challenge 2018 adjudicated-kaggle",
+    "license": "RSNA Pneumonia Detection Challenge 2018 terms — attribution to NIH Clinical Center and RSNA",
+    "task": "binary-lung-opacity-vs-rest"
+  },
+  "sources": {
+    "images_zip": {
+      "filename": "pneumonia-challenge-dataset-adjudicated-kaggle_2018.zip",
+      "sha256": "96b97d81eb042c6513196e01079a060a980d5e62502c3266527dd9c0b2a63b50"
+    },
+    "mappings": {
+      "filename": "pneumonia-challenge-dataset-mappings_2018.json",
+      "sha256": "803ce79e3bc9c66d3631738e91e62e1175730e98ad1415e8dc4d6292ba10bf27"
+    },
+    "annotations": {
+      "filename": "pneumonia-challenge-annotations-adjudicated-kaggle_2018.json",
+      "sha256": "f8f5c54bae158fc0e2f019af979471803151a5922463ff3a378d7734e01b18fb"
+    }
+  },
+  "policy": {
+    "group": "nih-img-id-eight-digit-patient-prefix",
+    "label_group": "Calculated",
+    "labels": {
+      "Lung Opacity": 1,
+      "No Lung Opacity / Not Normal": 0,
+      "Normal": 0
+    },
+    "missing_label": "exclude:no_consensus_label",
+    "duplicates": "exclude-all-decoded-pixel-sha256"
+  },
+  "preprocessing": {
+    "id": "rsna2018-derived-512-v1",
+    "source_size": [
+      1024,
+      1024
+    ],
+    "size": [
+      512,
+      512
+    ],
+    "mode": "L",
+    "bits": 8,
+    "format": "PNG",
+    "resample": "BILINEAR",
+    "windowing": false,
+    "keep_metadata": false
+  },
+  "expected": {
+    "images": 30000,
+    "labeled_images": 29684,
+    "no_consensus_label": 316,
+    "pixel_duplicate_groups": 3,
+    "pixel_duplicate_images": 6,
+    "pixel_duplicate_labeled_images": 6,
+    "images_included": 29678,
+    "patients_included": 12233
+  },
+  "expected_provenance": {
+    "source": "Eduardo approved definition, 2026-10-28; supplied task C7",
+    "patients_included": "Approximate expectation (~12,233), enforced strictly; requires an explicit accepted divergence if the observed total differs.",
+    "pixel_duplicate_images": "Expectation supplied by coordinator; this implementation hashes decoded pixels, unlike the reference audit which hashes the encapsulated payload."
+  },
+  "privacy": {
+    "patterns": [
+      "[0-9]{8}_[0-9]{3}\\.png",
+      "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    ]
+  },
+  "accepted_divergences": []
+}
