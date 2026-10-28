@@ -94,6 +94,57 @@ opened, and visual duplicates/physical ingestion are outside this module.
   objects `{fold, test_ids}` with indices 0..4; canonical `sha256` excludes
   only itself.
 
+### Optional forced-development extension
+
+Disabled by default. `make-pools --force-development-groups <private.json>
+--force-development-sha256 <lowercase-64-hex>` requires both flags together.
+The file must be a nonempty JSON array of unique, nonempty, trimmed group IDs.
+Its SHA256 is checked against the **exact bytes read once**, before parsing; a
+whitespace-only file edit also changes this identity. Every group must occur
+in the eligible manifest. No real group list belongs in the repository.
+
+The extension uses algorithm `global-dev-eval-v1+forced-d-v1` for all three
+hash-ordering stages. Original strata and pre-registered fractions/thresholds
+remain in effect. Forced groups occupy D places first; the development-seed
+draw from the remaining groups fills each stratum up to
+`floor(f_D * n + 1/2)`, with `n` counting **all** groups in that stratum.
+If forced groups exceed even one stratum quota, generation raises
+`forced_development_quota_exceeded` (CLI exit 2), with no fallback or reseed.
+
+D_select is drawn from **all of D**, including the forced groups, using the
+selection seed, original strata restricted to D, and the same half-up rule.
+A forced group may therefore be in D_fit **or** D_select; it can never be in E.
+E and its five folds come from the complement of D, with the existing continuous
+round-robin counter. Structural and pre-registered pass/fail audits still apply.
+
+Only this algorithm extension adds two required fields to the closed private
+pools schema:
+
+- `forced_development={sha256, count, groups_canonical_sha256}`: raw input-file
+  SHA256, positive group count and `canonical_hash(sorted(groups))` using
+  `augment_atlas.contracts.canonical_hash`; this is the only forced-group metadata
+  in the public make-pools report.
+- `forced_development_groups`: sorted private group IDs for later audit.
+
+Both fields are bound into the manifest identity and pools checksum. The
+structural audit used by import, audit-pools, anchor and downstream consumers
+checks the closed extension, count, recomputed canonical groups hash, known groups
+and inclusion of every forced group in D. The file-byte pin is verified at
+generation; later audit uses the private IDs bound by the externally approved
+manifest/pools hashes. As with
+other provenance assertions, those hashes do not prove the history of exposure.
+Public anchors bind the document hash without revealing IDs. Missing/invalid
+lists or a missing companion flag raise `forced_development_invalid`; byte or
+canonical-group hash mismatch raises `forced_development_hash_mismatch`; unknown
+groups raise
+`forced_development_unknown_group`; an audited group outside D raises
+`forced_development_not_in_d` (all CLI exit 2).
+
+Without the option, the original closed schema, algorithm, report and generated
+pools bytes remain unchanged. `tests/test_forced_development.py` pins both the
+canonical candidate hash and the sealed file-byte hash from the synthetic
+600-group fixture at base commit `a22833f`.
+
 D/E cover all eligible records once and are disjoint by ID **and group**.
 D_fit/D_select partition D under the same rule. Tests partition E once and
 are disjoint by group; D never appears in any test. Mixed-label groups retain

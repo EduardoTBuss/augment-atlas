@@ -373,6 +373,11 @@ def cmd_split_spec(args):
 
 
 def cmd_make_pools(args):
+    forced_path = getattr(args, "force_development_groups", None)
+    forced_sha = getattr(args, "force_development_sha256", None)
+    if (forced_path is None) != (forced_sha is None):
+        _fail("forced_development_invalid", "--force-development-groups and --force-development-sha256 are required together")
+    forced = gs.load_forced_development(forced_path, forced_sha) if forced_path is not None else None
     spec = _read(args.spec, "split spec")
     _clean_head(args.code)  # the amendment and the config are read as committed, unmodified files
     config, config_sha = _tracked(args, args.acquisition_config, "acquisition config")
@@ -391,7 +396,8 @@ def cmd_make_pools(args):
             or manifest != (Path(args.acquisition_root).resolve() / "manifest" / "manifest.csv")):
         _fail("split_spec_invalid", "--source is not the manifest.csv that READY.json verified")
     _, records, _ = _records(args, len(spec["task"]["classes"]))
-    candidate, report = gs.generate_dev_eval_pools(records, spec)
+    candidate, report = gs.generate_dev_eval_pools(
+        records, spec, forced_development_groups=forced, forced_development_sha256=forced_sha)
     path = _private(args, "pools-candidate", report["candidate_sha256"])
     gd._publish(path, candidate, lambda value: None)
     return _emit({**report, "path": str(path), "seeds": spec["seeds"],
@@ -817,6 +823,8 @@ def _parser():
     s = command("make-pools", cmd_make_pools, "generate D/E pools (global-dev-eval-v1) as a private candidate",
                 pools=False)
     s.add_argument("--spec", required=True, help="split spec JSON (seeds, fractions, thresholds, metadata)")
+    s.add_argument("--force-development-groups", help="optional private JSON list of group IDs forced into D")
+    s.add_argument("--force-development-sha256", help="required with forced groups: SHA256 of the exact file bytes")
     s.add_argument("--acquisition-config", required=True,
                    help="pre-registered config whose splits block the spec must reproduce")
     s.add_argument("--split-amendment", required=True,
