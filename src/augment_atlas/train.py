@@ -161,9 +161,9 @@ def run(cfg: dict, output: Path, resume: str | None = None, stop_after_epoch: in
                    "partial_final_batch": "sample-weighted gradient mean within each accumulation window",
                    "freeze_batchnorm": training.get("freeze_batchnorm", True),
                    "weights": cfg["model"]["weights"], "weights_sha256": file_hash(weights_file) if weights_file else None,
-                   "code_commit": os.environ.get("ATLAS_CODE_COMMIT", "unavailable"),
-                   "image_id": os.environ.get("ATLAS_IMAGE_ID", "unavailable"),
                    "config_sha256": config_hash, "splits_sha256": splits["sha256"]}
+    provenance, environment["provenance_complete"] = _provenance(required=False)
+    environment.update(provenance)
     environment["evaluation_scope"] = evaluation_scope
     if "evaluation" in cfg:
         from .evaluation import clinical_environment_block
@@ -393,6 +393,25 @@ def _global_fail(code: str, message: str):
     raise ValueError(f"{code}: {message}")
 
 
+_PROVENANCE_ENV = (("code_commit", "ATLAS_CODE_COMMIT"), ("image_id", "ATLAS_IMAGE_ID"))
+
+
+def _provenance(*, required: bool) -> tuple[dict, bool]:
+    """Code/image identity injected by the worker; never a silent ``unavailable``.
+
+    Global jobs (``required``) refuse to start without it. Smoke runs keep the
+    legacy ``unavailable`` values, warn on stderr and report completeness.
+    """
+    values = {key: os.environ.get(name, "") for key, name in _PROVENANCE_ENV}
+    missing = [name for key, name in _PROVENANCE_ENV if values[key].strip() in ("", "unavailable")]
+    if missing and required:
+        _global_fail("provenance_missing", f"{', '.join(missing)} must identify the code and image of a global job")
+    if missing:
+        print(f"WARNING: {', '.join(missing)} not set; environment.json records 'unavailable' "
+              "and provenance_complete=false", file=sys.stderr, flush=True)
+    return {key: values[key] if values[key].strip() else "unavailable" for key in values}, not missing
+
+
 def _toy_override(value):
     """Explicit CPU/0-worker override for toy tests; never a silent fallback.
 
@@ -522,6 +541,7 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
     override = _toy_override(trainer_override)
     if stop_after_epoch is not None and (type(stop_after_epoch) is not int or stop_after_epoch < 1):
         raise ValueError("--stop-after-epoch must be positive")
+    provenance, _ = _provenance(required=True)
     phase, training = cfg["phase"], cfg["training"]
     final = phase == "final"
     epochs, seed = training["epochs"], training["seed"]
@@ -629,8 +649,7 @@ def _run_global(cfg: dict, output: Path, resume: str | None = None, stop_after_e
                    "initial_state_sha256": initial_state_sha256,
                    "augmentation_backend": data_cfg["augmentation"]["backend"],
                    "augmentation_resize_order": "resize-before-augmentation",
-                   "code_commit": os.environ.get("ATLAS_CODE_COMMIT", "unavailable"),
-                   "image_id": os.environ.get("ATLAS_IMAGE_ID", "unavailable"),
+                   **provenance,
                    "config_sha256": config_hash, "splits_sha256": splits_hash,
                    "global": {key: cfg["global"][key] for key in ("pools_sha256", "hpo_view_sha256", "plan_sha256",
                                                                   "candidate_id", "freeze_kind", "freeze_sha256",
