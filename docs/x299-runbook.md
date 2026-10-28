@@ -142,6 +142,31 @@ limpo, e só uma spec igual à derivada da raiz verificada. Ele imprime:
   (decisão S1).
 - Os limiares são D_select ≥ 15 grupos positivos e cada E_f ≥ 50.
 
+**Opção C2, desligada por padrão; a decisão de usar continua sendo do Eduardo.**
+Se ele optar por manter grupos previamente examinados sempre em D, acrescente
+**ao mesmo comando** `make-pools` os dois argumentos:
+
+```bash
+--force-development-groups "$PRIV/forced-development-groups.json" \
+--force-development-sha256 <sha256 aprovado dos bytes desse arquivo privado>
+```
+
+O JSON privado é uma lista não vazia de group IDs únicos, exatamente como aparecem
+no manifest elegível; não publique os IDs. O hash dos bytes precisa coincidir.
+A saída pública acrescenta só `forced_development={sha256,count}`, e o algoritmo
+passa a `global-dev-eval-v1+forced-d-v1`. O documento privado retém os IDs para
+reauditoria; os hashes de manifest e pools vinculam essa lista.
+
+Os forçados ocupam D antes do sorteio, que completa a mesma cota pré-registrada
+por estrato (arredondamento half-up sobre todos os grupos). Se excederem a cota de
+qualquer estrato, `forced_development_quota_exceeded`, exit 2: **pare e escale,
+sem fallback nem nova seed**. Lista vazia/inválida, hash divergente ou grupo ausente
+também encerram com exit 2. D_select continua sendo sorteado dentro de todo D com
+a seed de seleção: os forçados podem ir para **D_fit ou D_select**, nunca E.
+Importação, audit-pools e anchor verificam a presença de todos os forçados em D.
+Os comandos de selo abaixo permanecem os mesmos; use os novos hashes aprovados.
+Sem os dois argumentos, a saída continua bit a bit igual ao v1 original.
+
 Com as contagens aprovadas pelo Eduardo:
 
 ```bash
