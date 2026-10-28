@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import math
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -36,6 +37,31 @@ def synthetic(seed=0, *, groups_per_class=12, images_per_group=2, arms=ARMS, see
                                              image=f"image-{fold}-{label}-{g}-{image}",
                                              group=f"group-{fold}-{label}-{g}", label=label,
                                              score=float(ndtr(z + shift * label))))
+    return rows
+
+
+def independent_arm_scores(seed, *, shift):
+    """Five folds, 16 groups/class, two images/group; independent arm noise.
+
+    The common Gaussian score has variance 1 (half group, half image).
+    Each arm adds N(0, 0.5) noise, giving marginal variance 1.25 and
+    population delta AUROC Phi(shift / sqrt(2 * 1.25)) - 0.5.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    for fold in sap.FOLDS:
+        for label in (0, 1):
+            for group in range(16):
+                shared = rng.normal() / math.sqrt(2)
+                for image in range(2):
+                    z_common = shared + rng.normal() / math.sqrt(2)
+                    for arm in ("basic", "basic_gamma_light", "basic_gamma_heavy"):
+                        arm_shift = 0. if arm == "basic" else shift
+                        score = z_common + arm_shift * label + rng.normal(0., .5)
+                        rows.append(dict(dataset="synthetic", arm=arm, fold=fold, seed=1,
+                                         image=f"image-{fold}-{label}-{group}-{image}",
+                                         group=f"group-{fold}-{label}-{group}", label=label,
+                                         score=float(ndtr(score))))
     return rows
 
 
@@ -93,20 +119,42 @@ class SapTests(unittest.TestCase):
             self.assertEqual(actual[0], auc)
             self.assertAlmostEqual(actual[1], ap, places=15)
 
-    def test_known_nonzero_delta_coverage_in_50_simulations(self):
-        truth = float(ndtr(.6 / math.sqrt(2)) - .5)
+    def _measure_coverage(self, simulations, minimum):
+        truth = float(ndtr(.6 / math.sqrt(2 * 1.25)) - .5)
         covered = 0
-        intervals = []
-        for simulation in range(50):
-            rows = synthetic(simulation, groups_per_class=16,
-                             arms=("basic", "basic_gamma_light", "basic_gamma_heavy"))
+        for simulation in range(simulations):
+            rows = independent_arm_scores(simulation, shift=.6)
             result = sap.analyze(rows, dataset="synthetic", B=299, seed=10000 + simulation)
-            ci = by_id(result, "H1")["auroc"]["ci95"]
+            value = by_id(result, "H1")["auroc"]
+            self.assertEqual(value["status"], "ok")
+            ci = value["ci95"]
             covered += ci[0] <= truth <= ci[1]
-            intervals.append(ci)
-        print(f"COVERAGE synthetic Gaussian paired groups: {covered}/50 = {covered / 50:.3f}; "
-              f"true_delta={truth:.12f}; B=299; 5 folds x 32 groups x 2 images")
-        self.assertGreaterEqual(covered, 45, f"coverage {covered}/50; intervals={intervals}")
+        coverage = covered / simulations
+        print(f"COVERAGE independent-arm Gaussian groups: {covered}/{simulations} = {coverage:.3f}; "
+              f"true_delta={truth:.12f}; B=299; 5 folds x (16 pos + 16 neg) groups x 2 images", flush=True)
+        self.assertGreaterEqual(coverage, minimum)
+
+    def test_known_nonzero_delta_coverage_fast(self):
+        self._measure_coverage(60, .85)
+
+    @unittest.skipUnless(os.environ.get("ATLAS_SLOW_TESTS") == "1", "requires ATLAS_SLOW_TESTS=1")
+    def test_known_nonzero_delta_coverage_slow(self):
+        self._measure_coverage(200, .90)
+
+    @unittest.skipUnless(os.environ.get("ATLAS_SLOW_TESTS") == "1", "requires ATLAS_SLOW_TESTS=1")
+    def test_type_i_error_under_null_slow(self):
+        simulations, rejected = 200, 0
+        for simulation in range(simulations):
+            rows = independent_arm_scores(20000 + simulation, shift=0.)
+            result = sap.analyze(rows, dataset="synthetic", B=299, seed=30000 + simulation)
+            value = by_id(result, "H1")["auroc"]
+            self.assertEqual(value["status"], "ok")
+            rejected += value["p_boot"] <= .05
+        fraction = rejected / simulations
+        print(f"TYPE_I independent-arm Gaussian H0 (shift=0): {rejected}/{simulations} = {fraction:.3f}; "
+              "p_boot<=0.05; B=299; 5 folds x (16 pos + 16 neg) groups x 2 images", flush=True)
+        self.assertGreaterEqual(fraction, .01)
+        self.assertLessEqual(fraction, .10)
 
     def test_missing_fold_and_single_class_are_not_evaluable(self):
         rows = synthetic(groups_per_class=3)
@@ -241,6 +289,8 @@ class SapTests(unittest.TestCase):
             self.assertEqual(rows[0]["label"], 1)
             self.assertEqual(rows[0]["score"], .8)
             self.assertEqual(len(metadata["inputs"]), 1)
+            self.assertEqual(metadata["freeze_sha256"], value["freeze_sha256"])
+            self.assertEqual(metadata["pools_sha256"], value["pools_sha256"])
             value["rows"][0]["scores"] = [.9, .1]
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "content_sha256"):
@@ -264,6 +314,53 @@ class SapTests(unittest.TestCase):
         self.assertIsNone(by_id(hpo, "H1")["auroc"]["ci95"])
         self.assertIsNone(by_id(hpo, "H1")["auroc"]["p_boot"])
 
+    def test_small_positive_group_warning_threshold(self):
+        for groups, expected_warning in ((7, True), (8, False)):
+            with self.subTest(positive_groups=groups):
+                result = sap.analyze(synthetic(groups_per_class=groups), dataset="synthetic", B=9)
+                self.assertEqual([fold["positive_groups"] for fold in result["coverage"]], [groups] * 5)
+                self.assertEqual(result["warnings"],
+                                 ["coverage below nominal measured in simulation with <8 positive groups per fold"]
+                                 if expected_warning else [])
+        # One undersized fold suffices; do not average the group counts.
+        rows = [row for row in synthetic(groups_per_class=8)
+                if row["group"] != "group-4-1-7"]
+        self.assertTrue(sap.analyze(rows, dataset="synthetic", B=9)["warnings"])
+
+    def test_cli_native_provenance_and_human_recipe_declaration(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, out = Path(tmp) / "predictions.json", Path(tmp) / "out"
+            value = native_artifact()
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertEqual(sap.main(["--predictions", str(path), "--dataset", "synthetic", "--out", str(out),
+                                       "--seed", "123", "--B", "9", "--recipe-source", "external_fixed"]), 0)
+            report = json.loads((out / "analysis.json").read_text())
+            manifest = json.loads((out / "manifest.json").read_text())
+            for key, expected in (("freeze_sha256", value["freeze_sha256"]),
+                                  ("pools_sha256", value["pools_sha256"]),
+                                  ("recipe_source", "external_fixed"), ("numpy_version", np.__version__)):
+                self.assertEqual(report["provenance"][key], expected)
+                self.assertEqual(manifest[key], expected)
+            self.assertEqual(report["recipe_source"], "external_fixed")
+
+    def test_cli_csv_recipe_source_conflict_fails_before_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, out = Path(tmp) / "fixture.csv", Path(tmp) / "out"
+            rows = [dict(row, recipe_source="hpo_d") for row in synthetic(groups_per_class=3)]
+            with path.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                status = sap.main(["--predictions", str(path), "--dataset", "synthetic", "--out", str(out),
+                                   "--seed", "123", "--B", "9", "--recipe-source", "external_fixed"])
+            self.assertEqual(status, 2)
+            self.assertIn("conflicting recipe_source", stderr.getvalue())
+            self.assertFalse(out.exists())
+            _, metadata = sap.read_predictions(path, "synthetic")
+            self.assertEqual(metadata["recipe_source"], "hpo_d")
+
     def test_cli_csv_outputs_and_hashes_without_identifiers(self):
         with tempfile.TemporaryDirectory() as tmp:
             path, out = Path(tmp) / "fixture.csv", Path(tmp) / "out"
@@ -275,6 +372,12 @@ class SapTests(unittest.TestCase):
             self.assertEqual(sap.main(["--predictions", str(path), "--dataset", "synthetic", "--out", str(out),
                                        "--seed", "123", "--B", "39"]), 0)
             manifest = json.loads((out / "manifest.json").read_text())
+            report = json.loads((out / "analysis.json").read_text())
+            for key in ("freeze_sha256", "pools_sha256", "recipe_source"):
+                self.assertIsNone(report["provenance"][key])
+                self.assertIsNone(manifest[key])
+            self.assertEqual(manifest["numpy_version"], np.__version__)
+            self.assertTrue(report["warnings"])
             for name, expected in manifest["outputs"].items():
                 self.assertEqual(hashlib.sha256((out / name).read_bytes()).hexdigest(), expected)
             self.assertGreater((out / "forest.png").stat().st_size, 1000)

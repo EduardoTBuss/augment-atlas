@@ -60,7 +60,13 @@ recipe_source column can supply this declaration; conflicting declarations
 are rejected. Native prediction headers carry the freeze hash, but not the
 recipe-source kind, so the flag is required for INbreast native files. Other
 datasets can also record the source with this flag. The kind is a declaration,
-not an independent audit of a freeze. ISIC HPO remains confined to D upstream.
+not an independent audit of a freeze. For INbreast, recipe_source is supplied by
+the human operator and must be checked against the seal before analysis. The
+effective declaration (including a CLI-supplied value), native freeze_sha256 and
+pools_sha256, and numpy.__version__ (as numpy_version) are recorded explicitly
+in analysis.json provenance and manifest.json. Missing native bindings in CSV
+input are recorded as null; they are never inferred. ISIC HPO remains confined
+to D upstream.
 
 The grouping column must already encode INbreast group_key or the connected
 union of ISIC patient and duplicate links. No duplicate-link discovery is done
@@ -123,6 +129,11 @@ arm/seed. Independent RNG streams for each fold/status make results deterministi
 under row permutation and block-size changes on the tested NumPy environment.
 Bitwise reproducibility across NumPy versions is not claimed.
 
+If any fold has fewer than eight positive-status groups, analysis.json includes
+the warning "coverage below nominal measured in simulation with <8 positive groups per fold"
+in its warnings list. The list is empty otherwise. The count uses the shared
+fold group universe required for paired arm comparisons.
+
 B defaults to 10,000. Report linear-interpolated 2.5/97.5 percentile intervals
 for delta AUROC and delta AP. For H1/H2 AUROC only:
 
@@ -159,6 +170,7 @@ this slice does not silently derive or run them.
   three-seed sensitivity, interval/p columns, statuses/reasons.
 * forest.pdf / forest.png: one-column (3.35 inch) primary delta-AUROC plot,
   95% intervals; thin 97.5% intervals for H1/H2; NE marks unavailable inference.
+  No embedded title; the paper supplies the caption.
 * manifest.json: source/input hashes and hashes of the four output files,
   written last as a completion marker. Rerunning replaces the output files;
   the old marker is removed first. An interruption can leave partial files
@@ -172,10 +184,26 @@ python -m unittest discover -s tests -p 'test_global_report*.py' -v
 python scripts/benchmark_analysis_sap_v1.py --out outputs/sap-v1-synthetic
 ~~~
 
-The coverage check uses 50 synthetic grouped Gaussian experiments, a known
-nonzero population delta Phi(0.6/sqrt(2))-0.5, 5 folds, 32 groups/fold,
-2 images/group and B=299, requiring >=45/50 coverage. It is a small validation
-exercise, not evidence that coverage is calibrated for real ISIC/INbreast.
+The fast coverage check uses 60 synthetic grouped Gaussian experiments and
+requires coverage >=0.85. With ATLAS_SLOW_TESTS=1, an additional 200-experiment
+coverage check requires >=0.90 and a separate 200-experiment null check requires
+the fraction of unadjusted H1 p_boot <=0.05 to lie in [0.01, 0.10]. Both use
+B=299, five folds, 16 positive and 16 negative groups per fold, and two images
+per group. Scores use a shared Gaussian component of variance 1 (half group,
+half image), plus independent N(0, 0.5) noise for each arm (0.5 is the standard
+deviation). Treatment adds shift*label before the monotone normal-CDF mapping.
+Thus the nonzero population delta is Phi(0.6/sqrt(2*1.25))-0.5; the null uses
+shift=0 with the same independent arm noise. Run both modes in PowerShell:
+
+~~~powershell
+$env:PYTHONPATH='src;tests'
+python -m unittest test_analysis_sap_v1
+$env:ATLAS_SLOW_TESTS='1'
+python -m unittest test_analysis_sap_v1
+~~~
+
+These are synthetic validation exercises, not evidence that coverage or type-I
+error is calibrated for real ISIC/INbreast.
 The benchmark measures B=128 and B=256 on 26,000 synthetic images across five
 folds, ten arms and one seed. It records warm-up, CPU/runtime versions, full
 configuration, source hash, input-generation hash, raw bootstrap metrics and
