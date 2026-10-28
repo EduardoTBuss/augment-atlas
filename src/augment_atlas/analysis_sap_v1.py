@@ -131,10 +131,13 @@ def read_predictions(path, dataset):
         raise ValueError("mixed recipe sources are forbidden")
     if any(row["dataset"] != dataset for row in rows):
         raise ValueError("each dataset is a separate study; dataset mismatch")
+    binding = json.loads(next(iter(bindings))) if bindings else None
     metadata = {"inputs": [{"index": i, "sha256": _hash(file), "bytes": file.stat().st_size}
                            for i, file in enumerate(files)],
                 "recipe_source": next(iter(sources), None),
-                "campaign_binding": json.loads(next(iter(bindings))) if bindings else None}
+                "campaign_binding": binding,
+                "freeze_sha256": binding["freeze_sha256"] if binding else None,
+                "pools_sha256": binding["pools_sha256"] if binding else None}
     return rows, metadata
 
 
@@ -369,6 +372,10 @@ def analyze(rows, *, dataset, seed=20261028, B=10000, block_size=64, recipe_sour
     primary = _summarize(points, bootstrap, (training_seeds[0],), inference=inference)
     sensitivity = (_summarize(points, bootstrap, training_seeds, inference=inference) if complete_three else
                    {"status": "not_evaluable", "reason": "requires_complete_10_arms_5_folds_3_seeds"})
+    coverage = [{"fold": fold, "images": len(info["ids"]), "groups": info["n_groups"],
+                 "positive_groups": len(info["strata"][1])} for fold, info in folds.items()]
+    warnings = (["coverage below nominal measured in simulation with <8 positive groups per fold"]
+                if any(fold["positive_groups"] < 8 for fold in coverage) else [])
     return {"protocol": PROTOCOL, "dataset": dataset, "exploratory": True,
             "analysis_scope": "primary_external_fixed" if inbreast and inference else
                               "descriptive_hpo_d" if not inference else "primary",
@@ -379,8 +386,7 @@ def analyze(rows, *, dataset, seed=20261028, B=10000, block_size=64, recipe_sour
                           "interval": "percentile", "holm_m": 2},
             "primary": primary, "sensitivities": {"three_seed_mean": sensitivity,
                                                     "pooled_E": _pooled(cells, folds, points, seeds)},
-            "coverage": [{"fold": fold, "images": len(info["ids"]), "groups": info["n_groups"],
-                          "positive_groups": len(info["strata"][1])} for fold, info in folds.items()],
+            "coverage": coverage, "warnings": warnings,
             "execution_verified": False, "scientific_eligible": False}
 
 
@@ -440,13 +446,13 @@ def write_outputs(report, out):
     ax.invert_yaxis()
     ax.axvline(0, color=".5", linestyle="--", linewidth=.6)
     ax.set_xlabel("Absolute delta AUROC (95% CI)", fontsize=8)
-    ax.set_title(report["dataset"] + " (exploratory)", fontsize=9)
     ax.tick_params(axis="x", labelsize=7)
     fig.savefig(out / "forest.png", dpi=300)
     fig.savefig(out / "forest.pdf")
     plt.close(fig)
     manifest = {"protocol": PROTOCOL, "source_sha256": report["provenance"]["source_sha256"],
-                "inputs": report["provenance"]["inputs"],
+                **{key: report["provenance"][key] for key in
+                   ("inputs", "freeze_sha256", "pools_sha256", "recipe_source", "numpy_version")},
                 "outputs": {name: _hash(out / name) for name in ("analysis.json", "table.csv", "forest.pdf", "forest.png")}}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
@@ -472,7 +478,7 @@ def main(argv=None):
             raise ValueError("conflicting recipe_source declarations")
         report = analyze(rows, dataset=args.dataset, seed=args.seed, B=args.B,
                          block_size=args.block_size, recipe_source=source, training_seeds=args.training_seeds)
-        report["provenance"] = {**metadata, "source_sha256": source_hash,
+        report["provenance"] = {**metadata, "recipe_source": source, "source_sha256": source_hash,
                                 "clinical_metrics_sha256": _hash(cm.__file__), "numpy_version": np.__version__}
         write_outputs(report, args.out)
     except (ValueError, OSError, KeyError, TypeError) as error:
