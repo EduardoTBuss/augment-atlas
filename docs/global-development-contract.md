@@ -94,6 +94,20 @@ opened, and visual duplicates/physical ingestion are outside this module.
   objects `{fold, test_ids}` with indices 0..4; canonical `sha256` excludes
   only itself.
 
+For the INbreast 16/10 conversion only, partition_provenance additionally
+requires the closed object converted_from={protocol, sha256} with protocol
+global-development-proposal-v1 and the SHA-256 of the original bytes. Its
+algorithm is legacy-proposal-v1-converted, version 1. Only that algorithm,
+with dataset.id inbreast, permits the string not_preregistered_legacy in
+intended_fractions; ordinary v1 candidates still require numeric fractions.
+The converter sets all three fractions to that marker because the supported
+legacy schema has no registered fractions. Thresholds are generator inputs,
+not mandatory pools fields; none are fabricated. See [the CLI reference](global-cli.md#existing-inbreast-pools-conversion-without-resampling)
+for the explicit hashes of missing historical preprocessing/duplicate/exclusion
+evidence and the manifest/label hash definitions. These declarations and the
+original file hash are included in the externally approved global manifest
+identity. This scoped representation does not promote scientific eligibility.
+
 D/E cover all eligible records once and are disjoint by ID **and group**.
 D_fit/D_select partition D under the same rule. Tests partition E once and
 are disjoint by group; D never appears in any test. Mixed-label groups retain

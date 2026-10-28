@@ -72,6 +72,59 @@ Nothing here trains or talks to Docker. `scientific_status` stays
     --report-sha256 R --out DIR` (directory outside the repository), and
     `compare --report-a A --report-b B --out DIR` once both campaigns exist.
 
+## Existing INbreast pools: conversion without resampling
+
+The private 16/10 INbreast file uses global-development-proposal-v1, not
+import-pools v1. Convert its fixed lists before importing:
+
+~~~bash
+python -m augment_atlas.global_cli convert-legacy-pools \
+  --data-root "$INB" --source "$PRIV/inbreast-source.json" --dataset inbreast \
+  --legacy "$LEGACY" --out "$PRIV/inbreast-pools-v1-candidate.json"
+~~~
+
+LEGACY must name the original private 16/10 proposal file; no new pools are
+generated. The source must use inbreast_csv with a hash-pinned manifest and
+per-image hashes, just as import-pools requires. Every legacy image path must
+match a manifest path exactly. Conversion verifies D/E coverage exactly once,
+whole-group closure in D/E, D_fit/D_select and every E test fold, D as the union
+of its two subpools, and each original fold.train as D union (E minus test).
+Repeated or unknown images, missing images and malformed metadata fail before
+publication. Legacy diagnostics are not accepted as evidence; counts are derived
+by the v1 auditor. Output is private and published without clobbering another
+identity. Errors never interpolate supplied identifiers.
+
+The output is an unsigned candidate with dataset.id inbreast, group-level
+unverified linkage and prior_exposure known. The seeds must remain 17/29/31
+and are metadata only. Its partition_provenance uses algorithm
+legacy-proposal-v1-converted and records
+converted_from={protocol: "global-development-proposal-v1", sha256: <hash of original bytes>}.
+The exact supported legacy schema has no intended fractions or preregistered
+thresholds. Each intended_fractions value is therefore the explicit string
+not_preregistered_legacy, accepted only for this conversion algorithm;
+thresholds are not required by import-pools and are not invented or applied
+retroactively. Observed image/group counts are reported separately.
+
+The converter labels dataset.version with its conversion algorithm (not a new
+acquisition release). source_sha256 is the verified manifest byte hash;
+labels_sha256 hashes the canonical list of {path, label} pairs. Missing
+preprocessing/duplicate/exclusion history is represented by canonical hashes of
+{status: "not_documented_legacy", aspect: <preprocessing|duplicates|exclusions>, legacy_sha256: <hash>}.
+Those hashes bind explicit missing-evidence declarations, not verified processing
+or duplicate/exclusion policies. The original byte hash retains provenance for
+all legacy metadata, including sklearn and source_fold_sha256, without claiming
+to have revalidated the original generator or its source fold file.
+
+Review and approve the printed candidate_sha256, global_manifest_sha256, seeds,
+converted_from and counts. Then use the candidate with import-pools --file
+... --expected-manifest <approved global_manifest_sha256>, followed by
+audit-pools and anchor --kind pools in runbook C0. The converted metadata
+changes the global manifest identity: compare/re-pin it explicitly through the
+coordinator, rather than substituting an old hash. Structural success still
+reports contract_eligible false with prior_exposure_known and
+patient_identity_unproven. The sealed campaign order and exposure guards in
+runbook Part C remain required.
+
 ## New datasets: D/E pools (`make-pools`)
 
 `make-pools --spec SPLIT.json --acquisition-config CONFIG.json --split-amendment AMENDMENT.json`

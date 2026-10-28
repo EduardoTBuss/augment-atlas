@@ -44,6 +44,7 @@ from . import global_hpo as gh
 from . import global_jobs as gj
 from . import global_report as gr
 from . import global_splits as gs
+from . import legacy_pools as lp
 from .contracts import ARMS, canonical_hash, file_hash
 from .data import load_records
 from .queue import GitQueue, QueueError
@@ -400,6 +401,29 @@ def cmd_make_pools(args):
                   "code_commit": _git(args.code, "rev-parse", "HEAD"),
                   "next": "approve the hashes, then import-pools --file <path> --expected-manifest "
                           "<global_manifest_sha256>"}, records)
+
+
+def cmd_convert_legacy_pools(args):
+    if args.dataset != "inbreast":
+        _fail("legacy_conversion_invalid", "conversion is restricted to the INbreast 16/10 pools")
+    if _source(args)["adapter"] != "inbreast_csv":
+        _fail("legacy_conversion_invalid", "conversion requires the inbreast_csv manifest adapter")
+    try:
+        source, records, _ = _records(args, 2)
+    except ValueError:
+        _fail("legacy_conversion_invalid", "manifest validation failed (message withheld: it may name a record identifier)")
+    try:
+        legacy_bytes = Path(args.legacy).read_bytes()
+    except OSError:
+        _fail("cli_input_missing", "legacy pools file unreadable")
+    candidate, audit = lp.convert_legacy_pools(records, legacy_bytes, source=source)
+    path = Path(args.out)
+    gd._publish(path, candidate, lambda value: gd.audit_global_pools(
+        records, gd._signed(value), expected_manifest_sha256=audit["manifest_sha256"]))
+    return _emit({"path": str(path), "candidate_sha256": audit["pools_sha256"],
+                  "global_manifest_sha256": audit["manifest_sha256"], "seeds": candidate["partition_provenance"]["seeds"],
+                  "converted_from": candidate["partition_provenance"]["converted_from"],
+                  "diagnostics": audit["diagnostics"], "eligibility": audit["eligibility"]}, records)
 
 
 def cmd_import_pools(args):
@@ -827,6 +851,9 @@ def _parser():
                 pools=False)
     s.add_argument("--acquisition-root", required=True, help="the verified acquisition root (READY.json present)")
     s.add_argument("--split-amendment", required=True); s.add_argument("--out", required=True)
+    s = command("convert-legacy-pools", cmd_convert_legacy_pools,
+                "convert fixed INbreast proposal-v1 lists to a private v1 candidate (no resampling)", pools=False)
+    s.add_argument("--legacy", required=True); s.add_argument("--out", required=True)
     s = command("import-pools", cmd_import_pools, "seal an approved pools document into the private store",
                 pools=False)
     s.add_argument("--file", required=True); s.add_argument("--expected-manifest", required=True)
