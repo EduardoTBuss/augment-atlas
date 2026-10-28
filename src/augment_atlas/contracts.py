@@ -72,6 +72,11 @@ def _number(value: Any, name: str, minimum: float = 0, maximum: float = math.inf
 
 
 GLOBAL_PHASES = ("hpo", "final")
+# Closed set of smoke dataset keys: every key read by data.py/train.py plus the
+# declarative ``previously_examined_in_pilot`` of the versioned InBreast configs.
+SMOKE_DATASET_KEYS = frozenset({"id", "version", "adapter", "root", "manifest", "manifest_sha256", "image_dir",
+                                "require_image_hashes", "split_file", "synthetic_groups",
+                                "previously_examined_in_pilot"})
 
 
 def validate_config(cfg: dict) -> dict:
@@ -119,6 +124,10 @@ def validate_config(cfg: dict) -> dict:
     dataset, split = cfg["dataset"], cfg["splits"]
     if dataset.get("adapter") not in ("synthetic", "manifest_csv", "inbreast_csv"):
         raise ValueError("unsupported dataset adapter")
+    unknown = sorted(set(dataset) - SMOKE_DATASET_KEYS)
+    if unknown:
+        raise ValueError(f"unknown dataset key(s) {unknown}: smoke datasets accept only "
+                         f"{sorted(SMOKE_DATASET_KEYS)}; subsetting needs a separate group-closed manifest")
     for name in ("id", "version"):
         if not isinstance(dataset.get(name), str) or not dataset[name]:
             raise ValueError(f"dataset.{name} is required")
