@@ -1,0 +1,31 @@
+{
+  "dataset": {
+    "id": "inbreast",
+    "version": "legacy-proposal-v1-converted"
+  },
+  "files": [
+    {
+      "path": "configs/global/inbreast/hpo/c00-s101.json",
+      "sha256": "3c773aa3f095d4e2bd270cc889e5fef00dbbeccf561176694141001bc9f86d79"
+    },
+    {
+      "path": "configs/global/inbreast/hpo/c01-s101.json",
+      "sha256": "40069ef59a1110ba6eee9b849a7a520aad2e21c6e4509859507f1e00f447f57e"
+    },
+    {
+      "path": "configs/global/inbreast/hpo/c02-s101.json",
+      "sha256": "f44e25037662e0b8da38d48a6df837cb935782fe93377d3cdf9a0adff69037d7"
+    },
+    {
+      "path": "configs/global/inbreast/hpo/c03-s101.json",
+      "sha256": "6a797a1c759c4f7c2ac23d669e81bda0033e4bb0f9e0564006a44a095f76e29d"
+    }
+  ],
+  "freeze_sha256": null,
+  "phase": "hpo",
+  "plan_sha256": "6550f2b2ffdbe2dfda04bec63dac6a5c1aef9c1a015c0ef1c11d34aee5f2b5af",
+  "pools_sha256": "d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f",
+  "protocol": "global-configs-manifest-v1",
+  "schema_version": 1,
+  "sha256": "510f8e973e76ec98e958cc370147b846bc16adcb8b531c1d714ad1ba9f5b862d"
+}

@@ -1,0 +1,88 @@
+{
+  "augmentation": {
+    "arm": "none",
+    "ops": []
+  },
+  "dataset": {
+    "adapter": "inbreast_csv",
+    "id": "inbreast",
+    "manifest": "atlas_scientific_v2/inbreast_images_hashed.csv",
+    "manifest_sha256": "90b7e97a8c2dfbb804b6b0dd486047ea406e86270f6b9b46e1fa90c55eede178",
+    "require_image_hashes": true,
+    "version": "legacy-proposal-v1-converted"
+  },
+  "evaluation": {
+    "classes": [
+      0,
+      1
+    ],
+    "decision": {
+      "comparison": "ge",
+      "rule": "fixed_threshold",
+      "threshold": 0.5,
+      "tie_break": null
+    },
+    "endpoint": "binary_auroc",
+    "frozen": true,
+    "positive_class": 1,
+    "schema_version": 1,
+    "score_kind": "softmax_probability",
+    "task": "binary"
+  },
+  "global": {
+    "candidate_config_sha256": "e08cf37a01b62888c9169b7edeba7eec349d1bfde4e3e83b5edb48d220917e05",
+    "candidate_id": "c03",
+    "fold": null,
+    "freeze_file": null,
+    "freeze_kind": null,
+    "freeze_sha256": null,
+    "hpo_view_file": "global/inbreast/hpo-view-be2af1974e3a0067e5af3fe0c8d65ca763a3b06943aef90de33cf3326567adfa.json",
+    "hpo_view_sha256": "be2af1974e3a0067e5af3fe0c8d65ca763a3b06943aef90de33cf3326567adfa",
+    "plan_sha256": "6550f2b2ffdbe2dfda04bec63dac6a5c1aef9c1a015c0ef1c11d34aee5f2b5af",
+    "pools_file": "global/inbreast/pools-d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f.json",
+    "pools_sha256": "d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f",
+    "search_space_sha256": "aea4c8ed0c82cf939823005dcdb594f56d82b11d89bd56b47670ff4275d65065",
+    "view": "hpo"
+  },
+  "input": {
+    "color": "grayscale_to_rgb",
+    "size": 224
+  },
+  "model": {
+    "head": "softmax",
+    "init": "imagenet_fresh",
+    "name": "resnet50",
+    "num_outputs": 2,
+    "weights": "IMAGENET1K_V2",
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "phase": "hpo",
+  "protocol_version": "global-hpo-v1",
+  "schema_version": 1,
+  "scientific_status": "provisional",
+  "training": {
+    "accumulation_steps": 1,
+    "autocast": false,
+    "batch_size": 16,
+    "checkpoint_selection": "last_epoch",
+    "deterministic": true,
+    "device": "cuda",
+    "early_stopping": false,
+    "epochs": 20,
+    "loss": {
+      "name": "cross_entropy"
+    },
+    "optimizer": {
+      "lr": 0.001,
+      "name": "adamw",
+      "weight_decay": 0.0001
+    },
+    "scheduler": {
+      "eta_min": 0.0,
+      "name": "cosine_per_epoch"
+    },
+    "seed": 101,
+    "tf32": false,
+    "workers": 2
+  }
+}
