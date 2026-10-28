@@ -223,8 +223,22 @@ do endurance, relativo a $INB>", "manifest_sha256": "<sha256 desse arquivo>"}`.
 
 1. `$G identity $N --num-classes 2`: espera **387** registros. Anote `records_sha256`.
 2. Os pools do INbreast já existem (os privados de 16/10, seeds 17/29/31). **Não gere pools
-   novos para o INbreast.** Se o arquivo não estiver no schema v1, pare: a conversão das
-   mesmas listas para v1 é uma tarefa de código à parte (sem novo sorteio).
+   novos para o INbreast.** Se o arquivo estiver no formato legado
+   `global-development-proposal-v1`, use o conversor das **mesmas listas** (sem novo sorteio):
+
+   ~~~bash
+   python -m augment_atlas.global_cli convert-legacy-pools \
+     --data-root "$INB" --source "$PRIV/inbreast-source.json" --dataset inbreast \
+     --legacy "$LEGACY" --out "$PRIV/inbreast-pools-v1-candidate.json"
+   ~~~
+
+   LEGACY deve apontar para o arquivo privado original de 16/10. Confira os
+   agregados (D 77/21 grupos, D_fit 59/17, D_select 18/4, E 310/82; testes
+   62/62/64/61/61), seeds 17/29/31 e converted_from.sha256. O coordenador deve
+   aprovar e pinar o **novo** global_manifest_sha256 impresso: ele inclui a
+   proveniência da conversão. Frações ausentes ficam not_preregistered_legacy;
+   nenhum limiar pré-registrado é inventado. Se a validação falhar, pare; não
+   repare listas nem gere pools novos. Detalhes em [global-cli.md](global-cli.md#existing-inbreast-pools-conversion-without-resampling).
 3. `$G import-pools $N --file <pools privados> --expected-manifest <hash pinado no Brain>`.
    O `dataset.id` precisa ser `inbreast` com `prior_exposure: known`. Depois rode
    `audit-pools` e `anchor --kind pools`.

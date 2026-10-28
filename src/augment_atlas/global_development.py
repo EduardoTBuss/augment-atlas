@@ -223,8 +223,18 @@ def _pool_metadata(document):
             raise ValueError("forced_development_hash_mismatch: private groups differ from their canonical SHA256 pin")
     _task(document["task"])
     provenance = document["partition_provenance"]
-    _object(provenance, {"algorithm", "version", "source", "generator_version", "seeds",
-                         "intended_fractions"}, "partition_provenance")
+    legacy_conversion = (type(provenance) is dict
+                         and provenance.get("algorithm") == "legacy-proposal-v1-converted")
+    keys = {"algorithm", "version", "source", "generator_version", "seeds", "intended_fractions"}
+    if legacy_conversion:
+        keys.add("converted_from")
+    _object(provenance, keys, "partition_provenance")
+    if legacy_conversion:
+        _object(provenance["converted_from"], {"protocol", "sha256"}, "converted_from")
+        if (document["dataset"]["id"] != "inbreast" or provenance["version"] != "1"
+                or provenance["converted_from"]["protocol"] != "global-development-proposal-v1"):
+            raise ValueError("legacy conversion requires INbreast proposal-v1 provenance")
+        _hash(provenance["converted_from"]["sha256"], "legacy file hash")
     for key in ("algorithm", "version", "source", "generator_version"):
         _text(provenance[key], key)
     _object(provenance["seeds"], {"development", "selection", "evaluation"}, "seeds")
@@ -232,6 +242,8 @@ def _pool_metadata(document):
         _int(value, key)
     _object(provenance["intended_fractions"], {"D", "D_fit_given_D", "E_test_given_E"}, "fractions")
     for key, value in provenance["intended_fractions"].items():
+        if legacy_conversion and value == "not_preregistered_legacy":
+            continue
         _number(value, key)
         if not 0 < value < 1:
             raise ValueError("intended fractions must be between zero and one")
