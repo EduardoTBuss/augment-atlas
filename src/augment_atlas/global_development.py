@@ -211,13 +211,16 @@ def _pool_metadata(document):
                 or document["partition_provenance"].get("algorithm") != FORCED_DEVELOPMENT_ALGORITHM):
             raise ValueError("forced_development_invalid: forced groups require the forced-D algorithm")
         forced = document["forced_development"]
-        _object(forced, {"sha256", "count"}, "forced_development")
+        _object(forced, {"sha256", "count", "groups_canonical_sha256"}, "forced_development")
         _hash(forced["sha256"], "forced_development.sha256")
+        _hash(forced["groups_canonical_sha256"], "forced_development.groups_canonical_sha256")
         _int(forced["count"], "forced_development.count", minimum=1)
         groups = document["forced_development_groups"]
         validate_forced_development_groups(groups)
         if groups != sorted(groups) or len(groups) != forced["count"]:
             raise ValueError("forced_development_invalid: sorted groups must match the declared count")
+        if canonical_hash(sorted(groups)) != forced["groups_canonical_sha256"]:
+            raise ValueError("forced_development_hash_mismatch: private groups differ from their canonical SHA256 pin")
     _task(document["task"])
     provenance = document["partition_provenance"]
     _object(provenance, {"algorithm", "version", "source", "generator_version", "seeds",

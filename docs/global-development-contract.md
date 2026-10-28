@@ -120,19 +120,23 @@ round-robin counter. Structural and pre-registered pass/fail audits still apply.
 Only this algorithm extension adds two required fields to the closed private
 pools schema:
 
-- `forced_development={sha256, count}`: raw input-file SHA256 and positive group
-  count; this is the only forced-group metadata in the public make-pools report.
+- `forced_development={sha256, count, groups_canonical_sha256}`: raw input-file
+  SHA256, positive group count and `canonical_hash(sorted(groups))` using
+  `augment_atlas.contracts.canonical_hash`; this is the only forced-group metadata
+  in the public make-pools report.
 - `forced_development_groups`: sorted private group IDs for later audit.
 
 Both fields are bound into the manifest identity and pools checksum. The
 structural audit used by import, audit-pools, anchor and downstream consumers
-checks the closed extension, count, known groups and inclusion of every forced
-group in D. The file-byte pin is verified at generation; later audit uses the
-private IDs bound by the externally approved manifest/pools hashes. As with
+checks the closed extension, count, recomputed canonical groups hash, known groups
+and inclusion of every forced group in D. The file-byte pin is verified at
+generation; later audit uses the private IDs bound by the externally approved
+manifest/pools hashes. As with
 other provenance assertions, those hashes do not prove the history of exposure.
 Public anchors bind the document hash without revealing IDs. Missing/invalid
-lists or a missing companion flag raise `forced_development_invalid`; byte
-mismatch raises `forced_development_hash_mismatch`; unknown groups raise
+lists or a missing companion flag raise `forced_development_invalid`; byte or
+canonical-group hash mismatch raises `forced_development_hash_mismatch`; unknown
+groups raise
 `forced_development_unknown_group`; an audited group outside D raises
 `forced_development_not_in_d` (all CLI exit 2).
 
