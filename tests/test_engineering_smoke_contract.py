@@ -301,5 +301,103 @@ class ArmPipelineTests(unittest.TestCase):
         self._check_color("rgb")
 
 
+PROVENANCE_VARS = ("ATLAS_CODE_COMMIT", "ATLAS_IMAGE_ID")
+
+
+def without_provenance(**kept):
+    """Environment patch that removes both identities, then sets ``kept``."""
+    patcher = patch.dict(os.environ, kept)
+    patcher.start()
+    for name in PROVENANCE_VARS:
+        if name not in kept:
+            os.environ.pop(name, None)
+    return patcher
+
+
+class ProvenanceContractTests(unittest.TestCase):
+    """Closed gap (train.py environment.json): no silent ``unavailable`` commit/image."""
+
+    def provenance(self, required, **kept):
+        import contextlib
+        import io
+        from augment_atlas import train
+        patcher = without_provenance(**kept)
+        self.addCleanup(patcher.stop)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result = train._provenance(required=required)
+        patcher.stop()
+        return result, stderr.getvalue()
+
+    def test_smoke_without_identity_warns_and_marks_incomplete(self):
+        for kept in ({}, {"ATLAS_CODE_COMMIT": "a" * 40}, {"ATLAS_IMAGE_ID": "sha256:x"},
+                     {"ATLAS_CODE_COMMIT": "", "ATLAS_IMAGE_ID": "unavailable"}):
+            with self.subTest(kept=kept):
+                (values, complete), stderr = self.provenance(False, **kept)
+                self.assertIs(complete, False)
+                self.assertIn("WARNING", stderr)
+                self.assertIn("provenance_complete=false", stderr)
+                for key, name in (("code_commit", "ATLAS_CODE_COMMIT"), ("image_id", "ATLAS_IMAGE_ID")):
+                    self.assertEqual(values[key], kept.get(name) or "unavailable")
+                    if kept.get(name) in (None, "", "unavailable"):
+                        self.assertIn(name, stderr)
+
+    def test_complete_identity_is_recorded_without_warning(self):
+        kept = {"ATLAS_CODE_COMMIT": "a" * 40, "ATLAS_IMAGE_ID": "sha256:x"}
+        for required in (False, True):
+            with self.subTest(required=required):
+                (values, complete), stderr = self.provenance(required, **kept)
+                self.assertEqual((values, complete, stderr),
+                                 ({"code_commit": "a" * 40, "image_id": "sha256:x"}, True, ""))
+
+    def test_required_identity_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "^provenance_missing: ATLAS_CODE_COMMIT, ATLAS_IMAGE_ID"):
+            self.provenance(True)
+
+
+@unittest.skipUnless(REQUEST_STACK and HAS_STACK, "real toy torch loop is container-only (ATLAS_CONTAINER_CPU_TESTS=1)")
+class SmokeProvenanceTrainingTests(unittest.TestCase):
+    def run_smoke(self, out, **kept):
+        import contextlib
+        import io
+        import json
+        import torch
+        from augment_atlas import train
+
+        class TinyModel(torch.nn.Module):
+            def __init__(model_self):
+                super().__init__()
+                model_self.fc = torch.nn.Linear(3, 2)
+
+            def forward(model_self, pixels):
+                return model_self.fc(pixels.mean(dim=(2, 3)))
+
+        cfg = load_config(ROOT / "configs/smoke/synthetic.json")
+        cfg["training"].update(device="cpu", workers=0, epochs=1)
+        cfg["input"]["size"] = 32
+        patcher = without_provenance(**kept)
+        self.addCleanup(patcher.stop)
+        stderr = io.StringIO()
+        with patch("torchvision.models.resnet50", side_effect=lambda **_: TinyModel()), \
+             patch.object(torch.cuda, "is_available", return_value=False), contextlib.redirect_stderr(stderr):
+            code = train.run(validate_config(cfg), out)
+        patcher.stop()
+        return code, json.loads((out / "environment.json").read_text(encoding="utf-8")), stderr.getvalue()
+
+    def test_smoke_run_records_incomplete_provenance_explicitly(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            code, environment, stderr = self.run_smoke(Path(temporary) / "missing")
+            self.assertEqual(code, 0)
+            self.assertEqual((environment["code_commit"], environment["image_id"], environment["provenance_complete"]),
+                             ("unavailable", "unavailable", False))
+            self.assertIn("ATLAS_CODE_COMMIT, ATLAS_IMAGE_ID", stderr)
+            code, environment, stderr = self.run_smoke(Path(temporary) / "present", ATLAS_CODE_COMMIT="a" * 40,
+                                                       ATLAS_IMAGE_ID="sha256:x")
+            self.assertEqual(code, 0)
+            self.assertEqual((environment["code_commit"], environment["image_id"], environment["provenance_complete"]),
+                             ("a" * 40, "sha256:x", True))
+            self.assertNotIn("provenance", stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

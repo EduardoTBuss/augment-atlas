@@ -186,7 +186,9 @@ class GlobalFixture:
 
 
 def data_env(root):
-    return patch.dict(os.environ, {"ATLAS_DATA_ROOT": str(root)})
+    # The worker always injects code/image identity; global jobs refuse to run without it.
+    return patch.dict(os.environ, {"ATLAS_DATA_ROOT": str(root), "ATLAS_CODE_COMMIT": "c" * 40,
+                                   "ATLAS_IMAGE_ID": "sha256:global-trainer-test"})
 
 
 class GlobalDispatchTests(unittest.TestCase):
@@ -318,6 +320,25 @@ class GlobalRunnerPreTorchTests(unittest.TestCase):
         self.out.mkdir()
         (self.out / "config.json").write_bytes(gj.render_config_bytes(self.fx.final("basic")))
         with self.assertRaisesRegex(ValueError, "different config"):
+            self.run_without_ml(self.fx.final())
+
+    def test_missing_code_or_image_identity_is_refused_before_heavy_imports(self):
+        """Global jobs never record ``unavailable`` provenance (the worker always injects it)."""
+        from augment_atlas import train
+        for name in ("ATLAS_CODE_COMMIT", "ATLAS_IMAGE_ID"):
+            for value in (None, "", "unavailable"):
+                with self.subTest(name=name, value=value), \
+                     patch.dict("sys.modules", {"torch": None, "numpy": None, "torchvision": None}), \
+                     data_env(self.fx.root):
+                    if value is None:
+                        del os.environ[name]
+                    else:
+                        os.environ[name] = value
+                    with self.assertRaisesRegex(ValueError, f"^provenance_missing: .*{name}"):
+                        train.run(self.fx.final(), self.out)
+        self.assertFalse((self.out / "environment.json").exists())
+        # Control: with both identities present the runner proceeds to the heavy imports.
+        with self.assertRaises(ImportError):
             self.run_without_ml(self.fx.final())
 
 
