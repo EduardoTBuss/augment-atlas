@@ -88,7 +88,9 @@ class ForcedDevelopmentTests(SyntheticCase):
                                key=lambda g: (H([gs.FORCED_ALGORITHM, self.spec["seeds"]["development"], "DE", g]), g))
             self.assertEqual(actual & set(groups), pinned | set(remainder[:quota - len(pinned)]))
             self.assertEqual(len(actual & set(groups)), quota)
-        self.assertEqual(candidate["forced_development"], {"sha256": self.pin()[1], "count": len(self.forced)})
+        self.assertEqual(candidate["forced_development"],
+                         {"sha256": self.pin()[1], "count": len(self.forced),
+                          "groups_canonical_sha256": H(sorted(self.forced))})
         self.assertEqual(candidate["partition_provenance"]["algorithm"], gs.FORCED_ALGORITHM)
         self.assertEqual(report["algorithm"], gs.FORCED_ALGORITHM)
         self.assertEqual(report["forced_development"], candidate["forced_development"])
@@ -113,6 +115,31 @@ class ForcedDevelopmentTests(SyntheticCase):
                                                  forced_development_sha256=sha)
         self.assertEqual(reordered["lists"], candidate["lists"])
         self.assertEqual(reordered["evaluation_folds"], candidate["evaluation_folds"])
+
+    def test_canonical_groups_hash_ignores_file_order_and_whitespace(self):
+        candidate, report = self.generate()
+        raw = json.dumps(list(reversed(self.forced)), indent=2).encode() + b"\n"
+        path, sha = self.pin(raw=raw)
+        reordered, reordered_report = gs.generate_dev_eval_pools(
+            self.rows, self.spec, forced_development_groups=gs.load_forced_development(path, sha),
+            forced_development_sha256=sha)
+        expected = H(sorted(self.forced))
+        self.assertNotEqual(candidate["forced_development"]["sha256"], sha)
+        for pools, public in ((candidate, report), (reordered, reordered_report)):
+            self.assertEqual(pools["forced_development"]["groups_canonical_sha256"], expected)
+            self.assertEqual(public["forced_development"]["groups_canonical_sha256"], expected)
+            self.assertTrue(self.audit(pools)["structural_valid"])
+
+    def test_same_count_private_list_tampering_is_rejected_after_resigning(self):
+        candidate, _ = self.generate()
+        original = copy.deepcopy(candidate["forced_development"])
+        replacement = sorted(groups_of(candidate["lists"]["D"], self.rows) - set(self.forced))[0]
+        candidate["forced_development_groups"] = sorted(self.forced[1:] + [replacement])
+        self.assertEqual(len(candidate["forced_development_groups"]), original["count"])
+        self.assertEqual(candidate["forced_development"], original)
+        # Re-sign both outer identities: rejection must come from the canonical pin.
+        with self.assertRaisesRegex(ValueError, "^forced_development_hash_mismatch:.*canonical SHA256"):
+            self.audit(candidate)
 
     def test_forced_groups_can_land_in_fit_or_select_using_selection_seed(self):
         # Pin exactly each stratum's quota: all of D is forced, including fit/select.
@@ -186,7 +213,8 @@ class ForcedDevelopmentTests(SyntheticCase):
         candidate, _ = self.generate()
         before = gd.global_manifest_sha256(self.rows, candidate)
         variants = []
-        for key, value in (("sha256", "a" * 64), ("count", len(self.forced) + 1)):
+        for key, value in (("sha256", "a" * 64), ("count", len(self.forced) + 1),
+                           ("groups_canonical_sha256", "a" * 64)):
             other = copy.deepcopy(candidate)
             other["forced_development"][key] = value
             variants.append(other)
@@ -204,6 +232,13 @@ class ForcedDevelopmentTests(SyntheticCase):
         for key in ("forced_development", "forced_development_groups"):
             other = copy.deepcopy(candidate)
             del other[key]
+            variants.append(other)
+        other = copy.deepcopy(candidate)
+        del other["forced_development"]["groups_canonical_sha256"]
+        variants.append(other)
+        for value in (None, "", "a" * 63, "A" * 64, "a" * 64):
+            other = copy.deepcopy(candidate)
+            other["forced_development"]["groups_canonical_sha256"] = value
             variants.append(other)
         for value in (True, 0, len(self.forced) + 1):
             other = copy.deepcopy(candidate)
@@ -330,11 +365,31 @@ class ForcedCliTests(SyntheticCase):
         for group in self.forced:
             self.assertNotIn(group, json.dumps(anchor))
 
+    def test_audit_and_anchor_reject_same_count_private_list_tampering(self):
+        candidate, _ = self.generate()
+        replacement = sorted(groups_of(candidate["lists"]["D"], self.rows) - set(self.forced))[0]
+        candidate["forced_development_groups"] = sorted(self.forced[1:] + [replacement])
+        signed = gd._signed(candidate)
+        manifest = gd.global_manifest_sha256(self.rows, signed)
+        with patch.object(cli, "_pools", return_value=({}, self.rows, {}, signed)), patch.object(cli, "_queue") as queue:
+            for args in (self.base_args("audit-pools") + ["--pools-sha256", signed["sha256"],
+                         "--expected-manifest", manifest],
+                         self.base_args("anchor") + ["--pools-sha256", signed["sha256"],
+                         "--kind", "pools", "--document-sha256", signed["sha256"], "--expected-manifest", manifest,
+                         "--document-utc", "2026-10-28T12:00:00Z", "--code", "unused", "--remote", "unused",
+                         "--checkout", "unused"]):
+                error = self.cli(args, status=2)
+                self.assertTrue(error.startswith("forced_development_hash_mismatch:"), error)
+                for group in candidate["forced_development_groups"]:
+                    self.assertNotIn(group, error)
+            queue.assert_not_called()
+
     def test_audit_and_anchor_reject_resigned_document_with_forced_group_in_e(self):
         candidate, _ = self.generate()
         e_group = sorted(groups_of(candidate["lists"]["E"], self.rows))[0]
         candidate["forced_development_groups"] = [e_group]
         candidate["forced_development"]["count"] = 1
+        candidate["forced_development"]["groups_canonical_sha256"] = H([e_group])
         signed = gd._signed(candidate)
         manifest = gd.global_manifest_sha256(self.rows, signed)
         # Internally consistent hashes are insufficient: even a newly approved

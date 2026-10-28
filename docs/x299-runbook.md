@@ -153,9 +153,11 @@ Se ele optar por manter grupos previamente examinados sempre em D, acrescente
 
 O JSON privado é uma lista não vazia de group IDs únicos, exatamente como aparecem
 no manifest elegível; não publique os IDs. O hash dos bytes precisa coincidir.
-A saída pública acrescenta só `forced_development={sha256,count}`, e o algoritmo
-passa a `global-dev-eval-v1+forced-d-v1`. O documento privado retém os IDs para
-reauditoria; os hashes de manifest e pools vinculam essa lista.
+A saída pública acrescenta só `forced_development={sha256,count,groups_canonical_sha256}`,
+e o algoritmo passa a `global-dev-eval-v1+forced-d-v1`. O hash canônico é
+`canonical_hash(sorted(groups))`; a reauditoria o recalcula a partir dos IDs
+retidos no documento privado e recusa divergências, mesmo com o mesmo count.
+Os hashes de manifest e pools também vinculam essa lista.
 
 Os forçados ocupam D antes do sorteio, que completa a mesma cota pré-registrada
 por estrato (arredondamento half-up sobre todos os grupos). Se excederem a cota de

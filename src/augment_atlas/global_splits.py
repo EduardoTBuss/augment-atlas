@@ -304,7 +304,8 @@ def generate_dev_eval_pools(records, spec, *, forced_development_groups=None, fo
                                                         "E_test_given_E": 1 / FOLDS}},
         "lists": lists, "evaluation_folds": folds}
     if forced:
-        candidate["forced_development"] = {"sha256": forced_development_sha256, "count": len(forced)}
+        candidate["forced_development"] = {"sha256": forced_development_sha256, "count": len(forced),
+                                           "groups_canonical_sha256": canonical_hash(sorted(forced))}
         # Private audit evidence; excluded from the public split report.
         candidate["forced_development_groups"] = sorted(forced)
     report = _audit(candidate, rows, members, positive_class, spec["thresholds"])
