@@ -82,7 +82,7 @@ def parse_record(markdown):
 # --------------------------------------------------------------------------
 
 ANCHOR_PROTOCOL = "global-anchor-v1"
-ANCHOR_KINDS = ("pools", "recipe_freeze", "campaign")
+ANCHOR_KINDS = ("pools", "recipe_freeze", "campaign", "stage_authorization")
 # Recipe source of a freeze/campaign anchor (S3). One dataset/pools may hold one
 # campaign per source (INbreast, 20/10/2026: external fixed recipe AND an
 # exploratory HPO on D); the anchor slot is (kind, pools_sha256, recipe_source).
@@ -104,7 +104,8 @@ def _anchor_fail(code, message):
 
 def validate_anchor(anchor):
     """Closed public anchor (hashes only: no record IDs, groups or private paths)."""
-    if type(anchor) is not dict or set(anchor) != ANCHOR_KEYS:
+    expected_keys = ANCHOR_KEYS | ({"stage"} if isinstance(anchor, dict) and anchor.get("kind") == "stage_authorization" else set())
+    if type(anchor) is not dict or set(anchor) != expected_keys:
         _anchor_fail("anchor_invalid", "anchor must have exactly the global-anchor-v1 keys")
     if anchor["schema_version"] != 1 or type(anchor["schema_version"]) is not int or anchor["protocol"] != ANCHOR_PROTOCOL:
         _anchor_fail("anchor_invalid", "only global-anchor-v1 anchors are supported")
@@ -142,6 +143,11 @@ def validate_anchor(anchor):
     elif kind == "recipe_freeze":
         ok = (anchor["freeze_sha256"] == anchor["document_sha256"] and anchor["campaign_sha256"] is None
               and anchor["label"] is None and anchor["recipe_source"] in ANCHOR_RECIPE_SOURCES)
+    elif kind == "stage_authorization":
+        ok = (anchor["campaign_sha256"] is not None and anchor["freeze_sha256"] is not None
+              and anchor["code_commit"] is not None and anchor["label"] is None
+              and anchor["recipe_source"] in ANCHOR_RECIPE_SOURCES
+              and type(anchor["stage"]) is int and anchor["stage"] >= 2)
     else:
         ok = (anchor["campaign_sha256"] == anchor["document_sha256"] and anchor["freeze_sha256"] is not None
               and anchor["code_commit"] is not None and anchor["label"] is not None
@@ -155,6 +161,8 @@ def validate_anchor(anchor):
 
 def anchor_slot(anchor):
     """At most one document per slot: (kind, pools_sha256, recipe_source)."""
+    if anchor["kind"] == "stage_authorization":
+        return anchor["kind"], anchor["campaign_sha256"], anchor["stage"]
     return anchor["kind"], anchor["pools_sha256"], anchor["recipe_source"]
 
 
@@ -349,7 +357,7 @@ class GitQueue:
             raise ValueError("fleet.heartbeat_ref does not belong to owner node/worker")
         return block
 
-    def claim(self, job_id, owner, fleet=None):
+    def claim(self, job_id, owner, fleet=None, *, stage_context=None):
         if not isinstance(owner, dict) or not owner:
             raise ValueError("owner must be a nonempty public alias object")
         canonical_json(owner)
@@ -365,6 +373,15 @@ class GitQueue:
                     return current
                 if current["state"] != "pending" or any(records[dependency]["state"] != "succeeded" for dependency in current["spec"]["dependencies"]):
                     return None
+                if _is_global_final(current["spec"]) and (stage_context is not None or "/stage-" in current["spec"].get("config", "")):
+                    if stage_context is None:
+                        raise QueueConflict("campaign_invalid: stage claim requires an audited stage context")
+                    from . import global_campaign as gc
+                    from . import stage_authorization as sa
+                    campaign, authorization, code_repo = stage_context
+                    sa.audit(authorization, campaign, code_repo=code_repo)
+                    sa.job_binding(current["spec"], campaign, authorization)
+                    gc.audit_chronology(self, campaign, head=head, stage_authorization=authorization, code_repo=code_repo)
                 event = {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"}
                 if fleet is not None:
                     # The claim binds the node's plan to this immutable spec (F5, 3.3): refuse before writing.
@@ -541,6 +558,14 @@ class GitQueue:
                                     f"(pools, recipe_source={anchor['recipe_source']}) ({path})")
         if anchor["kind"] == "pools":
             return
+        if anchor["kind"] == "stage_authorization":
+            raw = self.read_path(head, anchor_path(dataset_id, "campaign", anchor["campaign_sha256"]))
+            if raw is None:
+                raise QueueConflict("campaign_anchor_missing: stage authorization needs its original campaign anchor")
+            campaign = validate_anchor(json.loads(raw))
+            if any(campaign[key] != anchor[key] for key in ("dataset", "pools_sha256", "freeze_sha256", "recipe_source")):
+                raise QueueConflict("anchor_conflict: stage authorization bound to another campaign")
+            return
         # Both campaigns of one pools are sealed before ANY final job of the pools (spec 6.9).
         if self._final_jobs_of(records, anchor["pools_sha256"]):
             raise QueueConflict("final_job_before_seal: final jobs of these pools already exist in the queue")
@@ -596,7 +621,7 @@ class GitQueue:
                     return {"path": path, "commit": self.anchor_commit(latest, path), "head": latest}
             raise QueueConflict("publish_anchor exhausted concurrent retries")
 
-    def seed_final(self, specs, campaign_sha256):
+    def seed_final(self, specs, campaign_sha256, *, stage_authorization=None, campaign=None, code_repo=None):
         """Seed global final jobs on top of a HEAD that already holds the campaign anchor.
 
         The anchor is checked inside the retry loop on the exact ``head`` the
@@ -631,15 +656,29 @@ class GitQueue:
                 if (anchor["kind"] != "campaign" or anchor["pools_sha256"] != pools_sha256
                         or anchor["dataset"] != {"id": dataset_id, "version": dataset_version}):
                     raise QueueConflict("campaign_anchor_missing: campaign anchor bound to other dataset/pools")
+                if stage_authorization is not None:
+                    from . import stage_authorization as sa
+                    from . import global_campaign as gc
+                    sa.audit(stage_authorization, campaign, code_repo=code_repo)
+                    if campaign["sha256"] != campaign_sha256:
+                        raise QueueConflict("campaign_invalid: wrong campaign supplied for stage")
+                    gc.audit_chronology(self, campaign, head=head,
+                                        stage_authorization=stage_authorization, code_repo=code_repo)
                 for spec in prepared:
                     if (spec["global"].get("freeze_sha256") != anchor["freeze_sha256"]
                             or spec["global"].get("freeze_kind") != anchor["recipe_source"]
                             or spec["recipe_hash"] != anchor["freeze_sha256"]):
                         raise QueueConflict("campaign_anchor_missing: final job bound to another freeze than the "
                                             "anchored campaign")
-                    if spec["code_commit"] != anchor["code_commit"]:
+                    if stage_authorization is not None:
+                        sa.job_binding(spec, campaign, stage_authorization)
+                        if spec["train_seed"] not in stage_authorization["seeds"]:
+                            raise QueueConflict("campaign_invalid: stage seeding takes only that stage's jobs")
+                    elif spec["code_commit"] != anchor["code_commit"]:
                         raise QueueConflict("code_identity_mismatch: final job code_commit differs from the "
                                             "anchored campaign code_commit")
+                    elif "/stage-" in spec.get("config", ""):
+                        raise QueueConflict("campaign_invalid: stage jobs need an audited authorization")
                 records = self._records(head)
                 for spec in prepared:
                     old = records.get(spec["job_id"])
