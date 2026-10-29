@@ -1,0 +1,27 @@
+{
+  "schema": "augment-atlas/split-amendment/v1",
+  "dataset": "rsna2018",
+  "amends": {
+    "config": "configs/acquisition/rsna2018-v1.json",
+    "config_identity_sha256": "42a82779d6516a18eae7ea83d2aca4685d983dfabe0d297f9224e7605abbb2b8",
+    "block": "splits"
+  },
+  "decided_by": "Eduardo (delegated to the coordinator, 2026-10-29)",
+  "decided_on": "2026-10-29",
+  "before_any_score": true,
+  "algorithm": "global-dev-eval-v1",
+  "eval_folds": 5,
+  "seeds": {"development": 20261029, "selection": 20261029, "evaluation": 20261030},
+  "fractions": {"D": 0.2, "D_select_given_D": 0.3},
+  "thresholds": {"min_select_positive_groups": 15, "min_eval_fold_positive_groups": 50},
+  "rules": {
+    "quartiles": "nearest-rank over the image counts of ALL groups: cut_k = sizes[ceil(k*n/4) - 1], k = 1..3; bucket = number of cuts strictly below the size",
+    "d_select_strata": "D_select reuses the strata of D (same cut points), restricted to D",
+    "rounding": "exact half-up: floor(f*n + 1/2) in decimal arithmetic",
+    "folds": "one round-robin counter 0..4 that continues across strata (strata in sorted order)",
+    "hash_order": "canonical_hash([algorithm, seed_of_stage, stage, group]) with stages DE, D-select, E-folds"
+  },
+  "seed_rationale": "same fractions/thresholds as ISIC 2020; seeds fixed on the decision date, evaluation seed distinct (Q3); chosen before any split, score or model output",
+  "no_reseed": "No other seed is tried after any split audit, score or result is seen; a failed audit stops and is escalated.",
+  "supersedes": "nothing in the acquisition config: configs/acquisition/rsna2018-v1.json declares no splits block and acquisition verify creates no pools/folds; this amendment is the sole split pre-registration of rsna2018"
+}

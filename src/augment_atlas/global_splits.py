@@ -112,7 +112,12 @@ def check_amendment(spec, amendment, acquisition_raw):
     if type(acquisition_raw) is not dict or amendment["amends"].get("config_identity_sha256") != identity_of(
             acquisition_raw):
         _fail("split_spec_invalid", "split amendment is bound to another acquisition config identity")
-    check_preregistered(spec, acquisition_raw.get("splits"))
+    if "splits" in acquisition_raw:
+        check_preregistered(spec, acquisition_raw["splits"])
+    else:
+        # No splits block (rsna2018-v1): the amendment is the sole split pre-registration (its
+        # ``supersedes`` says so) and pins the fractions/thresholds compared below.
+        _check_spec(spec)
     if amendment["dataset"] != spec["dataset"].get("id"):
         _fail("split_spec_invalid", "the split amendment belongs to another dataset")
     for key in ("seeds", "fractions", "thresholds"):
@@ -133,6 +138,8 @@ def spec_from_acquisition(ready, private, amendment, *, dataset_id):
         _fail("split_spec_invalid", "READY.json is not an augment-atlas/dataset-ready/v1 document")
     if type(private) is not dict or private.get("schema") != "augment-atlas/dataset-manifest-private/v1":
         _fail("split_spec_invalid", "manifest-private.json is not a dataset-manifest-private/v1 document")
+    if type(private.get("policy")) is dict and private["policy"].get("group") == RSNA_PATIENT_GROUP:
+        return _rsna_spec(private, amendment, dataset_id=dataset_id)
     sources = private["acquisition"]["sources"]
     labels = [s for s in sources if s["role"] in ("ground_truth_v1", "ground_truth_v2")]
     excluded = [{"image": r["image"], "status": r["status"], "reason": r["reason"]}
@@ -147,6 +154,38 @@ def spec_from_acquisition(ready, private, amendment, *, dataset_id):
                          "prior_exposure": "none_documented"},
             "provenance": {"preprocessing_sha256": canonical_hash(private["preprocessing"]),
                            "labels_sha256": canonical_hash(labels),
+                           "duplicates_sha256": canonical_hash(private["duplicates"]),
+                           "exclusions_sha256": canonical_hash(excluded)},
+            "source_sha256": canonical_hash(sources),
+            "seeds": deepcopy(amendment["seeds"]), "fractions": deepcopy(amendment["fractions"]),
+            "thresholds": deepcopy(amendment["thresholds"])}
+
+
+RSNA_PATIENT_GROUP = "nih-img-id-eight-digit-patient-prefix"
+
+
+def _rsna_spec(private, amendment, *, dataset_id):
+    """rsna2018 layout (acquisition/rsna2018.py): ``sources`` keyed by role, no union-find ``groups``.
+
+    The group is the NIH patient (eight-digit ``img_id`` prefix) read from the SHA256-pinned
+    mappings file, so identity is patient-level with that file + rule as linkage evidence;
+    pixel duplicates are excluded, never merged across patients.
+    """
+    sources, policy = private["acquisition"]["sources"], private["policy"]
+    excluded = [{"image": r["SOPInstanceUID"], "status": r["status"], "reason": r["reason"], "reasons": r["reasons"]}
+                for r in private["records"] if r["status"] != "included"]
+    return {"dataset": {"id": dataset_id, "version": private["preprocessing"]["id"]},
+            "task": {"type": "binary", "classes": [0, 1], "positive_class": 1, "endpoint": "binary_auroc",
+                     "decision_rule": "fixed_threshold", "missing_policy": "undefined_no_drop",
+                     "requires_patient_identity": True},
+            "grouping": {"namespace": f"{private['dataset']['name']} NIH patient (img_id eight-digit prefix)",
+                         "source": policy["group"], "identity_level": "patient", "linkage_status": "verified",
+                         "evidence_sha256": canonical_hash({"group": policy["group"], "mappings": sources["mappings"]}),
+                         "prior_exposure": "none_documented"},
+            "provenance": {"preprocessing_sha256": canonical_hash(private["preprocessing"]),
+                           "labels_sha256": canonical_hash({"annotations": sources["annotations"],
+                                                            **{k: policy[k] for k in ("label_group", "labels",
+                                                                                      "missing_label")}}),
                            "duplicates_sha256": canonical_hash(private["duplicates"]),
                            "exclusions_sha256": canonical_hash(excluded)},
             "source_sha256": canonical_hash(sources),
