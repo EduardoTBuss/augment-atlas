@@ -149,7 +149,7 @@ def _elapsed(seconds):
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
-def render_board(commit, records, anchors, now):
+def render_board(commit, records, anchors, now, seed_requests=None):
     """Deterministic rendering; no filesystem, clock, fleet refs or private I/O."""
     if now.utcoffset() is None:
         raise ValueError("now must include a UTC offset")
@@ -247,6 +247,21 @@ def render_board(commit, records, anchors, now):
                      pending, len(active), eta])
     lines += _table(["Dataset", "Version", "Campaign", "Succeeded timed", "Median (hh:mm:ss)",
                      "Pending", "Active GPUs", "ETA (hh:mm:ss)"], rows)
+    lines += ["## Seed requests", ""]
+    request_rows = []
+    for request in seed_requests or []:
+        progress = request["progress"]
+        per_seed = "; ".join("{}: {}/50 ".format(seed, counts["succeeded"]) +
+                             ", ".join(f"{state}={count}" for state, count in counts["states"].items())
+                             for seed, counts in progress.get("by_seed", {}).items())
+        request_rows.append([request["request_id"], request["dataset"],
+                             ", ".join(map(str, request["seeds"])), request["node_id"], request["status"],
+                             "{}/{}".format(progress["succeeded"], progress["expected"]), per_seed,
+                             request.get("error") or request.get("detail") or ", ".join(request.get("actions", []))])
+    lines += _table(["Request", "Dataset", "Seeds", "Node", "Status", "Succeeded / expected",
+                     "Jobs per seed", "Detail"], request_rows)
+    if not request_rows:
+        lines += ["No seed requests supplied.", ""]
     return "\n".join(lines)
 
 
@@ -254,6 +269,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--queue-checkout", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--control-checkout", type=Path)
+    parser.add_argument("--node-cards", type=Path)
+    parser.add_argument("--state-dir", type=Path)
+    parser.add_argument("--stop-at", default="2026-11-12T00:00:00Z")
     parser.add_argument("--now", help="ISO 8601 UTC timestamp for deterministic output")
     args = parser.parse_args(argv)
     now = _time(args.now) if args.now else datetime.now(timezone.utc)
@@ -265,7 +284,14 @@ def main(argv=None):
         parser.error("--out must be outside --queue-checkout")
     try:
         commit, records, anchors = read_snapshot(checkout)
-        content = render_board(commit, records, anchors, now)
+        seed_requests = None
+        if args.control_checkout:
+            if not args.node_cards or not args.state_dir:
+                parser.error("--control-checkout requires --node-cards and --state-dir")
+            from .seed_requests import board_requests
+            seed_requests = board_requests(args.control_checkout, records, anchors, args.node_cards,
+                                           args.state_dir, now=now, stop_at=args.stop_at)
+        content = render_board(commit, records, anchors, now, seed_requests)
         output.write_text(content, encoding="utf-8", newline="\n")
     except (OSError, ValueError, QueueError, subprocess.SubprocessError) as error:
         parser.exit(1, f"queue board: {error}\n")

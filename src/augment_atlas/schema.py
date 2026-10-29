@@ -89,3 +89,39 @@ def validate_record(record):
         raise ValueError("latest history state differs from snapshot")
     canonical_json(record)
     return record
+
+
+def job_start_refusal(spec, now, node_id):
+    """Pure start gate for file-request jobs; callers supply the actual UTC clock.
+
+    A running container may finish after the deadline; every new start or resume
+    must pass this gate. Missing/invalid bindings fail closed.
+    """
+    binding = spec.get("seed_request")
+    if binding is None:
+        return None
+    from datetime import datetime, timezone
+    try:
+        required = {"request_id", "request_sha256", "node_id", "not_after_utc",
+                    "stage_sha256", "anchor_commit", "environment_sha256", "node_profile_sha256"}
+        if type(binding) is not dict or set(binding) != required:
+            return "invalid_seed_request"
+        for key in ("request_sha256", "stage_sha256", "environment_sha256", "node_profile_sha256"):
+            if not isinstance(binding[key], str) or not JOB_ID_RE.fullmatch(binding[key]):
+                return "invalid_seed_request"
+        if (spec.get("requirements", {}).get("allowed_nodes") != [binding["node_id"]]
+                or spec.get("environment_sha256") != binding["environment_sha256"]):
+            return "invalid_seed_request"
+        stamp = binding["not_after_utc"]
+        if not isinstance(stamp, str) or not stamp.endswith("Z"):
+            return "invalid_seed_request"
+        deadline = datetime.fromisoformat(stamp[:-1] + "+00:00")
+        if now is None or not isinstance(now, datetime) or now.utcoffset() is None:
+            return "start_time_unknown"
+        if now.astimezone(timezone.utc) >= deadline:
+            return "expired"
+        if node_id != binding["node_id"]:
+            return "node_not_allowed"
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return "invalid_seed_request"
+    return None

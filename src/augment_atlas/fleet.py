@@ -37,7 +37,7 @@ from datetime import datetime, timedelta, timezone
 import math
 
 from . import fleet_schema as fs
-from .schema import digest
+from .schema import digest, job_start_refusal
 
 #: In-memory marker of requirements derived from a pre-fleet spec. Never persisted:
 #: a stored ``spec.requirements`` carrying it is refused as invalid.
@@ -51,6 +51,9 @@ OK = "ok"
 #: Stable reason catalogue. Keys never change meaning; new ones may be added.
 REASONS = {
     OK: "all checks passed",
+    "expired": "seed request start deadline reached",
+    "start_time_unknown": "seed request requires the current UTC start time",
+    "invalid_seed_request": "seed request immutable binding is invalid",
     # -- step 1: queue state
     "not_pending": "record state is not pending",
     "dependency_not_succeeded": "a dependency is missing or not succeeded",
@@ -455,7 +458,7 @@ def order(cands):
 
 # ---------------------------------------------------------------------- explain
 
-def plan(records, profile, worker, *, latest=None, now=None, card=None, idle_since_mono=None):
+def plan(records, profile, worker, *, latest=None, now=None, card=None, idle_since_mono=None, now_utc=None):
     """Steps 0-5 for every record, read-only. ``profile=None`` = legacy mode
     (no node gates; only legacy jobs, decided exactly as ``compatible()``)."""
     records = list(records)
@@ -476,6 +479,8 @@ def plan(records, profile, worker, *, latest=None, now=None, card=None, idle_sin
         if record["state"] != "pending":
             checks.append(_check("state", "not_pending", record["state"]))
         else:
+            refusal = job_start_refusal(spec, now_utc, worker.get("node_id"))
+            checks.append(_check("seed_request_start", refusal or OK))
             deps = [dep for dep in spec.get("dependencies", []) if by_id.get(dep, {}).get("state") != "succeeded"]
             checks.append(_check("dependencies", OK if not deps else "dependency_not_succeeded", deps or None))
             if not profile_usable:
@@ -502,9 +507,9 @@ def _disk_reason(req, latest, profile):
                     "min_free_disk_bytes": req.get("min_free_disk_bytes") or 0}
 
 
-def explain(records, profile, worker, *, latest=None, now=None, card=None, idle_since_mono=None, job_id=None):
+def explain(records, profile, worker, *, latest=None, now=None, card=None, idle_since_mono=None, job_id=None, now_utc=None):
     """``atlas fleet explain``: ``plan`` restricted to one job if ``job_id`` is given."""
-    report = plan(records, profile, worker, latest=latest, now=now, card=card, idle_since_mono=idle_since_mono)
+    report = plan(records, profile, worker, latest=latest, now=now, card=card, idle_since_mono=idle_since_mono, now_utc=now_utc)
     if job_id is not None:
         report["jobs"] = [job for job in report["jobs"] if job["job_id"] == job_id]
         report["order"] = [item for item in report["order"] if item == job_id]
