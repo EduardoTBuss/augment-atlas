@@ -22,6 +22,7 @@ import time
 import uuid
 import zipfile
 
+from .schema import job_start_refusal
 from .storage import atomic_json, digest
 from .queue import GitQueue, QueueError, QueueConflict, StaleAttempt
 from .telemetry import append_sample
@@ -632,8 +633,14 @@ class DockerRuntime:
         """HPO jobs: image + probe must reproduce plan.runtime.environment_sha256 (Q6); worker calls it before claim and create."""
         from . import global_hpo
         global_hpo.audit_worker_environment(self,spec)
+        if spec.get('seed_request'):
+            expected = spec['seed_request']['environment_sha256']
+            if global_hpo.environment_sha256(self.image, self.environment) != expected:
+                raise ValueError('seed_request_environment_mismatch')
 
     def compatible(self,spec):
+        if job_start_refusal(spec, dt.datetime.now(dt.timezone.utc), self.s.get('server')):
+            return False
         c=spec.get('compatibility',{})
         return (spec['phase']==self.s['phase'] and spec['code_commit']==self.commit
                 and spec.get('dataset') in self.s.get('datasets',[])
@@ -641,7 +648,13 @@ class DockerRuntime:
                 and c.get('image_id',self.image)==self.image
                 and c.get('gpu_uuid',self.gpu_uuid)==self.gpu_uuid)
 
+    def check_start(self,spec):
+        refusal = job_start_refusal(spec, dt.datetime.now(dt.timezone.utc), self.s.get("server"))
+        if refusal:
+            raise ValueError("seed_request_start_refused: " + refusal)
+
     def create(self,name,spec,out,resume=False):
+        self.check_start(spec)
         isa=cpu_isa_env(self.s) # fail closed before any validation or Docker call
         mount=None
         if is_global_spec(spec):
@@ -1320,6 +1333,7 @@ def worker(settings,once=False):
                     if record['state']!='running':raise RuntimeError('Unconfirmed resume remains stopped')
                     if container is None:raise RuntimeError('Resume container disappeared')
                     if not container['State']['Running'] and container['State'].get('StartedAt')==local['prior_started_at']:
+                        runtime.check_start(record['spec'])
                         command(['docker','start',name])
                     local['stage']='launched'; atomic_json(active,local)
                     container=runtime.inspect(name)
@@ -1337,6 +1351,7 @@ def worker(settings,once=False):
                     except QueueConflict: raise
                     except QueueError: pass
                     local['record']=spool.record; atomic_json(active,local)
+                    runtime.check_start(record['spec'])
                     command(['docker','start',name])
                 last_progress=last_sample=0
                 stop_requested=False

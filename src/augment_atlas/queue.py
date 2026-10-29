@@ -16,7 +16,7 @@ import tempfile
 import threading
 import uuid
 
-from .schema import JOB_ID_RE, TERMINAL_STATES, canonical_json, digest, new_record, prepare_job, validate_record
+from .schema import JOB_ID_RE, TERMINAL_STATES, canonical_json, digest, new_record, prepare_job, validate_record, job_start_refusal
 from . import fleet as fleet_rules
 from . import fleet_schema
 
@@ -364,6 +364,9 @@ class GitQueue:
                 if current["attempt_id"] == attempt_id and current["token"] == token:
                     return current
                 if current["state"] != "pending" or any(records[dependency]["state"] != "succeeded" for dependency in current["spec"]["dependencies"]):
+                    return None
+                refusal = job_start_refusal(current["spec"], datetime.now(timezone.utc), owner.get("server"))
+                if refusal:
                     return None
                 event = {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"}
                 if fleet is not None:

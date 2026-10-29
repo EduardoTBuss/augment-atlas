@@ -53,3 +53,10 @@ Stale/unknown/future observations and claimed jobs add no capacity; running rema
 | synthetic-alpha | synthetic-alpha-v1 | campaign:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa | 2 | 00:20:00 | 4 | 2 | 00:40:00 estimate |
 | synthetic-beta | synthetic-beta-v1 | campaign:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb | 1 | 00:01:00 | 1 | 0 | unavailable estimate |
 | synthetic-tiny | synthetic-tiny-v1 | recipe:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff | 0 | unknown | 1 | 0 | unavailable estimate |
+
+## Seed requests
+
+| Request | Dataset | Seeds | Node | Status | Succeeded / expected | Jobs per seed | Detail |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+
+No seed requests supplied.
