@@ -1,0 +1,31 @@
+{
+  "dataset": {
+    "id": "isic2020",
+    "version": "isic2020-derived-512-v1"
+  },
+  "files": [
+    {
+      "path": "configs/global/isic2020/hpo/c00-s101.json",
+      "sha256": "d607e414c2bd72f5d0380b2fe38ecd036bd15c792ca1850c420f3dda2be7eecc"
+    },
+    {
+      "path": "configs/global/isic2020/hpo/c01-s101.json",
+      "sha256": "fe80daab30da2e8c8743f05d94b8bcb99ae39bdf7b2bb47621094fbd0fededdc"
+    },
+    {
+      "path": "configs/global/isic2020/hpo/c02-s101.json",
+      "sha256": "c0aed077b9d0f58d0ef1862f992ca3355873eec70906f90039d0e71fbb39a8a4"
+    },
+    {
+      "path": "configs/global/isic2020/hpo/c03-s101.json",
+      "sha256": "d5f5a065e814e3db5b6fcb0d564e5b7f583b9348d2a03eabbee353b2d1676dbb"
+    }
+  ],
+  "freeze_sha256": null,
+  "phase": "hpo",
+  "plan_sha256": "3f9ba41e117db411f8754abb5c2061fe386ecb63786453972271b663b23fc6ce",
+  "pools_sha256": "518eeebec87d1efd06da4e5b6848eaad780c7d84f6e84abd055833a7809a93bf",
+  "protocol": "global-configs-manifest-v1",
+  "schema_version": 1,
+  "sha256": "c1af8e72dcaccadf84197d42751c05e6ec45d2a65af2a58ef2f76dc058b9486d"
+}

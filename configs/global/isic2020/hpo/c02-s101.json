@@ -1,0 +1,88 @@
+{
+  "augmentation": {
+    "arm": "none",
+    "ops": []
+  },
+  "dataset": {
+    "adapter": "manifest_csv",
+    "id": "isic2020",
+    "manifest": "manifest/manifest.csv",
+    "manifest_sha256": "8c5042f3c3c6b48966e1f48847a793b87dcd046d742f8dced425a36e3a09e10a",
+    "require_image_hashes": true,
+    "version": "isic2020-derived-512-v1"
+  },
+  "evaluation": {
+    "classes": [
+      0,
+      1
+    ],
+    "decision": {
+      "comparison": "ge",
+      "rule": "fixed_threshold",
+      "threshold": 0.5,
+      "tie_break": null
+    },
+    "endpoint": "binary_auroc",
+    "frozen": true,
+    "positive_class": 1,
+    "schema_version": 1,
+    "score_kind": "softmax_probability",
+    "task": "binary"
+  },
+  "global": {
+    "candidate_config_sha256": "fd3be92bff16236d8147a009092429f762ee90c127e32285b115fd4ac933046d",
+    "candidate_id": "c02",
+    "fold": null,
+    "freeze_file": null,
+    "freeze_kind": null,
+    "freeze_sha256": null,
+    "hpo_view_file": "global/isic2020/hpo-view-c700a899a96658a4f010080aefac441604965d4eadd642df7b6600a69931d8dc.json",
+    "hpo_view_sha256": "c700a899a96658a4f010080aefac441604965d4eadd642df7b6600a69931d8dc",
+    "plan_sha256": "3f9ba41e117db411f8754abb5c2061fe386ecb63786453972271b663b23fc6ce",
+    "pools_file": "global/isic2020/pools-518eeebec87d1efd06da4e5b6848eaad780c7d84f6e84abd055833a7809a93bf.json",
+    "pools_sha256": "518eeebec87d1efd06da4e5b6848eaad780c7d84f6e84abd055833a7809a93bf",
+    "search_space_sha256": "0b142415540026439d12c64171f066c8e8b5aa256545104fcbaaec0ecc6bebf5",
+    "view": "hpo"
+  },
+  "input": {
+    "color": "rgb",
+    "size": 224
+  },
+  "model": {
+    "head": "softmax",
+    "init": "imagenet_fresh",
+    "name": "resnet50",
+    "num_outputs": 2,
+    "weights": "IMAGENET1K_V2",
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "phase": "hpo",
+  "protocol_version": "global-hpo-v1",
+  "schema_version": 1,
+  "scientific_status": "provisional",
+  "training": {
+    "accumulation_steps": 1,
+    "autocast": false,
+    "batch_size": 16,
+    "checkpoint_selection": "last_epoch",
+    "deterministic": true,
+    "device": "cuda",
+    "early_stopping": false,
+    "epochs": 20,
+    "loss": {
+      "name": "cross_entropy"
+    },
+    "optimizer": {
+      "lr": 0.0003,
+      "name": "adamw",
+      "weight_decay": 0.0001
+    },
+    "scheduler": {
+      "eta_min": 0.0,
+      "name": "cosine_per_epoch"
+    },
+    "seed": 101,
+    "tf32": false,
+    "workers": 2
+  }
+}
