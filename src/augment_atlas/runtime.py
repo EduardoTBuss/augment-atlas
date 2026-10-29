@@ -208,8 +208,10 @@ def _global_config_bytes(code,spec):
     if phase not in GLOBAL_RUNTIME_PHASES or not isinstance(dataset,str):
         _global_fail('global_config_invalid','global jobs require phase hpo|final and a dataset id')
     directory=gj.config_dir(dataset,phase)
-    if (not isinstance(name,str) or not name.startswith(directory+'/') or '/' in name[len(directory)+1:]
-            or not name.endswith('.json') or name.endswith('/MANIFEST.json')):
+    relative = name[len(directory)+1:] if isinstance(name,str) and name.startswith(directory+'/') else ''
+    valid_name = bool(re.fullmatch(r'(?:stage-(?:[2-9]|[1-9][0-9]+)/)?[^/]+[.]json', relative))
+    if (not valid_name or (phase != 'final' and '/' in relative)
+            or name.endswith('/MANIFEST.json')):
         _global_fail('global_config_invalid',f'global job config must be a materialized file under {directory}/')
     code=Path(code).resolve()
     path=(code/name).resolve()
@@ -565,25 +567,45 @@ class DockerRuntime:
             self._campaign_audits=cached
         # Only the audited copy is used below (a host file edited later is never trusted).
         audit,campaign=cached[key]
-        if (spec.get('code_commit')!=campaign['runtime']['code_commit']
+        authorization = None
+        authorization_pin = self.s.get('stage_authorization_sha256')
+        if authorization_pin is not None:
+            from . import stage_authorization as sa
+            from . import global_hpo as gh
+            gc._hex64(authorization_pin, 'stage_authorization_sha256')
+            authorization = _read_host_json(self.data, gj._private_name('stage-authorization',dataset,authorization_pin),
+                                            'campaign_anchor_missing')
+            if authorization.get('sha256') != authorization_pin:
+                _global_fail('campaign_anchor_missing','stage document differs from worker pin')
+            sa.audit(authorization,campaign,code_repo=self.code)
+            sa.job_binding(spec,campaign,authorization)
+            if gh.environment_sha256(getattr(self,'image',None),getattr(self,'environment',None)) != campaign['runtime']['environment_sha256']:
+                _global_fail('code_identity_mismatch','stage probe/environment differs from original campaign')
+            self._stage_claim_context = (campaign,authorization,self.code)
+        required_commit = (authorization['execution_code_commit'] if authorization is not None
+                           and spec.get('train_seed') in authorization['seeds'] else campaign['runtime']['code_commit'])
+        if (spec.get('code_commit')!=required_commit
                 or getattr(self,'commit',None)!=spec.get('code_commit')):
             _global_fail('code_identity_mismatch','final job/checkout commit differs from the sealed campaign code_commit')
         if getattr(self,'image',None)!=campaign['runtime']['image_id']:
             _global_fail('code_identity_mismatch','worker image differs from the image pinned by the campaign')
-        if cfg['training']['seed'] not in audit['authorized_seeds']:
+        allowed_seeds = audit['authorized_seeds'] + ([] if authorization is None else authorization['seeds'])
+        if cfg['training']['seed'] not in allowed_seeds:
             _global_fail('campaign_invalid','final seed is not in the stage authorized by the campaign')
         queue=self.campaign_queue()
         head=queue._fetch_head()
         reports=getattr(self,'_chronology',{})
-        if (pin,head) not in reports:
-            # Recomputed whenever the queue HEAD moves; cached only for one HEAD.
-            reports={(pin,head):gc.audit_chronology(queue,campaign,freeze=freeze,head=head,
-                                                    recorded_campaign_commit=self.s['campaign_commit'])}
+        chronology_key = (pin,head) if authorization is None else (pin,authorization['sha256'],head)
+        if chronology_key not in reports:
+            # Recomputed whenever the queue HEAD or authorization pin moves.
+            reports={chronology_key:gc.audit_chronology(queue,campaign,freeze=freeze,head=head,
+                                                    recorded_campaign_commit=self.s['campaign_commit'],
+                                                    stage_authorization=authorization,code_repo=self.code)}
             self._chronology=reports
         job_id=spec.get('job_id')
         if not isinstance(job_id,str) or not re.fullmatch(r'[0-9a-f]{64}',job_id) or queue.read_path(head,f'jobs/{job_id}.md') is None:
             _global_fail('campaign_anchor_missing','final job is not in the audited queue HEAD')
-        return reports[(pin,head)]
+        return reports[chronology_key]
 
     def config_for(self,spec):
         if is_global_spec(spec):
@@ -1281,6 +1303,10 @@ def worker(settings,once=False):
                     record=local['record']; out=Path(local['output']); name=local['container']
                     if record['spec']['code_commit']!=runtime.commit or local['image']!=runtime.image:
                         raise RuntimeError('Active attempt code/image differs; restore original environment')
+                    if record['spec'].get('phase') == 'final' and (settings.get('stage_authorization_sha256')
+                            or '/stage-' in record['spec'].get('config','')):
+                        # Restart/resume must revalidate the supplement before touching its container.
+                        runtime.config_for(record['spec'])
                 else:
                     jobs=queue.list_jobs()
                     if any(j['state'] in ('claimed','running') and j.get('owner')==owner for j in jobs):
@@ -1290,7 +1316,8 @@ def worker(settings,once=False):
                         if candidate['state']!='pending' or not runtime.compatible(candidate['spec']): continue
                         runtime.config_for(candidate['spec']) # invalid inputs fail BEFORE claim
                         runtime.check_environment(candidate['spec']) # another image fails BEFORE claim
-                        record=queue.claim(candidate['job_id'],owner)
+                        claim_context = getattr(runtime,'_stage_claim_context',None)
+                        record=queue.claim(candidate['job_id'],owner,**({'stage_context':claim_context} if claim_context is not None else {}))
                         if record: break
                     if not record:
                         if once:return

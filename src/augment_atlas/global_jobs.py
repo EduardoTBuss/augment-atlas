@@ -763,7 +763,7 @@ def _write_exclusive(target, data):
         Path(temporary).unlink(missing_ok=True)
 
 
-def materialize_configs(phase, code_root, configs, *, pools_sha256, plan_sha256=None, freeze_sha256=None):
+def materialize_configs(phase, code_root, configs, *, pools_sha256, plan_sha256=None, freeze_sha256=None, stage=None):
     """Write ``configs`` under ``configs/global/<ds>/<phase>/`` plus MANIFEST.json.
 
     Deterministic: regenerating identical inputs produces identical bytes and
@@ -804,6 +804,10 @@ def materialize_configs(phase, code_root, configs, *, pools_sha256, plan_sha256=
         _invalid("all configs must belong to one dataset/version")
     (dataset_id, dataset_version), = datasets
     relative = config_dir(dataset_id, phase)
+    if stage is not None:
+        if phase != "final" or type(stage) is not int or stage < 2:
+            _invalid("a config supplement requires a later final stage")
+        relative += f"/stage-{stage}"
     target_dir = Path(code_root) / relative
     files = [{"path": f"{relative}/{name}", "sha256": _bytes_sha256(data)} for name, data in rendered.items()]
     manifest = _seal({"schema_version": 1, "protocol": MANIFEST_PROTOCOL, "phase": phase,
@@ -840,8 +844,12 @@ def _spec_common(cfg, config_path, config_sha256, code_commit):
     expected = (f"{config_dir(cfg['dataset']['id'], phase)}/"
                 + (f"{cfg['global']['candidate_id']}-s{cfg['training']['seed']}.json" if phase == "hpo" else
                    f"{cfg['augmentation']['arm']}-f{cfg['global']['fold']}-s{cfg['training']['seed']}.json"))
-    if config_path != expected:
-        _invalid(f"config path must be {expected}")
+    stage_path = False
+    if phase == "final" and isinstance(config_path, str):
+        directory, filename = expected.rsplit("/", 1)
+        stage_path = bool(re.fullmatch(re.escape(directory) + r"/stage-(?:[2-9]|[1-9][0-9]+)/" + re.escape(filename), config_path))
+    if config_path != expected and not stage_path:
+        _invalid(f"config path must be {expected} or its authorized stage directory")
     return {"protocol_version": cfg["protocol_version"], "dataset": cfg["dataset"]["id"],
             "dataset_version": cfg["dataset"]["version"], "phase": phase, "train_seed": cfg["training"]["seed"],
             "arm": cfg["augmentation"]["arm"], "code_commit": code_commit, "config": config_path,

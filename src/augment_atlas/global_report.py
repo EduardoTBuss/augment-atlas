@@ -547,7 +547,8 @@ def _matrix(cells, campaign):
 
 
 def build_report(campaign, collected_artifacts, pools, records, *, expected_campaign_sha256, freeze, dataset_source,
-                 augmentation_presets, evidence=None, chronology=None, output=None):
+                 augmentation_presets, evidence=None, chronology=None, output=None,
+                 stage_authorization=None, code_repo=None, scope="stage1"):
     """Private ``report.json`` of one sealed campaign (spec 6.10, Q5).
 
     ``collected_artifacts`` is a list of closed entries, one per final job:
@@ -561,7 +562,22 @@ def build_report(campaign, collected_artifacts, pools, records, *, expected_camp
     persists the report no-clobber.
     """
     gc.audit_campaign(records, pools, campaign, expected_campaign_sha256=expected_campaign_sha256, freeze=freeze,
-                      dataset_source=dataset_source, augmentation_presets=augmentation_presets, evidence=evidence)
+                      dataset_source=dataset_source, augmentation_presets=augmentation_presets, evidence=evidence,
+                      stage_authorization=stage_authorization, code_repo=code_repo)
+    if scope not in ("stage1", "all_authorized"):
+        _fail("report_invalid", "scope must be stage1 or all_authorized")
+    if scope == "stage1" and isinstance(chronology, dict):
+        chronology = chronology.get("stage1_chronology", chronology)
+    if scope == "all_authorized" and stage_authorization is not None:
+        # A reporting projection only; the sealed campaign above was audited intact.
+        campaign = deepcopy(campaign)
+        matrix = campaign["matrix"]
+        matrix["authorized_seeds"] += stage_authorization["seeds"]
+        matrix["authorized_cells"] = len(ARMS) * 5 * len(matrix["authorized_seeds"])
+        matrix["complete"] = matrix["authorized_seeds"] == campaign["seeds"]
+        for stage in campaign["execution_stages"]:
+            if stage["stage"] == stage_authorization["stage"]:
+                stage["status"] = "authorized_by_stage_authorization"
     kind = campaign["freeze"]["kind"]
     authorized = list(campaign["matrix"]["authorized_seeds"])
     configs = gj.build_final_configs(
@@ -590,6 +606,12 @@ def build_report(campaign, collected_artifacts, pools, records, *, expected_camp
                       for (arm, fold, seed), cell in sorted(cells.items(), key=lambda item: _cell_order(item[0]))
                       if cell["telemetry_summary"] is not None],
         "chronology": _chronology_block(chronology, campaign)}
+    if scope == "all_authorized":
+        report["scope"] = scope
+        report["stage_authorization"] = (None if stage_authorization is None else
+            {key: deepcopy(stage_authorization[key]) for key in
+             ("sha256", "stage", "seeds", "execution_code_commit", "configs_manifest", "decided_on",
+              "decided_after_primary_results", "rationale", "seed_interpretation")})
     report = _seal(report)
     _scan_identifiers(report, records, "report")
     _scan_reasons(report, records)
@@ -606,7 +628,8 @@ def _cell_order(key):
 
 def check_report(report):
     """Closed schema, checksum and fixed flags of a private report (``report_invalid``)."""
-    if type(report) is not dict or set(report) != _REPORT_KEYS:
+    expected_keys = _REPORT_KEYS | ({"scope", "stage_authorization"} if isinstance(report, dict) and report.get("scope") == "all_authorized" else set())
+    if type(report) is not dict or set(report) != expected_keys:
         _fail("report_invalid", f"report must have exactly the {REPORT_PROTOCOL} keys")
     try:
         body = canonical_hash({key: value for key, value in report.items() if key != "sha256"})
@@ -695,6 +718,12 @@ def public_summary(report):
         "paired_differences": [_public_aggregate(row) | {"arm": row["arm"], "reference": row["reference"]}
                                for row in report["paired_differences"]["summary"]],
         "pairing": {"status": report["pairing"]["status"]}}
+    if report.get("scope") == "all_authorized":
+        summary["scope"] = "all_authorized"
+        authorization = report["stage_authorization"]
+        summary["stage_authorization"] = (None if authorization is None else
+            {key: deepcopy(authorization[key]) for key in
+             ("sha256", "stage", "seeds", "execution_code_commit", "decided_on", "decided_after_primary_results")})
     return _seal(summary)
 
 
