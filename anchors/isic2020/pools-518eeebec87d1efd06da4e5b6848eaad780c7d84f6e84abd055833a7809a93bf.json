@@ -1,0 +1,19 @@
+{
+  "campaign_sha256": null,
+  "caveat": "Reembaralhar folds n\u00e3o remove vi\u00e9s se pacientes usados na sele\u00e7\u00e3o ca\u00edrem no teste (Bradshaw 2023, DOI 10.1148/ryai.220232); D fica fora de todos os testes.",
+  "code_commit": null,
+  "dataset": {
+    "id": "isic2020",
+    "version": "isic2020-derived-512-v1"
+  },
+  "document_sha256": "518eeebec87d1efd06da4e5b6848eaad780c7d84f6e84abd055833a7809a93bf",
+  "document_utc": "2026-10-29T00:38:04Z",
+  "freeze_sha256": null,
+  "kind": "pools",
+  "label": null,
+  "pools_sha256": "518eeebec87d1efd06da4e5b6848eaad780c7d84f6e84abd055833a7809a93bf",
+  "protocol": "global-anchor-v1",
+  "recipe_source": null,
+  "schema_version": 1,
+  "sha256": "db7241d8a018152a6a4d6b9d9809cb071ca6d0518af0cf2129e613f8d4e8b319"
+}
