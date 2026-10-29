@@ -1,0 +1,31 @@
+{
+  "dataset": {
+    "id": "rsna2018",
+    "version": "rsna2018-derived-512-v1"
+  },
+  "files": [
+    {
+      "path": "configs/global/rsna2018/hpo/c00-s101.json",
+      "sha256": "c46e76f579f11fd357a61f28f1cc9a68f1987ed44e8efa0f9efa75635ac1b7ab"
+    },
+    {
+      "path": "configs/global/rsna2018/hpo/c01-s101.json",
+      "sha256": "924523dd094526d61aaed93297cf68d23fe692c08c3bab345fcfc4ee24d3827e"
+    },
+    {
+      "path": "configs/global/rsna2018/hpo/c02-s101.json",
+      "sha256": "201c6a1e773824f7b0fb3e46e8531039f8e9dddd3eeec590c021c20481c5d3c1"
+    },
+    {
+      "path": "configs/global/rsna2018/hpo/c03-s101.json",
+      "sha256": "1f7e98c3177c6cbdf0816bfdcaab7da9c121f520c2b6922f176aadc73709327a"
+    }
+  ],
+  "freeze_sha256": null,
+  "phase": "hpo",
+  "plan_sha256": "42118088286f2bd25da7091f62540ed9442ce2b630b61cbc5ad1c43ff6f5cc94",
+  "pools_sha256": "72d332b60d1b39276d203a5f3db9782593f412b2c5a0a598f6f4a58ae5e22151",
+  "protocol": "global-configs-manifest-v1",
+  "schema_version": 1,
+  "sha256": "987e4110583e646b130f1b6b24f1b5be97a21b915786a06df6916cdb8f692479"
+}
