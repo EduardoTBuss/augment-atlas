@@ -182,3 +182,100 @@ No Docker daemon, GPU, real worker, queue or dataset is used. Fixtures are creat
 inside the checkout and removed after tests. Windows uses Python and Git Bash;
 Linux uses the same Bash/stdlib paths. Live thermal response and real container
 checkpoint recovery remain operator validation tasks.
+
+## Queue board (read-only campaign view)
+
+Generate a board from committed public queue metadata, with Git and Python 3.11+
+stdlib only. The output must be outside the queue checkout:
+
+~~~bash
+PYTHONPATH=src python3 -m augment_atlas.queue_board \
+  --queue-checkout /srv/atlas-board/board-publisher.git \
+  --out /srv/atlas-board/BOARD.md
+# Optional deterministic clock:
+# --now 2026-10-29T12:00:00Z
+~~~
+
+The reader prefers `refs/remotes/origin/queue` (the last fetch), otherwise
+`refs/heads/queue`. It pins that commit and reads only regular `jobs/<hex64>.md`
+and `anchors/<dataset>/*.json` blobs from its tree. HEAD, dirty working files,
+configs, datasets, private runs and fleet heartbeat refs are not inputs.
+Heartbeats live in `refs/heads/fleet-hb/<node>/<worker>`; the board's stale flag
+is the age of the job observation, not fleet lease/liveness classification.
+Fetch the queue first when using the module independently. The module does not
+fetch, claim, retry, commit or modify queue files.
+
+Campaign identity is the explicit `spec.global.campaign_sha256`, or a unique
+campaign anchor matching dataset/version, pools and freeze/source. HPO without
+a campaign hash joins a unique `hpo_d` campaign for the same pools. Ambiguous
+or missing anchors retain a `freeze:`, `plan:` or legacy `recipe:` identity.
+These prefixes make inferred/fallback grouping visible. `claimed` remains
+separate from `running`. Completion means succeeded / all jobs in the row;
+failed/interrupted/cancelled jobs do not count as successes.
+
+The running table uses only the current attempt. Epoch and total are recovered
+independently from its latest progress fields (`epochs` or legacy
+`total_epochs`). Observation timestamps prefer `observed_at_utc`, including
+when publication was delayed. Age strictly greater than 30 minutes is `stale`;
+unknown and future observations are explicit and supply no ETA capacity.
+The latest 20 failure/interruption events include earlier attempts and retries,
+with escaped, single-line reasons truncated to 160 characters.
+
+ETA is labelled `estimate`: median elapsed time from the first running
+observation to success in each succeeded job's current attempt, multiplied by
+pending jobs, divided by unique active GPUs in that campaign. A GPU is identified
+by server + UUID (index fallback) on a running job whose observation is at most
+30 minutes old. The median spans phases in the campaign, and includes elapsed
+time across a manual resume. No timed successes or no active GPUs yields
+`unavailable estimate`; no pending jobs yields zero. Running remainder, claimed
+reservations and possible retries are excluded, so this is a pending-work
+estimate, not a promised completion time.
+
+### Enable the separate board publisher on a server
+
+Run exactly one publisher for the repository, in a supervised session/service.
+Use its own state directory, separate from every queue worker and training
+checkout. Configure `GIT_SSH` in the service environment to the existing SSH
+wrapper; no credential is embedded, copied or printed by this script.
+
+~~~bash
+# Run from the checked-out code version containing queue_board.py:
+bash scripts/campaign/publish_board.sh \
+  --repo git@github.com:OWNER/STATE-REPO.git \
+  --state-dir /srv/atlas-board \
+  --interval 900
+# For one publication, add --once.
+# Stop between publications (also polled each second during the interval):
+touch /srv/atlas-board/board.stop
+~~~
+
+The script creates a dedicated bare clone at
+`STATE_DIR/board-publisher.git`, fetches only queue and (if present) board,
+and generates `STATE_DIR/BOARD.md`. It constructs a tree containing only
+`BOARD.md`. The first board commit has no queue parent; later commits directly
+extend the remote board tip. The only push destination is `refs/heads/board`,
+without force. No local or remote queue commit is created. A non-fast-forward
+push or Git/network error exits 1; inspect and restart under the supervisor.
+No force push, merge, rebase or automatic queue recovery is used.
+
+`publisher.lock` is an exclusive local single-writer marker. An existing marker
+exits 2; after a crash verify the previous process has exited before removing
+it. For restart, remove the stop file deliberately and reuse the same state
+directory. A stop file present at startup exits 0 without Git work; a stop
+requested during publication takes effect before the next cycle. `--stop-file`
+overrides the default; interval defaults to 900 seconds (15 minutes).
+Restart verifies the dedicated clone is bare and its origin matches `--repo`.
+
+Offline checks, limited to the new module:
+
+~~~bash
+PYTHONPATH=src python3 -m unittest discover -s tests -p test_queue_board.py -v
+~~~
+
+The fixture models a synthetic committed queue branch and rejects Git commands
+outside its read allowlist. Publisher tests simulate Git calls, checking the
+board-only tree, direct parent, initial independent root, push rejection,
+single-writer lock, stop and restart, without creating branches/commits or
+accessing the network. `tests/fixtures/queue_board.md` is the stable golden;
+the repository-root `BOARD.md` is explicitly a synthetic example. Real SSH
+authentication and GitHub publication require a later server check.
