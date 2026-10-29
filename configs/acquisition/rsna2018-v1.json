@@ -69,5 +69,12 @@
       "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     ]
   },
-  "accepted_divergences": []
+  "accepted_divergences": [
+    {
+      "field": "counts.patients_included",
+      "observed": 12232,
+      "resolution": "Accepted 2026-10-29. All other expected counts matched (30,000 images; 29,684 labelled; 316 no-consensus; 3 pixel-duplicate groups / 6 images; 29,678 included). The documented 12,233 was an approximate pre-exclusion figure from the audit; excluding the 6 pixel-duplicate images removes one patient entirely, giving 12,232.",
+      "decided_by": "Eduardo (delegated to the coordinator on 2026-10-29: 'faça as melhores escolhas, como divergir se preciso')"
+    }
+  ]
 }
