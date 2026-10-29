@@ -1,0 +1,215 @@
+{
+  "dataset": {
+    "id": "rsna2018",
+    "version": "rsna2018-derived-512-v1"
+  },
+  "files": [
+    {
+      "path": "configs/global/rsna2018/final/basic-f0-s11.json",
+      "sha256": "62b2f66833fe48c5cebedd6e85cc67d37c805dbcf3501a1032db447b21f304b6"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic-f1-s11.json",
+      "sha256": "535cbc56a1e42f798d6096088528ebaff7451b51fc342e3bdb9fe52875906afb"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic-f2-s11.json",
+      "sha256": "e5007c01f8bc1e1c414afdbe1f2df7b653e828d13e2ec3e5fc817e668489034b"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic-f3-s11.json",
+      "sha256": "fb71f045e1da7f836927ab8de5c75e8a845e23936814943db20221e74ceec5e5"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic-f4-s11.json",
+      "sha256": "ab9d95d2bb1a4057c454750e8fe5e949671fe7fd80001a6ef8d667d97175eecd"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_heavy-f0-s11.json",
+      "sha256": "617f6f6589544e0c2abeb281bd25dbcd4ee909ab80be4eda66d20f58e6c46a0c"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_heavy-f1-s11.json",
+      "sha256": "7b417e72d8c44800c52fca522e25f2c150eb5b67d1ba2c3f13690770e7c97492"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_heavy-f2-s11.json",
+      "sha256": "f9a765af68f2c5378a855b291bcacfc0852f0c5336fb5895f42f8b001c98f8c8"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_heavy-f3-s11.json",
+      "sha256": "48ec905afa1fc6115af6ae7e311a007442e38c61092435ced49e7046e8b8ec41"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_heavy-f4-s11.json",
+      "sha256": "4b029dd9b89f1a575fd8107ac6541fc82b501a484f9a7aebf140d6660bdf840b"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_light-f0-s11.json",
+      "sha256": "281eb6561547e719f88a5950a1ec889d12a60aaea39b73122f88399dc80f5764"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_light-f1-s11.json",
+      "sha256": "c62f986905e94d6189219d697eb0da05a79a0f442a577f1769711ab3404fa199"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_light-f2-s11.json",
+      "sha256": "0a4b4a615e713a24fdddb45ba3a84e7556d594fecf8358ee5464a6b0d6693a11"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_light-f3-s11.json",
+      "sha256": "942b3e64aeb21f79bf34c3ef755bd3855d2c31f2a3744101a658cbcfeec86e3a"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_clahe_light-f4-s11.json",
+      "sha256": "26ef6f6d48c231e5e01f90530dab68f64d294fc784cb3f8aed9677d5651021e5"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_heavy-f0-s11.json",
+      "sha256": "1891c284b8f32ace0132fcfcecd7abeb448aabdbebeac5404813b8b7ecc6a264"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_heavy-f1-s11.json",
+      "sha256": "d41a84d628bdad35da4453a710d337d0276f3c259a42c1d799e6bd17d0ec3831"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_heavy-f2-s11.json",
+      "sha256": "d463dadf079522a9b46626d9034f23ba57c7d7052e4862f59d9b06f82bd6de86"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_heavy-f3-s11.json",
+      "sha256": "030537534e71680424e95c1b0ba235d370d50ae42172fea67bb9b48924d8c269"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_heavy-f4-s11.json",
+      "sha256": "9b8f32cb67d5eb73729a6cf1c4c51660a8ec67b4c6a23598b09013d3acf37784"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_light-f0-s11.json",
+      "sha256": "85d01f321e55eb623afe958fb6ca9bc17148600dae1b3976773f99b71457945f"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_light-f1-s11.json",
+      "sha256": "022643b0cb7ef282aba6bbca0d2795a545d0dafe988fbfff4aeaaa95b8b2387a"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_light-f2-s11.json",
+      "sha256": "805c626f4f1fd7677e30acf680e57b984ec1549f42a3cf828c0e5444652fb084"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_light-f3-s11.json",
+      "sha256": "544503a1ac4ab3063ab68330e07859b8737980dce7880704473f10aeb4f48211"
+    },
+    {
+      "path": "configs/global/rsna2018/final/basic_gamma_light-f4-s11.json",
+      "sha256": "880a6ed315b780f08c982411d64ee1d862c1b4b89131d54ea2c67d133fb4ca4e"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_heavy-f0-s11.json",
+      "sha256": "39d67a0738301da423b8105200efc173df90d6d0b3c809772216f8aff48c0297"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_heavy-f1-s11.json",
+      "sha256": "43dc538c5aa7c8567f78cdffffd45cc1fd0870eb6ad9f5faba20b61ee34be2f4"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_heavy-f2-s11.json",
+      "sha256": "96fc594afae5e43230da000315c6ba5d410cf075ded6a7d00b2a96fea6bdbdca"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_heavy-f3-s11.json",
+      "sha256": "4f0678bd78088ceb6614ae9547cbcef93a96b72278a958d4cc9e19f927407170"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_heavy-f4-s11.json",
+      "sha256": "9f9c1179cd54fb011428bf1cf04fa202844d5e3ae52a92c16a4cfcbcc1fa1558"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_light-f0-s11.json",
+      "sha256": "ea5037a13d9549b8626db13f3f181ee2eeb0bdbde69f57ab5bb8a0404dd40a63"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_light-f1-s11.json",
+      "sha256": "c63e4b2d5967661a4dfc6e0e9b655cc426d9811f8ee3afed78e9e7abad39156a"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_light-f2-s11.json",
+      "sha256": "355479376ae9b6c5ac072e14fa2f793e44f1bdecc49c8137331d51924d51202e"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_light-f3-s11.json",
+      "sha256": "14806822d4f8302f7016f97b19c9d97f5a1fa6b0c4c538fe217971ae98707237"
+    },
+    {
+      "path": "configs/global/rsna2018/final/clahe_light-f4-s11.json",
+      "sha256": "83570943725620faebb44994e9c048e261a15946f31293757c5368489f11b0f9"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_heavy-f0-s11.json",
+      "sha256": "1fbf4ebedce36babd4ac966016af2051fb6181de834674ea2c6400a23ea5d219"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_heavy-f1-s11.json",
+      "sha256": "9550b929e551bd735cff5e24fe97e0a104582515fb3d15a66eb80d847ebff5a0"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_heavy-f2-s11.json",
+      "sha256": "e2d6d567cda54a166cbb38b49c88ffbe8f36acd7e077e7488fcf6117fd9757ac"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_heavy-f3-s11.json",
+      "sha256": "024d8d2d552877623fd6cf81ce5e369f812ac3a2f006a6423b651faa71ac4fcf"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_heavy-f4-s11.json",
+      "sha256": "4f047a7f0d9ca27b707b0eef2dda3cc4e5de15fb424dbe1a548270d269790e5c"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_light-f0-s11.json",
+      "sha256": "972b11be4c579b1acb596b6b8eb61352dcb9f3e9b23eae4dd347e7fc6a22af11"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_light-f1-s11.json",
+      "sha256": "38fc59d8a7fcf8640917c77dac3a8e81c0454dabc120a7c3ec31256eb4b7261b"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_light-f2-s11.json",
+      "sha256": "6ad39aa5d5f1b65cf7cd05bf2bef2185b377560a5b50aff4832f417bdbe51026"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_light-f3-s11.json",
+      "sha256": "a1e13a5591ca3481035e54931443b9b53af307c8be06c84ca76a08fa1c6ce6f3"
+    },
+    {
+      "path": "configs/global/rsna2018/final/gamma_light-f4-s11.json",
+      "sha256": "de7aee7df46a3a5a1a0adae4975bf380539594ca4605d738df4ebb87164990f3"
+    },
+    {
+      "path": "configs/global/rsna2018/final/none-f0-s11.json",
+      "sha256": "e7f5b8ba5e9fe454e73d89ccbf3c3e0a8e31f36b4810c7f2c6a9a42bb1710b4b"
+    },
+    {
+      "path": "configs/global/rsna2018/final/none-f1-s11.json",
+      "sha256": "03cf4e06ac94b1ce6f4798ffb7481dcf79ff8d62bbc43a66db69fb5003a35392"
+    },
+    {
+      "path": "configs/global/rsna2018/final/none-f2-s11.json",
+      "sha256": "ca6d97bc6ef8e4ccf53dc334981f5965314d2b69666acb3b8e1768e2ff6e52f3"
+    },
+    {
+      "path": "configs/global/rsna2018/final/none-f3-s11.json",
+      "sha256": "7bf431f476b787edb125a884e8f90061b30f153bd4052293fffd61af49f45efd"
+    },
+    {
+      "path": "configs/global/rsna2018/final/none-f4-s11.json",
+      "sha256": "0841a8d3420f0f071f20752a7b793fa42262f2ca583b4aaedd48e0bbee925365"
+    }
+  ],
+  "freeze_sha256": "bb130dc00686c6c8c344f2a50169717ac059ef6eac6bcf443f6eeb0d416667e5",
+  "phase": "final",
+  "plan_sha256": null,
+  "pools_sha256": "72d332b60d1b39276d203a5f3db9782593f412b2c5a0a598f6f4a58ae5e22151",
+  "protocol": "global-configs-manifest-v1",
+  "schema_version": 1,
+  "sha256": "a679813b4e12c394586995431ebf9af0f091e0bbcc27dce3ed0a99faf0bfb498"
+}
