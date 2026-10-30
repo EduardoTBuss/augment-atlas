@@ -45,6 +45,7 @@ from . import global_jobs as gj
 from . import global_report as gr
 from . import global_splits as gs
 from . import stage_authorization as sa
+from . import stage_gates as gates
 from . import legacy_pools as lp
 from .contracts import ARMS, canonical_hash, file_hash
 from .data import load_records
@@ -661,7 +662,12 @@ def cmd_seal_freeze(args):
 
 
 def cmd_authorize_stage(args):
-    _, records, _, campaign, _, _, _ = _campaign(args)
+    source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
+    # R1-03: the stage-1 snapshot at the anchor parent must be the final primary state.
+    if not (args.remote and args.checkout):
+        _fail("cli_input_invalid", "authorize-stage needs --remote/--checkout to verify the complete stage-1 matrix")
+    gates.require_complete_stage1(_queue(args), gcol.expected_final_jobs(
+        campaign, records, pools, freeze=freeze, dataset_source=source, augmentation_presets=presets, evidence=evidence))
     probe = _read(args.environment_probe, "environment probe")
     environment_sha256 = gh.environment_sha256(args.image_id, probe)
     commit = args.execution_code_commit or _clean_head(args.code)
@@ -764,7 +770,7 @@ def cmd_anchor(args):
         args.campaign_sha256 = document["campaign_sha256"]
         _, records, pools, campaign, freeze, _, _ = _campaign(args)
         _check_environment(args, document["runtime"])
-        # Existing primary jobs are allowed; invalid chronology remains a blocker.
+        # Invalid chronology is a blocker; active primary jobs block publication (R1-02, StageGatedQueue).
         already_anchored = any(a["kind"] == "stage_authorization" and a["document_sha256"] == document["sha256"]
                                for a in _anchors(_queue(args), args.dataset))
         gc.audit_chronology(_queue(args), campaign, freeze=freeze,
@@ -777,7 +783,9 @@ def cmd_anchor(args):
         anchor = gc.build_anchor("campaign", document)
     if document["sha256"] != args.document_sha256:
         _fail("cli_input_invalid", "--document-sha256 does not name the audited document")
-    published = _queue(args).publish_anchor(anchor)
+    publisher = (gates.StageGatedQueue(args.checkout, args.remote, args.branch)
+                 if args.kind == "stage_authorization" else _queue(args))
+    published = publisher.publish_anchor(anchor)
     receipt = _receipt(args, args.kind, anchor, published)
     return _emit({"kind": args.kind, "document_sha256": anchor["document_sha256"], "path": published["path"],
                   "commit": published["commit"], "receipt_sha256": receipt["sha256"]}, records)
@@ -800,9 +808,9 @@ def cmd_seed_final(args):
                                         augmentation_presets=presets, evidence=evidence, stage_authorization=authorization,
                                          code_repo=Path(args.code).resolve(), scope="stage1" if authorization is None else "stage")
     specs = [item[5] for _, item in sorted(expected.items(), key=lambda pair: pair[1][:3])]
-    jobs = _queue(args).seed_final(specs, campaign["sha256"],
-        **({} if authorization is None else {"stage_authorization": authorization, "campaign": campaign,
-                                             "code_repo": Path(args.code).resolve()}))
+    # R1-01: the audited campaign always accompanies admission (its authorized seeds decide).
+    jobs = _queue(args).seed_final(specs, campaign["sha256"], campaign=campaign, code_repo=Path(args.code).resolve(),
+        **({} if authorization is None else {"stage_authorization": authorization}))
     return _emit({"campaign_sha256": campaign["sha256"], "jobs": len(jobs),
                   "authorized_seeds": campaign["matrix"]["authorized_seeds"] if authorization is None else authorization["seeds"]}, records)
 
@@ -1005,6 +1013,9 @@ def _parser():
             s.add_argument("--analysis-plan-sha256"); s.add_argument("--search-space-sha256")
     s = command("authorize-stage", cmd_authorize_stage, "seal sensitivity-stage authorization without changing campaign")
     code(s)
+    s.add_argument("--remote", help="queue remote: the complete, succeeded stage-1 matrix is verified (required)")
+    s.add_argument("--checkout", help="queue checkout (required with --remote)")
+    s.add_argument("--branch", default="queue")
     s.add_argument("--campaign-sha256", required=True)
     s.add_argument("--stage", type=int, required=True)
     s.add_argument("--cross-environment", action="store_true", help="declare a different probe environment; image remains pinned")

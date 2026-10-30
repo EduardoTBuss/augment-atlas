@@ -152,7 +152,9 @@ def build_anchor(kind, document, *, document_utc=None):
                   "document_utc": document_utc or document["sealed_at_utc"]}
     elif kind == "stage_authorization":
         from . import stage_authorization as sa
-        if set(document) != sa.KEYS or gj._seal(document) != document:
+        # Same closed schema as sa.audit: X6 optional keys are sealed into document_sha256.
+        optional = {key for key in ("cross_environment", "seed_request") if key in document}
+        if set(document) != sa.KEYS | optional or gj._seal(document) != document:
             _fail("anchor_invalid", "stage authorization must be sealed with the closed schema")
         fields = {"pools_sha256": document["pools_sha256"], "freeze_sha256": document["freeze"]["sha256"],
                   "campaign_sha256": document["campaign_sha256"], "code_commit": document["execution_code_commit"],

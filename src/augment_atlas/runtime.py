@@ -584,7 +584,8 @@ class DockerRuntime:
                                 else campaign['runtime'])
             if gh.environment_sha256(getattr(self,'image',None),getattr(self,'environment',None)) != expected_runtime['environment_sha256']:
                 _global_fail('code_identity_mismatch','stage probe/environment differs from its sealed authorization')
-            self._stage_claim_context = (campaign,authorization,self.code)
+        # R1-01: every final claim carries the audited campaign seeds, with or without a stage pin.
+        self._stage_claim_context = (campaign,authorization,self.code)
         required_commit = (authorization['execution_code_commit'] if authorization is not None
                            and spec.get('train_seed') in authorization['seeds'] else campaign['runtime']['code_commit'])
         if (spec.get('code_commit')!=required_commit
@@ -1318,9 +1319,8 @@ def worker(settings,once=False):
                     record=local['record']; out=Path(local['output']); name=local['container']
                     if record['spec']['code_commit']!=runtime.commit or local['image']!=runtime.image:
                         raise RuntimeError('Active attempt code/image differs; restore original environment')
-                    if record['spec'].get('phase') == 'final' and (settings.get('stage_authorization_sha256')
-                            or '/stage-' in record['spec'].get('config','')):
-                        # Restart/resume must revalidate the supplement before touching its container.
+                    if record['spec'].get('phase') == 'final' and is_global_spec(record['spec']):
+                        # Restart/resume revalidates campaign seeds/stage (never the path name) before the container.
                         runtime.config_for(record['spec'])
                 else:
                     jobs=queue.list_jobs()
