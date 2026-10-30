@@ -284,13 +284,17 @@ class StageCliTests(fixtures.CliCase):
         self.run_cli(env.base('anchor')+['--code',str(env.code),*env.queue_args(),'--kind','campaign',
                                        '--document-sha256',campaign['campaign_sha256']])
         self.run_cli(env.base('seed-final')+self.campaign_args(campaign))
+        # Precondition adapted to the R1 gates (stage 1 complete, queue supplied); assertions unchanged.
+        stage1 = GitQueue(env.checkout,env.remote)
+        for job in stage1.list_jobs():
+            self.finish(stage1,job,'succeeded',initial=fixtures.H(['initial',job['spec']['fold'],job['spec']['train_seed']]))
         report_args = env.base('report')+self.campaign_args(campaign)+['--runs',str(env.runs),'--host-validation','minimal']
         before = self.run_cli(report_args)
         materialize = env.base('materialize-final')+['--code',str(env.code),*self.freeze_args(freeze),
             '--campaign-sha256',campaign['campaign_sha256'],'--stage','2']
         self.assertEqual(self.run_cli(materialize)['configs'],100)
         fixtures.git(env.code,'add','-A'); fixtures.git(env.code,'commit','-qm','synthetic stage additions')
-        authorization = self.run_cli(env.base('authorize-stage')+['--code',str(env.code),
+        authorization = self.run_cli(env.base('authorize-stage')+['--code',str(env.code),*env.queue_args(),
             '--campaign-sha256',campaign['campaign_sha256'],'--stage','2','--image-id',fixtures.IMAGE,
             '--environment-probe',str(env.probe),'--decided-on','2026-10-29','--decided-after-primary-results','true',
             '--rationale','Eduardo decided after viewing primary INbreast results; declared sensitivity only.',
@@ -323,7 +327,8 @@ class StageCliTests(fixtures.CliCase):
         sensitivity = self.run_cli(report_args+pin+['--scope','all_authorized'])
         self.assertNotEqual(before['report_sha256'],sensitivity['report_sha256'])
         sensitivity_doc = json.loads(Path(sensitivity['path']).read_bytes())
-        self.assertEqual(sensitivity_doc['matrix']['succeeded_cells'],1)
+        # R1 gates require the complete stage 1 before authorization: 50 primary cells + 1 finished stage cell.
+        self.assertEqual(sensitivity_doc['matrix']['succeeded_cells'],51)
         self.assertEqual(gr.public_summary(sensitivity_doc)['scope'],'all_authorized')
 
 
@@ -354,12 +359,17 @@ class StageHpoCliTests(hpo_fixtures.HpoCase):
             '--sealed-at','2026-10-23T15:00:00Z','--search-space-sha256',self.space['search_space_sha256']])
         self.run_cli(env.base('anchor') + ['--code',str(env.code),*env.queue_args(),'--kind','campaign',
                                          '--document-sha256',campaign['campaign_sha256']])
+        # Precondition adapted to the R1 gates (stage 1 complete, queue supplied); assertions unchanged.
+        self.run_cli(env.base('seed-final') + self.campaign_args(campaign))
+        stage1 = GitQueue(env.checkout,env.remote)
+        for job in [j for j in stage1.list_jobs() if j['spec']['phase'] == 'final']:
+            self.finish(stage1,job,'succeeded',initial=fixtures.H(['initial',job['spec']['fold'],job['spec']['train_seed']]))
         primary = (env.code / gj.config_dir(fixtures.DATASET,'final') / 'MANIFEST.json').read_bytes()
         materialize = env.base('materialize-final') + ['--code',str(env.code),*freeze_args,
             '--campaign-sha256',campaign['campaign_sha256'],'--stage','2']
         self.run_cli(materialize)
         fixtures.git(env.code,'add','-A'); fixtures.git(env.code,'commit','-qm','synthetic HPO sensitivity configs')
-        authorized = self.run_cli(env.base('authorize-stage') + ['--code',str(env.code),
+        authorized = self.run_cli(env.base('authorize-stage') + ['--code',str(env.code),*env.queue_args(),
             '--campaign-sha256',campaign['campaign_sha256'],'--stage','2','--image-id',fixtures.IMAGE,
             '--environment-probe',str(env.probe),'--decided-on','2026-10-29','--decided-after-primary-results','true',
             '--rationale','Post-primary declared sensitivity; original HPO plan and freeze remain fixed.',

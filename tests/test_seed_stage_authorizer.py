@@ -121,7 +121,10 @@ class RealAuthorizerTests(unittest.TestCase):
         self.assertTrue(doc['cross_environment'])
         self.assertEqual(doc['runtime']['environment_sha256'], environment_sha256(fixtures.IMAGE, self.probe))
         self.assertNotEqual(doc['runtime']['environment_sha256'], self.campaign['runtime']['environment_sha256'])
-        job = self.fixture.queue.list_jobs()[0]
+        # Deterministic job choice (was list_jobs()[0], whose order follows job_id digests that include the
+        # per-run execution commit, so the chosen arm varied between runs). Assertions unchanged.
+        job = next(j for j in self.fixture.queue.list_jobs()
+                   if (j['spec']['arm'], j['spec']['fold'], j['spec']['train_seed']) == ('none', 0, 13))
         spec = job['spec']
         host = runtime.DockerRuntime(dict(code=str(self.env.code), data=str(self.env.data), phase='final', gpu='0',
             campaign_sha256=self.campaign['sha256'], campaign_commit=self.fixture.c_campaign,
@@ -201,7 +204,14 @@ class RealAuthorizerTests(unittest.TestCase):
         probe = self.base / 'other-probe.json'
         probe.write_text(json.dumps({'torch': 'declared-other', 'cuda': None}), encoding='utf-8')
         run_cli = stagefixture.StageAuthorizationTests.tc.run_cli
+        # Precondition adapted to the R1 gates (stage 1 complete, queue supplied); assertions unchanged.
+        queue = self.fixture.queue
+        primary = [v[5] for v in stagefixture.StageAuthorizationTests.primary_jobs.values()]
+        for job in queue.seed_final(primary, self.campaign['sha256'], campaign=self.campaign, code_repo=self.env.code):
+            stagefixture.StageAuthorizationTests.tc.finish(queue, job, 'succeeded',
+                initial=fixtures.H(['initial', job['spec']['fold'], job['spec']['train_seed']]))
         authorized = run_cli(self.env.base('authorize-stage') + ['--code', str(self.env.code),
+            '--remote', str(queue.remote), '--checkout', str(queue.checkout),
             '--campaign-sha256', self.campaign['sha256'], '--stage', '2', '--image-id', fixtures.IMAGE,
             '--environment-probe', str(probe), '--cross-environment', '--decided-on', '2026-10-29',
             '--decided-after-primary-results', 'false', '--rationale', 'time and budget only',
