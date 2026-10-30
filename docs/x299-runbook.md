@@ -567,3 +567,19 @@ continua obrigatória. Jobs inseridos antes da âncora invalidam a campanha.
 - Decisão tomada depois de ver resultados (caso INbreast): usar a rota manual
   `authorize-stage --decided-after-primary-results true`. A rota de pedidos de
   seeds (X5) continua recusando `decided_after_results: true`.
+
+**Limitações conhecidas após a re-revisão R2 (risco residual aceito para esta rodada):**
+
+- Os gates acima estão nas entradas de produção (CLI `authorize-stage`,
+  `anchor`, `seed-final` e claim/retomada do worker). As funções-base da
+  biblioteca (`GitQueue.publish_anchor`, `GitQueue.seed_final` e `claim` sem
+  campanha/contexto) continuam sem esses gates, porque testes já existentes
+  dependem desse comportamento. Não chamar essas funções diretamente na
+  operação.
+- A rota de pedidos de seeds (X5 / RealStageAuthorizer) não exige estágio 1
+  completo. Não usar essa rota para estágios de sensibilidade enquanto essa
+  exigência não existir; usar somente a rota manual `authorize-stage`.
+- Compensação operacional obrigatória, antes de publicar e depois de cada
+  `seed-final` de estágio: `audit-chronology` com `--stage-authorization-sha256`
+  e conferência de que a fila tem exatamente as células primárias `succeeded`
+  esperadas e exatamente as células do estágio autorizado, nenhuma outra.
