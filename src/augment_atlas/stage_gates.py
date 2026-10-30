@@ -7,11 +7,14 @@
   closed three-kind ``global-anchor-v1`` schema and stop at ``anchor_invalid``
   once a ``stage_authorization`` anchor exists. Such an anchor is therefore
   published only while no primary (stage-1) final job of ANY dataset or
-  campaign is pending, claimed, running or interrupted. Jobs of a later stage
+  campaign is pending, claimed, running or interrupted (except the explicitly
+  declared D9/A1 releases). Jobs of a later stage
   that is already anchored (same campaign and execution commit) do not block.
 * Completion (R1-03): ``authorize-stage`` requires every authorized stage-1
   cell of the campaign to exist and be ``succeeded`` (SAP item 5), so the
-  stage-1 snapshot at the parent of the authorization anchor is final.
+  stage-1 snapshot at the parent of the authorization anchor is final. A1's
+  explicit private timing declaration releases this requirement; its final
+  primary analysis uses stage1_current instead.
 """
 import json
 
@@ -48,16 +51,18 @@ def active_primary_jobs(queue, head, records=None):
                   and (record["spec"]["global"].get("campaign_sha256"), record["spec"].get("code_commit")) not in later)
 
 
-def refuse_active_primary(queue, head, records=None, *, released_campaign=None):
+def refuse_active_primary(queue, head, records=None, *, released_campaign=None, allow_own_primary=False):
     """Refuse while primary jobs are active. With ``released_campaign`` (declared release, D9), only primary
-    jobs of that campaign block; the released jobs of other campaigns are returned."""
+    jobs of that campaign block; the released jobs of other campaigns are returned.
+    A1's validated record additionally allows own primary jobs when D9 is declared."""
     active = active_primary_jobs(queue, head, records)
     if released_campaign is None:
         blocking, released = active, []
     else:
         records = queue._records(head) if records is None else records
         blocking = [job_id for job_id in active
-                    if records[job_id]["spec"]["global"].get("campaign_sha256") == released_campaign]
+                    if not allow_own_primary
+                    and records[job_id]["spec"]["global"].get("campaign_sha256") == released_campaign]
         released = [job_id for job_id in active if job_id not in blocking]
     if blocking:
         raise QueueConflict(
@@ -72,24 +77,30 @@ class StageGatedQueue(GitQueue):
 
     ``all_workers_upgraded`` (D9) is the operator's non-empty declaration that every worker reading the queue
     runs an orchestrator that understands stage_authorization anchors. It releases active primary jobs of OTHER
-    campaigns only; primary jobs of the campaign being authorized always block. ``released_primary_jobs`` is
+    campaigns only unless a validated A1 ``incomplete_stage1_record`` is supplied
+    for this exact authorization. ``released_primary_jobs`` is
     None until the gate runs (idempotent republication of an existing anchor never runs it)."""
 
-    def __init__(self, checkout, remote, branch="queue", max_retries=16, *, all_workers_upgraded=None):
+    def __init__(self, checkout, remote, branch="queue", max_retries=16, *, all_workers_upgraded=None,
+                 incomplete_stage1_record=None):
         if all_workers_upgraded is not None and (type(all_workers_upgraded) is not str
                                                  or not all_workers_upgraded.strip()):
             raise ValueError("cli_input_invalid: --declare-all-workers-upgraded needs a non-empty declaration")
         super().__init__(checkout, remote, branch, max_retries)
         self.all_workers_upgraded = all_workers_upgraded
+        self.incomplete_stage1_record = incomplete_stage1_record
         self.released_primary_jobs = None
         self.release_head = None
 
     def _check_anchor_preconditions(self, head, records, anchor):
         super()._check_anchor_preconditions(head, records, anchor)
         if anchor["kind"] == "stage_authorization":
+            if self.incomplete_stage1_record is not None:
+                from .stage_overlap import validate_record
+                validate_record(self.incomplete_stage1_record, anchor["campaign_sha256"], anchor["document_sha256"])
             released_campaign = anchor["campaign_sha256"] if self.all_workers_upgraded is not None else None
             self.released_primary_jobs = refuse_active_primary(self, head, records,
-                                                               released_campaign=released_campaign)
+                released_campaign=released_campaign, allow_own_primary=self.incomplete_stage1_record is not None)
             self.release_head = head
 
 

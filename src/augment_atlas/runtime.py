@@ -585,7 +585,8 @@ class DockerRuntime:
             if gh.environment_sha256(getattr(self,'image',None),getattr(self,'environment',None)) != expected_runtime['environment_sha256']:
                 _global_fail('code_identity_mismatch','stage probe/environment differs from its sealed authorization')
         # R1-01: every final claim carries the audited campaign seeds, with or without a stage pin.
-        self._stage_claim_context = (campaign,authorization,self.code)
+        from .stage_overlap import ClaimContext
+        self._stage_claim_context = ClaimContext(campaign,authorization,self.code,self.data)
         required_commit = (authorization['execution_code_commit'] if authorization is not None
                            and spec.get('train_seed') in authorization['seeds'] else campaign['runtime']['code_commit'])
         if (spec.get('code_commit')!=required_commit
@@ -604,7 +605,8 @@ class DockerRuntime:
             # Recomputed whenever the queue HEAD or authorization pin moves.
             reports={chronology_key:gc.audit_chronology(queue,campaign,freeze=freeze,head=head,
                                                     recorded_campaign_commit=self.s['campaign_commit'],
-                                                    stage_authorization=authorization,code_repo=self.code)}
+                                                    stage_authorization=authorization,code_repo=self.code,
+                                                    authorization_root=self.data)}
             self._chronology=reports
         job_id=spec.get('job_id')
         if not isinstance(job_id,str) or not re.fullmatch(r'[0-9a-f]{64}',job_id) or queue.read_path(head,f'jobs/{job_id}.md') is None:

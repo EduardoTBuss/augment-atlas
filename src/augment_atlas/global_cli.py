@@ -46,6 +46,7 @@ from . import global_report as gr
 from . import global_splits as gs
 from . import stage_authorization as sa
 from . import stage_gates as gates
+from . import stage_overlap as overlap
 from . import legacy_pools as lp
 from .contracts import ARMS, canonical_hash, file_hash
 from .data import load_records
@@ -662,12 +663,14 @@ def cmd_seal_freeze(args):
 
 
 def cmd_authorize_stage(args):
+    amendment = overlap.declaration(getattr(args, "allow_incomplete_stage1", None))
     source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
-    # R1-03: the stage-1 snapshot at the anchor parent must be the final primary state.
+    # R1-03 remains the default; A1 records an explicit private timing exception.
     if not (args.remote and args.checkout):
         _fail("cli_input_invalid", "authorize-stage needs --remote/--checkout to verify the complete stage-1 matrix")
-    gates.require_complete_stage1(_queue(args), gcol.expected_final_jobs(
-        campaign, records, pools, freeze=freeze, dataset_source=source, augmentation_presets=presets, evidence=evidence))
+    if amendment is None:
+        gates.require_complete_stage1(_queue(args), gcol.expected_final_jobs(
+            campaign, records, pools, freeze=freeze, dataset_source=source, augmentation_presets=presets, evidence=evidence))
     probe = _read(args.environment_probe, "environment probe")
     environment_sha256 = gh.environment_sha256(args.image_id, probe)
     commit = args.execution_code_commit or _clean_head(args.code)
@@ -677,9 +680,10 @@ def cmd_authorize_stage(args):
         decided_after_primary_results=args.decided_after_primary_results == "true", rationale=args.rationale,
         sealed_at_utc=_utc(args.sealed_at, "--sealed-at"))
     path = _private(args, "stage-authorization", document["sha256"])
+    timing = {} if amendment is None else overlap.publish_record(args.data_root, document, amendment)
     gd._publish(path, document, lambda value: sa.audit(value, campaign, code_repo=Path(args.code).resolve()))
     return _emit({"stage_authorization_sha256": document["sha256"], "path": str(path),
-                  "stage": document["stage"], "seeds": document["seeds"], "execution_code_commit": commit}, records)
+                  "stage": document["stage"], "seeds": document["seeds"], "execution_code_commit": commit, **timing}, records)
 
 
 def cmd_materialize_final(args):
@@ -738,6 +742,7 @@ def cmd_seal_campaign(args):
 
 
 def cmd_anchor(args):
+    timing = None
     declaration = getattr(args, "declare_all_workers_upgraded", None)
     if declaration is not None and (args.kind != "stage_authorization" or not declaration.strip()):
         _fail("cli_input_invalid", "--declare-all-workers-upgraded needs a non-empty declaration and "
@@ -779,7 +784,8 @@ def cmd_anchor(args):
                                for a in _anchors(_queue(args), args.dataset))
         gc.audit_chronology(_queue(args), campaign, freeze=freeze,
                             stage_authorization=document if already_anchored else None,
-                            code_repo=Path(args.code).resolve())
+                            code_repo=Path(args.code).resolve(), authorization_root=args.data_root)
+        timing = overlap.load_record(args.data_root, document)
         anchor = gc.build_anchor("stage_authorization", document)
     else:
         args.campaign_sha256 = args.document_sha256
@@ -787,7 +793,8 @@ def cmd_anchor(args):
         anchor = gc.build_anchor("campaign", document)
     if document["sha256"] != args.document_sha256:
         _fail("cli_input_invalid", "--document-sha256 does not name the audited document")
-    publisher = (gates.StageGatedQueue(args.checkout, args.remote, args.branch, all_workers_upgraded=declaration)
+    publisher = (gates.StageGatedQueue(args.checkout, args.remote, args.branch, all_workers_upgraded=declaration,
+                                      incomplete_stage1_record=timing)
                  if args.kind == "stage_authorization" else _queue(args))
     published = publisher.publish_anchor(anchor)
     receipt = _receipt(args, args.kind, anchor, published)
@@ -852,7 +859,8 @@ def cmd_audit_chronology(args):
     _, records, _, campaign, freeze, _, _ = _campaign(args)
     report = gc.audit_chronology(_queue(args), campaign, freeze=freeze,
                                  recorded_campaign_commit=_recorded_commit(args),
-                                 stage_authorization=_stage(args, campaign), code_repo=Path(args.code).resolve())
+                                 stage_authorization=_stage(args, campaign), code_repo=Path(args.code).resolve(),
+                                 authorization_root=args.data_root)
     return _emit(report, records)
 
 
@@ -863,9 +871,14 @@ def cmd_report(args):
     authorization = _stage(args, campaign)
     scope = getattr(args, "scope", "stage1")
     chronology = gc.audit_chronology(queue, campaign, freeze=freeze, recorded_campaign_commit=_recorded_commit(args),
-                                     stage_authorization=authorization, code_repo=Path(args.code).resolve())
+                                     stage_authorization=authorization, code_repo=Path(args.code).resolve(),
+                                     authorization_root=args.data_root)
+    if authorization is None and "stage_authorization_sha256" in chronology:
+        authorization = _document(args, "stage-authorization", chronology["stage_authorization_sha256"])
     snapshot = (list(queue._records(chronology["stage1_head"]).values())
-                if authorization is not None and scope == "stage1" else queue.list_jobs())
+                if authorization is not None and scope == "stage1"
+                else list(queue._records(chronology["head"]).values()) if scope == "stage1_current"
+                else queue.list_jobs())
     entries, manifest = gcol.collect_final_entries(campaign, snapshot, Path(args.runs).resolve(),
                                                    records=records, pools=pools, freeze=freeze,
                                                    dataset_source=source, augmentation_presets=presets,
@@ -1039,12 +1052,14 @@ def _parser():
             s.add_argument("--analysis-plan-sha256"); s.add_argument("--search-space-sha256")
     s = command("authorize-stage", cmd_authorize_stage, "seal sensitivity-stage authorization without changing campaign")
     code(s)
-    s.add_argument("--remote", help="queue remote: the complete, succeeded stage-1 matrix is verified (required)")
+    s.add_argument("--remote", help="queue remote (required); stage-1 completion is verified unless A1 is declared")
     s.add_argument("--checkout", help="queue checkout (required with --remote)")
     s.add_argument("--branch", default="queue")
     s.add_argument("--campaign-sha256", required=True)
     s.add_argument("--stage", type=int, required=True)
     s.add_argument("--cross-environment", action="store_true", help="declare a different probe environment; image remains pinned")
+    s.add_argument("--allow-incomplete-stage1", default=None, metavar="AMENDMENT_AND_REASON",
+                   help="A1: explicitly allow authorization before stage 1 finishes; records a private sealed declaration")
     s.add_argument("--execution-code-commit", help="existing full commit containing only the stage additions (default: clean HEAD)")
     s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
     s.add_argument("--decided-on", required=True, help="actual decision date YYYY-MM-DD, without a time")
@@ -1064,7 +1079,8 @@ def _parser():
     s.add_argument("--declare-all-workers-upgraded", dest="declare_all_workers_upgraded", default=None,
                    help="stage_authorization only (D9): operator declaration that every worker reading the queue "
                         "runs an orchestrator that understands stage_authorization anchors; releases active primary "
-                        "jobs of OTHER campaigns from the primary_workers_active gate")
+                        "jobs of OTHER campaigns (and own jobs with a sealed A1 timing declaration) "
+                        "from the primary_workers_active gate")
     for name, function, text in (("seed-final", cmd_seed_final, "seed the authorized final jobs"),
                                  ("audit-chronology", cmd_audit_chronology, "audit freeze -> campaign -> finals"),
                                  ("report", cmd_report, "collect finished final jobs and build the private report"),
@@ -1076,7 +1092,7 @@ def _parser():
         if name != "seed-final":
             s.add_argument("--recorded-commit", help="C_campaign recorded at sealing (default: the anchor receipt)")
         if name in ("report", "collect"):
-            s.add_argument("--scope", choices=["stage1", "all_authorized"], default="stage1")
+            s.add_argument("--scope", choices=["stage1", "stage1_current", "all_authorized"], default="stage1")
             s.add_argument("--runs", required=True)
             s.add_argument("--settings", help="worker settings: full nine-artifact validation (default mode)")
             s.add_argument("--host-validation", choices=["full", "minimal"], default="full",
