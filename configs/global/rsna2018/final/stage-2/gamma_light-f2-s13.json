@@ -1,0 +1,99 @@
+{
+  "augmentation": {
+    "arm": "gamma_light",
+    "backend": "candidate-opencv-v2",
+    "ops": [
+      {
+        "op": "gamma",
+        "p": 0.3,
+        "range": [
+          0.8,
+          1.2
+        ]
+      }
+    ],
+    "provenance": "Candidate v2 technical smoke, provisional parameters accepted for today only. Fixed-domain uint8 gamma; OpenCV fixed clip/grid CLAHE after resize. Basic preserves legacy flip/brightness/contrast only; no new geometry. Scientific final protocol remains subject to review."
+  },
+  "dataset": {
+    "adapter": "manifest_csv",
+    "id": "rsna2018",
+    "manifest": "manifest/manifest.csv",
+    "manifest_sha256": "2728728deb9f4ebac994e332d3e787c6fbef98a33c615192cb7c6434d294a92c",
+    "require_image_hashes": true,
+    "version": "rsna2018-derived-512-v1"
+  },
+  "evaluation": {
+    "classes": [
+      0,
+      1
+    ],
+    "decision": {
+      "comparison": "ge",
+      "rule": "fixed_threshold",
+      "threshold": 0.5,
+      "tie_break": null
+    },
+    "endpoint": "binary_auroc",
+    "frozen": true,
+    "positive_class": 1,
+    "schema_version": 1,
+    "score_kind": "softmax_probability",
+    "task": "binary"
+  },
+  "global": {
+    "candidate_config_sha256": null,
+    "candidate_id": null,
+    "fold": 2,
+    "freeze_file": "global/rsna2018/freeze-bb130dc00686c6c8c344f2a50169717ac059ef6eac6bcf443f6eeb0d416667e5.json",
+    "freeze_kind": "hpo_d",
+    "freeze_sha256": "bb130dc00686c6c8c344f2a50169717ac059ef6eac6bcf443f6eeb0d416667e5",
+    "hpo_view_file": null,
+    "hpo_view_sha256": null,
+    "plan_sha256": null,
+    "pools_file": "global/rsna2018/pools-72d332b60d1b39276d203a5f3db9782593f412b2c5a0a598f6f4a58ae5e22151.json",
+    "pools_sha256": "72d332b60d1b39276d203a5f3db9782593f412b2c5a0a598f6f4a58ae5e22151",
+    "search_space_sha256": null,
+    "view": "final"
+  },
+  "input": {
+    "color": "grayscale_to_rgb",
+    "size": 224
+  },
+  "model": {
+    "head": "softmax",
+    "init": "imagenet_fresh",
+    "name": "resnet50",
+    "num_outputs": 2,
+    "weights": "IMAGENET1K_V2",
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "phase": "final",
+  "protocol_version": "global-final-v1",
+  "schema_version": 1,
+  "scientific_status": "provisional",
+  "training": {
+    "accumulation_steps": 1,
+    "autocast": false,
+    "batch_size": 16,
+    "checkpoint_selection": "last_epoch",
+    "deterministic": true,
+    "device": "cuda",
+    "early_stopping": false,
+    "epochs": 20,
+    "loss": {
+      "name": "cross_entropy"
+    },
+    "optimizer": {
+      "lr": 3e-05,
+      "name": "adamw",
+      "weight_decay": 0.0001
+    },
+    "scheduler": {
+      "eta_min": 0.0,
+      "name": "cosine_per_epoch"
+    },
+    "seed": 13,
+    "tf32": false,
+    "workers": 2
+  }
+}
