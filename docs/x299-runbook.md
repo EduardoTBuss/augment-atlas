@@ -568,6 +568,19 @@ continua obrigatória. Jobs inseridos antes da âncora invalidam a campanha.
   `authorize-stage --decided-after-primary-results true`. A rota de pedidos de
   seeds (X5) continua recusando `decided_after_results: true`.
 
+**Liberação declarada do gate (D9, execução paralela de estágios em outro nó):**
+
+- `anchor --kind stage_authorization --declare-all-workers-upgraded "<texto>"` publica a
+  autorização de UMA campanha enquanto jobs primários de OUTRAS campanhas ainda estão ativos.
+  Jobs primários da própria campanha autorizada sempre bloqueiam, e o `authorize-stage`
+  continua exigindo o estágio 1 dela completo.
+- Antes de usar: todo worker que lê a fila precisa rodar um orquestrador que entenda a âncora
+  `stage_authorization`, incluindo drivers primários, relatórios e coletores. O operador confere
+  isso e escreve no texto da declaração quem foi reiniciado, em qual commit e quando.
+- A saída traz `warning.code = primary_workers_released`, com os jobs liberados. Um registro
+  selado (`primary-workers-release-<sha>.json`) fica no armazenamento privado do data root,
+  nunca na âncora pública. A rota de pedidos de seeds (X5) não tem essa liberação.
+
 **Limitações conhecidas após a re-revisão R2 (risco residual aceito para esta rodada):**
 
 - Os gates acima estão nas entradas de produção (CLI `authorize-stage`,
