@@ -1,8 +1,10 @@
 # Job 1e9fcfbb27fb5dcbf61765cf92c683254e03d5fe52f3e5e6dffe7cf0bbebc89b
 
-State: **claimed** | phase: final | fold: 0 | train seed: 13 | arm: basic
+State: **running** | phase: final | fold: 0 | train seed: 13 | arm: basic
 
-Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'server': 'qflex', 'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1'} | last observation UTC: 2026-10-30T21:32:42.321839+00:00 | sequence: 1
+Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-10-30T21:32:52.652635+00:00 | sequence: 2
+
+Epoch: 0/? | progress observed UTC: 2026-10-30T21:32:52.652635+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -21,6 +23,17 @@ Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'server': 'qflex', 'gpu': '0
       "seq": 1,
       "state": "claimed",
       "token": "5a3e00fd938247c292a18244fd3c84f0"
+    },
+    {
+      "at": "2026-10-30T21:32:56.817524+00:00",
+      "attempt_id": "2f89d52fc5fa45a2ae86714f88829e61",
+      "epoch": 0,
+      "event_id": "77a40611a5964888af62603f50ce79a3",
+      "kind": "update",
+      "observed_at_utc": "2026-10-30T21:32:52.652635+00:00",
+      "payload_hash": "39471403ab9b91dd6c679bc19f08a145aade5865166d758becf3d4e02b0d6ec4",
+      "seq": 2,
+      "state": "running"
     }
   ],
   "job_id": "1e9fcfbb27fb5dcbf61765cf92c683254e03d5fe52f3e5e6dffe7cf0bbebc89b",
@@ -30,7 +43,7 @@ Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'server': 'qflex', 'gpu': '0
     "server": "qflex"
   },
   "schema_version": 1,
-  "seq": 1,
+  "seq": 2,
   "spec": {
     "arm": "basic",
     "code_commit": "919cd245b965ac65de41dfcc13569db6e11c5639",
@@ -59,8 +72,8 @@ Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'server': 'qflex', 'gpu': '0
     "split_hash": "0ec448dcff34b542ca0a0c3f8666b405e5c1f3e99db19be29bc0a9392e8a83df",
     "train_seed": 13
   },
-  "state": "claimed",
+  "state": "running",
   "token": "5a3e00fd938247c292a18244fd3c84f0",
-  "version": 1
+  "version": 2
 }
 ```
