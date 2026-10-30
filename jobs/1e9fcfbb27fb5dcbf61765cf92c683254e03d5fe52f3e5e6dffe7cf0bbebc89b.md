@@ -1,10 +1,10 @@
 # Job 1e9fcfbb27fb5dcbf61765cf92c683254e03d5fe52f3e5e6dffe7cf0bbebc89b
 
-State: **running** | phase: final | fold: 0 | train seed: 13 | arm: basic
+State: **succeeded** | phase: final | fold: 0 | train seed: 13 | arm: basic
 
-Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-10-30T21:33:03.460674+00:00 | sequence: 3
+Attempt: 2f89d52fc5fa45a2ae86714f88829e61 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-10-30T21:34:01.487964+00:00 | sequence: 4
 
-Epoch: 0/? | progress observed UTC: 2026-10-30T21:32:52.652635+00:00
+Epoch: 20/20 | progress observed UTC: 2026-10-30T21:34:01.487964+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -44,6 +44,21 @@ Epoch: 0/? | progress observed UTC: 2026-10-30T21:32:52.652635+00:00
       "payload_hash": "19827d52c722adb895617f6d532b11633ece60b7619492afcc3fa82ac7743ead",
       "seq": 3,
       "state": "running"
+    },
+    {
+      "artifact_count": 9,
+      "at": "2026-10-30T21:34:05.654993+00:00",
+      "attempt_id": "2f89d52fc5fa45a2ae86714f88829e61",
+      "completed_sha256": "8967e4f9a1cb08a64e5a52ef1ff46c6532c5941f9704bacec6f5f430bedca817",
+      "epoch": 20,
+      "epochs": 20,
+      "event_id": "843f55600cf441f4a8ee6c0a89249694",
+      "kind": "update",
+      "observed_at_utc": "2026-10-30T21:34:01.487964+00:00",
+      "payload_hash": "2f7781c4ad9a0a261441557140eaf5f7f17077110e90ed430bb1e47284023386",
+      "samples_processed": 6500,
+      "seq": 4,
+      "state": "succeeded"
     }
   ],
   "job_id": "1e9fcfbb27fb5dcbf61765cf92c683254e03d5fe52f3e5e6dffe7cf0bbebc89b",
@@ -53,7 +68,7 @@ Epoch: 0/? | progress observed UTC: 2026-10-30T21:32:52.652635+00:00
     "server": "qflex"
   },
   "schema_version": 1,
-  "seq": 3,
+  "seq": 4,
   "spec": {
     "arm": "basic",
     "code_commit": "919cd245b965ac65de41dfcc13569db6e11c5639",
@@ -82,8 +97,8 @@ Epoch: 0/? | progress observed UTC: 2026-10-30T21:32:52.652635+00:00
     "split_hash": "0ec448dcff34b542ca0a0c3f8666b405e5c1f3e99db19be29bc0a9392e8a83df",
     "train_seed": 13
   },
-  "state": "running",
+  "state": "succeeded",
   "token": "5a3e00fd938247c292a18244fd3c84f0",
-  "version": 3
+  "version": 4
 }
 ```
