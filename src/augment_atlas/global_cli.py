@@ -738,6 +738,10 @@ def cmd_seal_campaign(args):
 
 
 def cmd_anchor(args):
+    declaration = getattr(args, "declare_all_workers_upgraded", None)
+    if declaration is not None and (args.kind != "stage_authorization" or not declaration.strip()):
+        _fail("cli_input_invalid", "--declare-all-workers-upgraded needs a non-empty declaration and "
+                                   "--kind stage_authorization")
     source, records, _, pools = _pools(args)
     if args.kind == "pools":
         if not args.expected_manifest:
@@ -783,12 +787,34 @@ def cmd_anchor(args):
         anchor = gc.build_anchor("campaign", document)
     if document["sha256"] != args.document_sha256:
         _fail("cli_input_invalid", "--document-sha256 does not name the audited document")
-    publisher = (gates.StageGatedQueue(args.checkout, args.remote, args.branch)
+    publisher = (gates.StageGatedQueue(args.checkout, args.remote, args.branch, all_workers_upgraded=declaration)
                  if args.kind == "stage_authorization" else _queue(args))
     published = publisher.publish_anchor(anchor)
     receipt = _receipt(args, args.kind, anchor, published)
-    return _emit({"kind": args.kind, "document_sha256": anchor["document_sha256"], "path": published["path"],
-                  "commit": published["commit"], "receipt_sha256": receipt["sha256"]}, records)
+    out = {"kind": args.kind, "document_sha256": anchor["document_sha256"], "path": published["path"],
+           "commit": published["commit"], "receipt_sha256": receipt["sha256"]}
+    if declaration is not None:
+        out["warning"] = _release_record(args, declaration, document, published, publisher)
+    return _emit(out, records)
+
+
+def _release_record(args, declaration, document, published, publisher):
+    """D9: private, sealed record of a declared release of the primary_workers_active gate (never public)."""
+    evaluated = publisher.released_primary_jobs is not None
+    warning = {"code": "primary_workers_released", "declaration": declaration, "gate_evaluated": evaluated,
+               "released_primary_jobs": list(publisher.released_primary_jobs or [])}
+    if not evaluated:
+        return warning
+    body = {"schema_version": 1, "kind": "primary-workers-release", "declaration": declaration,
+            "released_primary_jobs": warning["released_primary_jobs"], "campaign_sha256": document["campaign_sha256"],
+            "stage_authorization_sha256": document["sha256"], "anchor_commit": published["commit"],
+            "gate_head": publisher.release_head, "recorded_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    record = {**body, "sha256": canonical_hash(body)}
+    path = _private(args, "primary-workers-release", record["sha256"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(json.dumps(record, indent=2, sort_keys=True).encode("utf-8") + b"\n")
+    warning.update(record_path=str(path), record_sha256=record["sha256"])
+    return warning
 
 
 def cmd_seed_final(args):
@@ -1035,6 +1061,10 @@ def _parser():
                  "--runs", "--views-root", "--configs-commit", "--settings"):
         s.add_argument(name, help="hpo_d freeze anchors re-run the HPO collection (same arguments as collect-hpo)")
     s.add_argument("--host-validation", choices=["full", "minimal"], default="full")
+    s.add_argument("--declare-all-workers-upgraded", dest="declare_all_workers_upgraded", default=None,
+                   help="stage_authorization only (D9): operator declaration that every worker reading the queue "
+                        "runs an orchestrator that understands stage_authorization anchors; releases active primary "
+                        "jobs of OTHER campaigns from the primary_workers_active gate")
     for name, function, text in (("seed-final", cmd_seed_final, "seed the authorized final jobs"),
                                  ("audit-chronology", cmd_audit_chronology, "audit freeze -> campaign -> finals"),
                                  ("report", cmd_report, "collect finished final jobs and build the private report"),
