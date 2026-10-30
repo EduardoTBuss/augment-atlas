@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-10-30T14:02:12.109370Z
+Generated UTC: 2026-10-30T14:17:22.782638Z
 
-Queue commit: <code>607d13d23fb10c56ea8c9d7cbcc9218ffac174cf</code>
+Queue commit: <code>a7bebef2d82dd78e1df4a047233e843ce37da198</code>
 
 Total jobs: 231
 
@@ -36,8 +36,8 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 82b802060c72ad823a02d4bf635e93eabb49ab26952a47c92bd1288607fee38d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 1 | 11 | x299 | 1 | 13/20 | 2026-10-30T12:38:31.946907Z | 2026-10-30T13:59:03.348962Z | 00:03:09 |
-| 8379cfec258518feeb29f2fb15122d95da4da42c10a799042c14cb92312b38cc | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 3 | 11 | x299 | 0 | 11/20 | 2026-10-30T12:55:08.347581Z | 2026-10-30T14:00:35.565573Z | 00:01:37 |
+| 82b802060c72ad823a02d4bf635e93eabb49ab26952a47c92bd1288607fee38d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 1 | 11 | x299 | 1 | 16/20 | 2026-10-30T12:38:31.946907Z | 2026-10-30T14:14:07.260609Z | 00:03:16 |
+| 8379cfec258518feeb29f2fb15122d95da4da42c10a799042c14cb92312b38cc | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 3 | 11 | x299 | 0 | 13/20 | 2026-10-30T12:55:08.347581Z | 2026-10-30T14:15:38.615685Z | 00:01:45 |
 
 ## Recent failures / interruptions
 
