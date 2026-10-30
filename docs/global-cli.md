@@ -288,6 +288,42 @@ sealed_at_utc records the actual time the authorization document is sealed.
 It explains that SAP item 5's "training seed 1" means the first seed declared
 (11); the sealed SAP itself is unchanged.
 
+Decision provenance has two routes and is never defaulted. A decision taken
+after viewing primary results (the INbreast case) uses this manual route,
+`authorize-stage --decided-after-primary-results true`. The seed-request route
+(X5, [seed-requests.md](seed-requests.md)) keeps refusing
+`decided_after_results: true` (SAP item 5: time/budget only); its
+RealStageAuthorizer seals the request's own `decided_after_results` value as
+`decided_after_primary_results`.
+
+Gates added after review R1 (`stage_gates.py`):
+
+- `authorize-stage` takes the queue (`--remote/--checkout`) and refuses with
+  `stage1_incomplete` unless every authorized stage-1 cell of the campaign
+  (all arms x folds of seed 11) exists and is `succeeded` (SAP item 5). The
+  stage-1 snapshot at the parent of the authorization anchor is therefore the
+  final primary state.
+- Publish stage authorizations only after every primary worker has finished;
+  stage-2 workers must run the new orchestrator. Workers of the 835c70e lineage
+  validate anchors with the three-kind schema and stop at `anchor_invalid` once
+  a `stage_authorization` anchor exists. `anchor --kind stage_authorization`
+  and the RealStageAuthorizer refuse with `primary_workers_active: <job IDs>`
+  while any primary final job of ANY dataset or campaign on the shared queue
+  is pending, claimed, running or interrupted. The check runs on the exact HEAD
+  the anchor commit is built on. Jobs of an already anchored later stage (same
+  campaign and execution commit) do not block. Republishing an existing anchor
+  is a no-op and is not gated. Once any stage anchor exists, every worker on
+  that queue must run the new orchestrator. A primary retry or a primary
+  seed-final after that point is visible to older workers and stops them.
+- Stage eligibility is decided by seeds, never by the config path. With the
+  sealed campaign, `seed_final` admits only its `matrix.authorized_seeds`
+  (`campaign_invalid` otherwise; `seed-final` always passes the audited
+  campaign). The audited claim context carries the campaign even without a stage
+  pin. Restart/resume revalidates every global final job before touching its
+  container. The queue API without a campaign remains anchor-only (the anchor
+  carries no seeds); the chronology audit and the runtime gate then reject
+  unauthorized seeds before any claim by the orchestrator.
+
 Run the following for EACH campaign in its own original code checkout. The
 ORCHESTRATOR names the checkout containing C9b; its CLI package must be available in the operator/worker
 orchestrator environment; do not add orchestration changes to the campaign's
@@ -317,7 +353,8 @@ EXECUTION=$(git -C "$CODE" rev-parse HEAD)
 
 # Actual seal timestamp, distinct from the decision date.
 SEALED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-g authorize-stage --campaign-sha256 "$CAMPAIGN" --stage 2 \
+# Refused (stage1_incomplete) until all 50 stage-1 cells are succeeded.
+q authorize-stage --campaign-sha256 "$CAMPAIGN" --stage 2 \
   --execution-code-commit "$EXECUTION" --image-id "$IMAGE" --environment-probe "$PROBE" \
   --decided-on 2026-10-29 --decided-after-primary-results true \
   --rationale 'Eduardo decided on 2026-10-29 after viewing the INbreast primary results; seeds 13 and 19 are predeclared sensitivity only. Primary training seed is 11.' \
@@ -326,6 +363,7 @@ g authorize-stage --campaign-sha256 "$CAMPAIGN" --stage 2 \
 # Requested flow: authorization -> idempotent materialization -> anchor -> stage-only jobs.
 g materialize-final --freeze-sha256 "$FREEZE" --freeze-kind "$KIND" --stages '11;13,19' \
   --campaign-sha256 "$CAMPAIGN" --stage 2 --stage-authorization-sha256 "$AUTH"
+# Refused (primary_workers_active) while any primary job of the shared queue is not terminal.
 q anchor --kind stage_authorization --document-sha256 "$AUTH" \
   --image-id "$IMAGE" --environment-probe "$PROBE"
 q seed-final --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH"
@@ -356,8 +394,9 @@ the campaign invalid; timestamp guesses cannot repair Git ancestry.
 The default --scope stage1 uses the primary queue snapshot immediately
 before the authorization anchor, including its chronology HEAD. This preserves
 the existing report and collection bytes even after sensitivity jobs/claims
-change the queue. It also freezes the primary snapshot: subsequent primary
-retries are not silently incorporated into that primary report. The complete
+change the queue. Because authorize-stage requires the complete, succeeded
+stage-1 matrix, that snapshot is the final primary state; a primary retry after
+the anchor would not be incorporated (and would stop older workers). The complete
 current queue is still audited before selecting this snapshot. The separate
 --scope all_authorized report/collection includes all 150 authorized cells,
 uses current chronology, adds explicit sensitivity scope and authorization

@@ -382,7 +382,9 @@ class GitQueue:
                     from . import global_campaign as gc
                     from . import stage_authorization as sa
                     campaign, authorization, code_repo = stage_context
-                    sa.audit(authorization, campaign, code_repo=code_repo)
+                    if authorization is not None:
+                        sa.audit(authorization, campaign, code_repo=code_repo)
+                    # R1-01: seed eligibility comes from the audited campaign/authorization, not the path.
                     sa.job_binding(current["spec"], campaign, authorization)
                     gc.audit_chronology(self, campaign, head=head, stage_authorization=authorization, code_repo=code_repo)
                 event = {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"}
@@ -683,6 +685,10 @@ class GitQueue:
                                             "anchored campaign code_commit")
                     elif "/stage-" in spec.get("config", ""):
                         raise QueueConflict("campaign_invalid: stage jobs need an audited authorization")
+                    elif campaign is not None:
+                        # R1-01: with the sealed campaign, admission follows its authorized seeds.
+                        from .stage_gates import check_primary_job
+                        check_primary_job(spec, campaign, campaign_sha256)
                 records = self._records(head)
                 for spec in prepared:
                     old = records.get(spec["job_id"])

@@ -547,3 +547,23 @@ o contêiner. Collect/report recebem a autorização e --scope stage1
 (primária, snapshot anterior à âncora, bytes preservados) ou --scope
 all_authorized (sensibilidade separada, fila atual). A auditoria completa
 continua obrigatória. Jobs inseridos antes da âncora invalidam a campanha.
+
+**Ordem obrigatória após a revisão R1 (fila git compartilhada):**
+
+- Publicar autorizações de estágio somente depois que todo worker primário
+  terminou; os workers do estágio 2 precisam rodar o orquestrador novo. Os
+  workers da linhagem 835c70e rejeitam a fila (`anchor_invalid`) assim que
+  existe uma âncora `stage_authorization` e param no próximo claim.
+- `anchor --kind stage_authorization` e o RealStageAuthorizer recusam com
+  `primary_workers_active: <job IDs>` enquanto houver job final primário de
+  QUALQUER dataset ou campanha em pending, claimed, running ou interrupted.
+  Jobs de estágio 2 de uma autorização já ancorada não bloqueiam.
+- `authorize-stage` exige `--remote/--checkout` e recusa com
+  `stage1_incomplete` até que todas as células do estágio 1 (seed 11, todos os
+  braços x folds) estejam `succeeded` (item 5 do SAP).
+- Depois da primeira âncora de estágio, todo worker da fila deve usar o
+  orquestrador novo; retry ou seed-final primário depois disso também derruba
+  workers antigos.
+- Decisão tomada depois de ver resultados (caso INbreast): usar a rota manual
+  `authorize-stage --decided-after-primary-results true`. A rota de pedidos de
+  seeds (X5) continua recusando `decided_after_results: true`.

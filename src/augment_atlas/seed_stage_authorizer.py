@@ -15,6 +15,7 @@ from .fleet_schema import validate_requirements
 from .queue import GitQueue, anchor_path, validate_anchor
 from .schema import digest
 from .seed_requests import AuthorizedStage, _json, validate_request
+from .stage_gates import StageGatedQueue, refuse_active_primary
 
 
 class RealStageAuthorizer:
@@ -106,6 +107,7 @@ class RealStageAuthorizer:
             "hardware_class": node_card["hardware_class"], "allowed_nodes": [request["node_id"]]})
         binding = {"request": deepcopy(request), "environment": deepcopy(environment),
                    "requirements": requirements, "stop_at": stop_at}
+        queue = StageGatedQueue(queue_checkout, self.remote, self.branch)
         saved = self._request_path(request)
         if saved.exists():
             document = self._document(request)
@@ -113,11 +115,14 @@ class RealStageAuthorizer:
             if document["seed_request"] != binding or document["execution_code_commit"] != commit:
                 raise ValueError("durable stage environment/request/commit changed; do not reauthorize")
         else:
+            # R1-02: do not even seal while primary workers (older orchestrators) are active.
+            refuse_active_primary(queue, queue._fetch_head())
+            # Provenance comes from the request itself (no default); X5 refuses true upstream.
             document = sa.authorize_stage(campaign, stage=stage, execution_code_commit=commit,
                 code_repo=self.code_repo, image_id=environment["image_id"],
                 environment_sha256=environment["environment_sha256"],
                 cross_environment=request.get("cross_environment", False), seed_request=binding,
-                decided_on=request["requested_on"], decided_after_primary_results=False,
+                decided_on=request["requested_on"], decided_after_primary_results=request["decided_after_results"],
                 rationale=request.get("note", "Additional sensitivity seeds within the declared time/budget."),
                 sealed_at_utc=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
             # Persist before queue mutation; a lost anchor response reuses this exact seal.
@@ -125,7 +130,6 @@ class RealStageAuthorizer:
         private = self.data_root / gj._private_name("stage-authorization", request["dataset"], document["sha256"])
         gd._publish(private, document, lambda value: sa.audit(value, campaign, code_repo=self.code_repo))
         sa.materialize(campaign, stage, self.code_repo, authorization=document)
-        queue = GitQueue(queue_checkout, self.remote, self.branch)
         head = queue._fetch_head()
         anchored = queue.read_path(head, anchor_path(request["dataset"], "stage_authorization", document["sha256"]))
         gc.audit_chronology(queue, campaign, freeze=freeze, head=head,

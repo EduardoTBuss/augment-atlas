@@ -141,7 +141,8 @@ def authorize_stage(campaign, *, stage, execution_code_commit, code_repo, image_
         utc(seed_request["stop_at"])
         if (request["campaign_sha256"] != campaign["sha256"] or request["dataset"] != campaign["dataset"]["id"]
                 or request["seeds"] != seeds or request.get("cross_environment", False) != cross_environment
-                or request["requested_on"] != decided_on or decided_after_primary_results is not False
+                or request["requested_on"] != decided_on
+                or decided_after_primary_results is not request["decided_after_results"]
                 or type(environment) is not dict
                 or set(environment) != {"image_id", "probe", "environment_sha256", "node_profile_sha256"}
                 or type(environment["probe"]) is not dict or not environment["probe"]
