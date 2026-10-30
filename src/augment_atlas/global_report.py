@@ -564,8 +564,8 @@ def build_report(campaign, collected_artifacts, pools, records, *, expected_camp
     gc.audit_campaign(records, pools, campaign, expected_campaign_sha256=expected_campaign_sha256, freeze=freeze,
                       dataset_source=dataset_source, augmentation_presets=augmentation_presets, evidence=evidence,
                       stage_authorization=stage_authorization, code_repo=code_repo)
-    if scope not in ("stage1", "all_authorized"):
-        _fail("report_invalid", "scope must be stage1 or all_authorized")
+    if scope not in ("stage1", "stage1_current", "all_authorized"):
+        _fail("report_invalid", "scope must be stage1, stage1_current or all_authorized")
     if scope == "stage1" and isinstance(chronology, dict):
         chronology = chronology.get("stage1_chronology", chronology)
     if scope == "all_authorized" and stage_authorization is not None:
@@ -586,6 +586,9 @@ def build_report(campaign, collected_artifacts, pools, records, *, expected_camp
         augmentation_presets=augmentation_presets, seeds=authorized, evidence=evidence,
         expected_plan_sha256=campaign["freeze"]["plan_sha256"])
     cells = _validated_cells(campaign, collected_artifacts, records, pools, configs)
+    if scope == "stage1_current":
+        from .stage_overlap import require_current_report
+        require_current_report(campaign, cells, chronology)
     _check_e_coverage(cells, pools, authorized)
     per_seed = _per_seed(cells, authorized, records, campaign)
     eligibility = campaign["eligibility"]

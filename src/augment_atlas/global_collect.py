@@ -56,10 +56,10 @@ def expected_final_jobs(campaign, records, pools, *, freeze, dataset_source, aug
     gc.audit_campaign(records, pools, campaign, expected_campaign_sha256=campaign.get("sha256"), freeze=freeze,
                       dataset_source=dataset_source, augmentation_presets=augmentation_presets, evidence=evidence,
                       stage_authorization=stage_authorization, code_repo=code_repo)
-    if scope not in ("stage1", "all_authorized", "stage") or (scope == "stage" and stage_authorization is None):
+    if scope not in ("stage1", "stage1_current", "all_authorized", "stage") or (scope == "stage" and stage_authorization is None):
         _fail("campaign_invalid", "invalid authorized collection scope")
     seeds = list(campaign["matrix"]["authorized_seeds"])
-    if stage_authorization is not None and scope != "stage1":
+    if stage_authorization is not None and scope in ("all_authorized", "stage"):
         seeds = (seeds if scope == "all_authorized" else []) + stage_authorization["seeds"]
     block = campaign["freeze"]
     configs = gj.build_final_configs(
@@ -162,15 +162,22 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings, image_id
 def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools, freeze, dataset_source,
                           augmentation_presets, evidence=None, settings=None,
                           stage_authorization=None, code_repo=None, scope="stage1"):
-    """Return (entries for ``build_report``, private collection manifest)."""
+    """Return (entries for ``build_report``, private collection manifest).
+
+    ``stage1_current`` accepts the caller's current audited snapshot and requires
+    a final primary outcome for every cell; legacy ``stage1`` retains missing rows.
+    """
     all_expected = expected_final_jobs(campaign, records, pools, freeze=freeze, dataset_source=dataset_source,
                                        augmentation_presets=augmentation_presets, evidence=evidence,
                                        stage_authorization=stage_authorization, code_repo=code_repo,
                                        scope="all_authorized" if stage_authorization is not None else "stage1")
-    if scope not in ("stage1", "all_authorized"):
-        _fail("collection_invalid", "scope must be stage1 or all_authorized")
+    if scope not in ("stage1", "stage1_current", "all_authorized"):
+        _fail("collection_invalid", "scope must be stage1, stage1_current or all_authorized")
     expected = {key: value for key, value in all_expected.items()
                 if scope == "all_authorized" or value[2] in campaign["matrix"]["authorized_seeds"]}
+    if scope == "stage1_current":
+        from .stage_overlap import require_final_primary
+        require_final_primary(expected, queue_snapshot)
     by_id = {}
     for record in queue_snapshot:
         gh._guard("collection_invalid", validate_record, record)

@@ -296,7 +296,7 @@ after viewing primary results (the INbreast case) uses this manual route,
 RealStageAuthorizer seals the request's own `decided_after_results` value as
 `decided_after_primary_results`.
 
-Gates added after review R1 (`stage_gates.py`):
+Gates added after review R1 (`stage_gates.py`; the explicit A1 exception below supersedes the completion rule):
 
 - `authorize-stage` takes the queue (`--remote/--checkout`) and refuses with
   `stage1_incomplete` unless every authorized stage-1 cell of the campaign
@@ -387,7 +387,9 @@ Restart/resume uses the same settings, job/attempt and pinned checkout.
 A new seed-final call is idempotent and creates only stage-2 jobs, never seed 11.
 
 After authorization, pass its hash to chronology, collection and report.
-Without a supplied authorization, the original refusals remain in force.
+Primary workers can discover an anchored authorization in their private data root
+and audit it without an execution pin. This observation does not authorize them to
+execute later seeds. Explicit stage pins remain mandatory for sensitivity workers.
 A later-stage job created before or in the authorization anchor commit makes
 the campaign invalid; timestamp guesses cannot repair Git ancestry.
 
@@ -411,6 +413,82 @@ while SETTINGS.code continues to name the separate, clean EXECUTION checkout:
 
 Current calls take one later-stage authorization document; authorizing several
 later stages simultaneously is outside this C9b flow.
+
+### Parallel stage 1 and stage 2 (SAP amendment A1, 2026-10-30)
+
+[A1](analysis-plan-sap-v1-amendment-20261030.md) permits the predeclared later
+seeds to run while the same campaign's primary matrix is still incomplete.
+The default authorization still refuses with `stage1_incomplete`. The manual
+exception is `authorize-stage --allow-incomplete-stage1 "<amendment id and reason>"`.
+Empty text is refused. A sealed `stage1-overlap-<authorization-sha>.json` record
+in the private data root binds this declaration to the campaign and authorization;
+the public anchor and authorization schemas are unchanged. Preserve that record.
+
+After preparing the additive stage configs as above, follow this order:
+
+1. Between jobs, stop and restart the campaign's **seed-11 workers** using the
+   A1 orchestrator. Confirm every worker reading the shared queue is upgraded.
+   Older workers stop at the unknown `stage_authorization` anchor kind of their
+   own dataset. Keep the primary trainer checkout at `campaign.runtime.code_commit`,
+   without a stage execution pin. Its Git object store must contain the execution
+   commit, and its private data root must contain the anchored stage authorization
+   so the new orchestrator can audit it. Updating orchestration does not change
+   the pinned trainer tree or image.
+2. Seal and publish with **both explicit declarations**. The A1 flag goes on
+   authorization; the upgrade declaration goes on anchor publication. Use the
+   actual decision provenance and seal time. For a different node, declare
+   `--cross-environment` with that node's probe and the same image. Each later
+   stage runs entirely on that node.
+
+   ~~~bash
+   q authorize-stage --campaign-sha256 "$CAMPAIGN" --stage 2 \
+     --execution-code-commit "$EXECUTION" --image-id "$IMAGE" --environment-probe "$PROBE" \
+     --cross-environment --decided-on "$DECIDED_ON" \
+     --decided-after-primary-results "$AFTER_RESULTS" --rationale "$RATIONALE" \
+     --sealed-at "$SEALED_AT" --allow-incomplete-stage1 'SAP v1 amendment A1: predeclared sensitivity on another node while primary jobs finish'
+   # Set AUTH to the authorization hash printed above.
+   # Before publishing, make this private authorization and the execution Git
+   # objects available to the primary workers as described in step 1.
+   q anchor --kind stage_authorization --document-sha256 "$AUTH" \
+     --image-id "$IMAGE" --environment-probe "$PROBE" \
+     --declare-all-workers-upgraded "$UPGRADE_DECLARATION"
+   ~~~
+
+   The publication gate checks the private A1 record and the upgrade declaration
+   on the exact parent HEAD. Without both, active primary jobs of the same
+   campaign still block. D9 alone continues to release only other campaigns.
+   The private D9 release record lists every released job, including own primary
+   jobs released under A1. The seed-request route gains no A1 exception.
+3. Seed stage 2, then audit; start sensitivity workers with the authorization
+   pin and the clean execution checkout. Primary workers retain their original
+   commit and continue claiming seed 11 while the audited stage-2 jobs coexist.
+
+   ~~~bash
+   q seed-final --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH"
+   q audit-chronology --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH"
+   ~~~
+
+4. When every primary cell has a final outcome, collect and report with
+   `--scope stage1_current`. It selects only stage-1 seeds from the exact current
+   audited HEAD, including cells completed after authorization. Absent, pending,
+   claimed, running or interrupted primary cells cause `stage1_incomplete`;
+   failed/cancelled final outcomes remain explicit failures. The full chronology
+   audit includes the later jobs. The legacy `--scope stage1` still selects the
+   anchor-parent snapshot and preserves its bytes; under A1 that snapshot can
+   be partial and must not be used for the final primary analysis.
+5. Collect/report sensitivity separately with `--scope all_authorized`.
+
+~~~bash
+for scope in stage1_current all_authorized; do
+  q collect --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH" \
+    --scope "$scope" --runs "$RUNS" --settings "$SETTINGS"
+  q report --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH" \
+    --scope "$scope" --runs "$RUNS" --settings "$SETTINGS"
+done
+~~~
+
+The sealed SAP and `analysis_sap_v1.py` are unchanged. Seeds 13/19 remain
+sensitivity only and never enter the primary analysis.
 
 
 Seed requests can use the bundled RealStageAuthorizer; see [seed-requests.md](seed-requests.md).

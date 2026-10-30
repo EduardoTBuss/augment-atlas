@@ -563,7 +563,7 @@ def _stamp(value):
 
 
 def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=None, head=None,
-                     stage_authorization=None, code_repo=None):
+                     stage_authorization=None, code_repo=None, authorization_root=None):
     """Audit the order freeze -> campaign -> final jobs of ONE campaign on the ``queue`` branch (spec 7.2).
 
     ``queue`` is a ``GitQueue`` (local checkout + remote). Several campaigns
@@ -587,6 +587,8 @@ def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=N
     5. timestamp inversions are warnings (host clocks), never approval.
 
     Anchors give auditability, not proof: the flags stay false.
+    ``authorization_root`` lets a primary observer load and audit the private
+    supplement named by its campaign's public anchor, without an execution pin.
     """
     if type(campaign) is not dict or set(campaign) != _CAMPAIGN_KEYS:
         _fail("campaign_invalid", "campaign must have exactly the global-final-campaign-v1 keys")
@@ -653,6 +655,9 @@ def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=N
                         if anchor["kind"] == "campaign"}
     authorized = set(campaign["matrix"]["authorized_seeds"])
     idx_stage = None
+    if stage_authorization is None and authorization_root is not None:
+        from .stage_overlap import anchored_authorization
+        stage_authorization = anchored_authorization(anchors, campaign, authorization_root, code_repo)
     if stage_authorization is not None:
         from . import stage_authorization as sa
         sa.audit(stage_authorization, campaign, code_repo=code_repo)

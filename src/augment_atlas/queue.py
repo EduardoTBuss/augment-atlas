@@ -386,7 +386,8 @@ class GitQueue:
                         sa.audit(authorization, campaign, code_repo=code_repo)
                     # R1-01: seed eligibility comes from the audited campaign/authorization, not the path.
                     sa.job_binding(current["spec"], campaign, authorization)
-                    gc.audit_chronology(self, campaign, head=head, stage_authorization=authorization, code_repo=code_repo)
+                    gc.audit_chronology(self, campaign, head=head, stage_authorization=authorization, code_repo=code_repo,
+                                        authorization_root=getattr(stage_context, "data_root", None))
                 event = {"kind": "claim", "attempt_id": attempt_id, "token": token, "owner": copy.deepcopy(owner), "state": "claimed"}
                 if fleet is not None:
                     # The claim binds the node's plan to this immutable spec (F5, 3.3): refuse before writing.
