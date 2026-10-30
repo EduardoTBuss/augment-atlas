@@ -1,0 +1,112 @@
+{
+  "augmentation": {
+    "arm": "basic_gamma_light",
+    "backend": "candidate-opencv-v2",
+    "ops": [
+      {
+        "brightness": [
+          0.9,
+          1.1
+        ],
+        "contrast": [
+          0.9,
+          1.1
+        ],
+        "flip_p": 0.5,
+        "op": "basic",
+        "photometric_p": 0.8
+      },
+      {
+        "op": "gamma",
+        "p": 0.3,
+        "range": [
+          0.8,
+          1.2
+        ]
+      }
+    ],
+    "provenance": "Candidate v2 technical smoke, provisional parameters accepted for today only. Fixed-domain uint8 gamma; OpenCV fixed clip/grid CLAHE after resize. Basic preserves legacy flip/brightness/contrast only; no new geometry. Scientific final protocol remains subject to review."
+  },
+  "dataset": {
+    "adapter": "inbreast_csv",
+    "id": "inbreast",
+    "manifest": "atlas_scientific_v2/inbreast_images_hashed.csv",
+    "manifest_sha256": "90b7e97a8c2dfbb804b6b0dd486047ea406e86270f6b9b46e1fa90c55eede178",
+    "require_image_hashes": true,
+    "version": "legacy-proposal-v1-converted"
+  },
+  "evaluation": {
+    "classes": [
+      0,
+      1
+    ],
+    "decision": {
+      "comparison": "ge",
+      "rule": "fixed_threshold",
+      "threshold": 0.5,
+      "tie_break": null
+    },
+    "endpoint": "binary_auroc",
+    "frozen": true,
+    "positive_class": 1,
+    "schema_version": 1,
+    "score_kind": "softmax_probability",
+    "task": "binary"
+  },
+  "global": {
+    "candidate_config_sha256": null,
+    "candidate_id": null,
+    "fold": 1,
+    "freeze_file": "global/inbreast/external-freeze-1bed679a2e52315cdb3050c031e4f6ebd7f2deaf12ce705f19d0fbb29567c740.json",
+    "freeze_kind": "external_fixed",
+    "freeze_sha256": "1bed679a2e52315cdb3050c031e4f6ebd7f2deaf12ce705f19d0fbb29567c740",
+    "hpo_view_file": null,
+    "hpo_view_sha256": null,
+    "plan_sha256": null,
+    "pools_file": "global/inbreast/pools-d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f.json",
+    "pools_sha256": "d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f",
+    "search_space_sha256": null,
+    "view": "final"
+  },
+  "input": {
+    "color": "grayscale_to_rgb",
+    "size": 224
+  },
+  "model": {
+    "head": "softmax",
+    "init": "imagenet_fresh",
+    "name": "resnet50",
+    "num_outputs": 2,
+    "weights": "IMAGENET1K_V2",
+    "weights_sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca"
+  },
+  "phase": "final",
+  "protocol_version": "global-final-v1",
+  "schema_version": 1,
+  "scientific_status": "provisional",
+  "training": {
+    "accumulation_steps": 1,
+    "autocast": false,
+    "batch_size": 16,
+    "checkpoint_selection": "last_epoch",
+    "deterministic": true,
+    "device": "cuda",
+    "early_stopping": false,
+    "epochs": 20,
+    "loss": {
+      "name": "cross_entropy"
+    },
+    "optimizer": {
+      "lr": 0.0001,
+      "name": "adamw",
+      "weight_decay": 0.0001
+    },
+    "scheduler": {
+      "eta_min": 0.0,
+      "name": "cosine_per_epoch"
+    },
+    "seed": 19,
+    "tf32": false,
+    "workers": 2
+  }
+}

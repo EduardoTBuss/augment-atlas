@@ -1,0 +1,415 @@
+{
+  "dataset": {
+    "id": "inbreast",
+    "version": "legacy-proposal-v1-converted"
+  },
+  "files": [
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f0-s13.json",
+      "sha256": "e9807c1b937018caebd1b9a42aab9fce4761c8202ecdfd6781d46d7839a87392"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f0-s19.json",
+      "sha256": "b31f293b2a7bee0037706cf422430f2385fcc3fcbadac4c61ac4ece2a294090e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f1-s13.json",
+      "sha256": "c6ac84d1ce54d7f4c1278aa3dce4de6f26b17423d447832d2f2290046d9ffd9d"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f1-s19.json",
+      "sha256": "ea8c545182c323eaf63fee3e971723eff1ce8fd6c7fc7d48faabab82777304a9"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f2-s13.json",
+      "sha256": "4075c0601e98e6f9cea58cb88a89993a5add5ae3ec4be4c96456c3b2611268fa"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f2-s19.json",
+      "sha256": "9967815cb66fc1d958538ffee91127b62835109d61b726bda5daea4655b9a11e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f3-s13.json",
+      "sha256": "4f7bd85e385013fa74acc581e054ac0c69320a946accdf5cd0ed5d5027cbfc20"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f3-s19.json",
+      "sha256": "bd27e6fba13b36cfab029a9ee8fc00e6bc176bea2a43c227251cf7bd3375802f"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f4-s13.json",
+      "sha256": "f351436bbf7b7ca2f92d0140985d2c5a93b0410bef441bdea9f8f26893e2869f"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic-f4-s19.json",
+      "sha256": "60bafe3de542db75d42a74a14159036663d506fdfe78d54c7c8f824476b5fff1"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f0-s13.json",
+      "sha256": "62bf1e17688727d78e4a425f1e6e19655f9b6c02611f28170bab9e410c2d5b32"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f0-s19.json",
+      "sha256": "bfe6f8e83763401f74639502ef92c194374541511faa132735e8941de7000f82"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f1-s13.json",
+      "sha256": "e5975a3d026226a55655e3d380dcfd99cda8792c0681c2e0c3e75a070b6f9fea"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f1-s19.json",
+      "sha256": "b10f84abf0a8c75889720d7f4aba0f2255d26c2d872b077a88da7dfa6f41251e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f2-s13.json",
+      "sha256": "ef2aa9fa67484ca07713af245a2e9e1027a9deaacdbe2005a0e0d8d291b26d92"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f2-s19.json",
+      "sha256": "45d6b65c41a7466754858df41d04b6e730b3794674041362d6785b0f12396955"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f3-s13.json",
+      "sha256": "bfa5b34828114757835348bc268b2d65243629826717bd632a75a831c7dd1667"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f3-s19.json",
+      "sha256": "92ca89af81d8c04ffd325ff122337c574307181f5d8e96b5f5d728cd773d6249"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f4-s13.json",
+      "sha256": "90e959806e8976349a7358135eda723a4e6d4e91b1b233a67dff9f6fcfb183ac"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_heavy-f4-s19.json",
+      "sha256": "6792da7e87a1d44c2a316f7b0e679838046e0995937a498ab97b8d5af61abcb2"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f0-s13.json",
+      "sha256": "481656047f89e78f5b530470784859a39988c0cca064a2a347d766a43e08366f"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f0-s19.json",
+      "sha256": "b0fc8b418b30f29ccdd15b2e664141b2110d10a70f350c1c7feb3798715eabae"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f1-s13.json",
+      "sha256": "7b2ff8126613195e01958cb6834a27a48c9b128b11eb1d26c89936ad39047497"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f1-s19.json",
+      "sha256": "71a3f7a56a7684835c2a53a541034dce25bb28329b429d179aee017535942699"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f2-s13.json",
+      "sha256": "858df0059642d5f39c579091b76649d34a15b5a6e355c5cf72cdd0d7d9ee8689"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f2-s19.json",
+      "sha256": "f7590c900d78f193f78dcb6753cfc53b033d7120938fa65a9bbbf0ea62f6a875"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f3-s13.json",
+      "sha256": "6e6a5d048e339297599de1ad7e241e479e7d53a57c6075dca2df2559f354cc5b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f3-s19.json",
+      "sha256": "a996e25ffb7d86cd5fd0ca9128c388abc9a141840df9dcb3d9edbdcc8bf9a229"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f4-s13.json",
+      "sha256": "1cc3404705f8abea66a9ae6d458578f21d6d1649133785f0cc71f9cb1790bf79"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_clahe_light-f4-s19.json",
+      "sha256": "a40dc23cca14884caf56badeb7c23eaab81bd5c8cc727a2bf19005626a5f26a9"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f0-s13.json",
+      "sha256": "a6154b65541d3d082d92d68737926ac396c90b987393fcb1bba4dc0ca7b890c5"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f0-s19.json",
+      "sha256": "392315ced1fecfff7352f453346baa6b756c213d216a28edfd2d8f5a664769af"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f1-s13.json",
+      "sha256": "75ce0f45d527654e1a9768ec398b7ec4151435b5b1a26e0d758b571b7496c90e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f1-s19.json",
+      "sha256": "64234ee8a49560e197949fd09b464bf4cd4fcf52b361ff09b484070b5fbddbf4"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f2-s13.json",
+      "sha256": "379af1a98a457ebbe01b2d478350cae9f1a3c441504d5fd585b355bb70f86e7a"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f2-s19.json",
+      "sha256": "b315a451f50cf3fdca8b3fa4af9a0ff2c6ec90b55856f2722ebc2f4e6c747462"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f3-s13.json",
+      "sha256": "73b06c8c422d39ad9395de307c39cea4fc10542e1cc3d81cfb2dcab080d27501"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f3-s19.json",
+      "sha256": "ca5e2aa61b36f23f8039d4c964d79a511b6bf58553ab6100e1484feffe5cb45a"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f4-s13.json",
+      "sha256": "67a68352fc2352409902a5d3d04f4e30f375a1df932b57f95d15bfbcb8fb460b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_heavy-f4-s19.json",
+      "sha256": "4d0f554b74b025912754a675f494ca6250b9e84301e966619d7023b1fdb0e171"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f0-s13.json",
+      "sha256": "e39a74c4fb9e6ff3b04cf20eb779360eecd0ceb165ac4f346148949f2e917527"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f0-s19.json",
+      "sha256": "01f8c7b9287eb7f24a26511392259a26ea97fadc0a23f42710c14498b132cb6f"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f1-s13.json",
+      "sha256": "15de96c0db3b0e8297c0e5ff3a3ad191f1a3e50ae835160edc28a490ca98c2f9"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f1-s19.json",
+      "sha256": "e2998245b9fb9c41acc20102b64947d18dd35f44ba5940370caec5c263e01b4a"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f2-s13.json",
+      "sha256": "7b01ba7a895e079ea0665e0851e1413ea586f81faf8d8a8cf7e6f8a00d995b42"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f2-s19.json",
+      "sha256": "d333934d3dbe17acfc67609c261ed71e0c6c0e94bb0af3fd8b65dcd5dc85c3b7"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f3-s13.json",
+      "sha256": "ad33483afcb6aefd43e3984b916a7195ed635e1ade1e0e4e3c7fb0e6359cb34f"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f3-s19.json",
+      "sha256": "f0c8ee62c45355bc26ac26d1de13d59eca9e2172b0b42acc45b11cbd67323a2d"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f4-s13.json",
+      "sha256": "1d8967ba37b1c708b27f6c872f49d33d1be1e3e20c7a55917af445678ee583a0"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/basic_gamma_light-f4-s19.json",
+      "sha256": "d8c0b6afa65c49a3c0680d6c38f4bf7c4071480690e39903f427420ef9c1bfb8"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f0-s13.json",
+      "sha256": "5a6d3294c30babd1727ec1ca81975088a05bd30392978d634aed29bf4616ac37"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f0-s19.json",
+      "sha256": "d00a4ca45f93d126e4ffb1609649f45aac472a0652d0fb391fec8c987e423119"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f1-s13.json",
+      "sha256": "4bf7827d60b766b1d3cf5b9d9f9c61d629ccd0b3bd3007bd6403a4edf5cfedb7"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f1-s19.json",
+      "sha256": "323ebf5266006896f636f4c2c18306f61878e062cf48d17c50ca8d4c48b21421"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f2-s13.json",
+      "sha256": "749dc544586df3228e87c5f4f4adb1da5c784bf228f5d11036555c6acc87a398"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f2-s19.json",
+      "sha256": "417d718f87a8f381d2bd194fdd08c903666ec49c61cfc841d2d0bf5698d0fccb"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f3-s13.json",
+      "sha256": "1c8a2bf34a89ba064b50adbc5726944d1a3fab3c60ba272178b46de78ea5b6bf"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f3-s19.json",
+      "sha256": "6f0c1468247895902dbe19f9ea67b3d686bf751b7e3cbc73d15bdaef4381e5d3"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f4-s13.json",
+      "sha256": "e8584739c7a2c0b9746fd216f49fa27d35f8d75659caf86d33ce490bbf213cbd"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_heavy-f4-s19.json",
+      "sha256": "3c761214e55a6f70f4e4e43a1d819f38460a5b475bceeda4d3b840fe17b56e6b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f0-s13.json",
+      "sha256": "daabcbac43895fe6239b696f36541967ea87e75f24a8fd8d270459232f2f4848"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f0-s19.json",
+      "sha256": "2749bdb4b51473b1cf2a7d369e9097197e0d35b1c107dc412be306dafb363747"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f1-s13.json",
+      "sha256": "d86345bfd6402844775a754ae0dca050a217d13036ef115613f2c315d3f24c2d"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f1-s19.json",
+      "sha256": "00784e1c58fe5f10ba05a2678cc697a92df5de78a7a0fc57d67c4768cd748a45"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f2-s13.json",
+      "sha256": "8208f5aa6bd3272107a75dddc7c098a28af02f4464c78463ae278dc579935767"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f2-s19.json",
+      "sha256": "bdc949707ccdc3de1425041bb90943405eae467bec4dd74625d202601284f0fd"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f3-s13.json",
+      "sha256": "c49cef9f965bcb1d34fd34a30d2e141d2f349591b665c132ad4492bd7d4ae2a5"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f3-s19.json",
+      "sha256": "5af27848401edb0f66ace4bc0e8a5c74e823f16956106b31a09edc2cd025bd0e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f4-s13.json",
+      "sha256": "63d25c998ffb4715aa287c11176bd4b130d82e9da5f671f2c23c5eab0e84aeb5"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/clahe_light-f4-s19.json",
+      "sha256": "39307c1d06e25647c5addd8f33536124bb64e7bcaee8be29579c9cbae9bf63d5"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f0-s13.json",
+      "sha256": "057e08b830de75ca3f67249c3637e6fcd9e424a4e7f5d5565057096da5b32245"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f0-s19.json",
+      "sha256": "8765fe7fe97b3587a37c84b4df26b09a940eb4f665282ecea56e06b7044f5edf"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f1-s13.json",
+      "sha256": "6b52284a21a01f5c4777452058906fa171205671454bd89925d64017a37fd814"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f1-s19.json",
+      "sha256": "608324fbcd66afdc8987a7b2f97365069a328f322df18af5739b93edb6bd832e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f2-s13.json",
+      "sha256": "6cbdd9f050d2dc8fbc3f79eb1933d3a55ae14b5a37214d06bcc956b9e0567090"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f2-s19.json",
+      "sha256": "ebbae273a6e95395f717d43e412587245b50d81003ecb377e775fe0c610b962e"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f3-s13.json",
+      "sha256": "29a051012f516e544f260d778f5c2bf980702911c7700f57184471633002209c"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f3-s19.json",
+      "sha256": "2baac0ed05d0b53c93efc679a5bc23516a7373ecd1f2ff778cc2aa29922d5489"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f4-s13.json",
+      "sha256": "9b94107d9f5f5476592894b81b1844ce21dc9906e1c3f89250259711361148b7"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_heavy-f4-s19.json",
+      "sha256": "94ba3a7f3b941592cf74558ef1be054fb08cc8886271574c2b0e5972eefc104c"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f0-s13.json",
+      "sha256": "9e6213cb4a793869383be69a6a1be6969d3b513e5622eff720e486b2a24cb3a8"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f0-s19.json",
+      "sha256": "c19fe6bb11fc5924e1393c8321611c4f32c5915cf787549db5d80132b1bedfb7"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f1-s13.json",
+      "sha256": "1300b1c7683660f6fb41b62941223ff70202a55218fc6bcc19f72f3972dae1a0"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f1-s19.json",
+      "sha256": "1635cdc433f77d453296b90d2caab3c5047c1428db0ab53716134c3dd44d92df"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f2-s13.json",
+      "sha256": "4c091d0ff133e1a6522663a19e3997808b792a913fe18a1f8db9d353c90dd10a"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f2-s19.json",
+      "sha256": "355310114cba13d3ae8c6f4f00c756dc7448fc0974e2cf2437a84bf98e7cd677"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f3-s13.json",
+      "sha256": "ed3397dbe15887401ffdcf632e973eae1cb50892d72875c7c54658bebb29f09b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f3-s19.json",
+      "sha256": "5fd0aeb04eb54ad3c6599d48885b52f1780effed7d871df18f1c8e995289c12b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f4-s13.json",
+      "sha256": "ce072b4a85df5a27f3c74047eb821c6382ca1848ce7b23b7518ac591f343101a"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/gamma_light-f4-s19.json",
+      "sha256": "1f3d324402cbdf55e90b1169cf770e5766719c67a22d8f7d0b72da8d5b272a8f"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f0-s13.json",
+      "sha256": "6c293368e20e1ee5d6c68edb8390ce363847dabf62feb42a39e8c772347c664b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f0-s19.json",
+      "sha256": "805f329a86e0e4b43541ef892c700727bd2e2491d061becb544a7af37265028b"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f1-s13.json",
+      "sha256": "268e59cb453d50bf167f569e7a86c84d5a1716079098ba9de25dfa48fb880ccb"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f1-s19.json",
+      "sha256": "23064f7bc7be7e167e18ac16c62d17a3e31a07d5cd10aa8fabf7e4e384df0fdf"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f2-s13.json",
+      "sha256": "b2a5c29eb4481c7c1a301b95717b65330a185d1a5758b3f80692a7be3e9ff2a4"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f2-s19.json",
+      "sha256": "1452270cd0d024ee42f2404bdda723f0d90e975ec9df5f295288b01e7d5b3171"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f3-s13.json",
+      "sha256": "0a0e4c1010bd21729a2135ba42bac9508c116d387b8493e5d9c90511f9c7d4a1"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f3-s19.json",
+      "sha256": "ee10689d8da913b8863c3fa6f1a4968cab037a129f71d7298b8a4fcc031aa767"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f4-s13.json",
+      "sha256": "1913bf7f56085422d7c0d40172217906faa4dd53efe7536deff744e5f6bab830"
+    },
+    {
+      "path": "configs/global/inbreast/final/stage-2/none-f4-s19.json",
+      "sha256": "b1a94e027afe8f86b291d7db7b2c764a673ea913fb14c0bac5613f45590768b2"
+    }
+  ],
+  "freeze_sha256": "1bed679a2e52315cdb3050c031e4f6ebd7f2deaf12ce705f19d0fbb29567c740",
+  "phase": "final",
+  "plan_sha256": null,
+  "pools_sha256": "d85f4200c7ecce757cad046eace621fcde284f772d70d69d2879511f157eb00f",
+  "protocol": "global-configs-manifest-v1",
+  "schema_version": 1,
+  "sha256": "20524b7b80e70545e6c294b2fe131f7d8b9455e5a5756e2e955310d160a622fb"
+}
