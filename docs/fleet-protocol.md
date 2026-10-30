@@ -817,11 +817,17 @@ Implementado em `src/augment_atlas/fleet.py` (`REASONS`); os códigos são está
 
 | Etapa | Motivos |
 |---|---|
-| 1 | `not_pending`, `dependency_not_succeeded` |
+| 1 | `not_pending`, `dependency_not_succeeded`, `expired`, `start_time_unknown`, `invalid_seed_request` |
 | 2–3 | `invalid_scheduling`, `unsupported_requirements_schema`, `invalid_requirements`, `legacy_compatibility_invalid`, `node_profile_required`, `phase_mismatch`, `code_commit_mismatch`, `node_not_allowed`, `final_requires_hardware_class`, `hardware_class_mismatch`, `gpu_not_allowed`, `gpu_not_in_profile`, `gpu_identity_mismatch`, `gpu_vram_unknown`, `insufficient_vram`, `compute_capability_unknown`, `insufficient_compute_capability`, `image_mismatch`, `image_not_validated_on_node`, `gpu_uuid_mismatch`, `dataset_not_configured`, `dataset_not_validated_on_node`, `weights_not_validated_on_node`, `container_limits_unset`, `container_exceeds_node_limits` |
 | 4 | `disk_insufficient_for_job` |
 | 0 | `node_profile_invalid`, `worker_node_mismatch`, `node_card_missing`, `node_card_invalid`, `node_card_mismatch`, `node_not_active`, `boot_id_unknown`, `sentinel_latest_missing`, `sentinel_latest_invalid`, `sentinel_node_mismatch`, `sentinel_other_boot`, `sentinel_stale`, `thermal_sensor_unsupported`, `gpu_temp_unavailable`, `gpu_too_hot`, `cpu_pkg_temp_unavailable`, `cpu_pkg_too_hot`, `disk_runs_unreported`, `disk_free_unavailable`, `disk_below_reserve`, `gpu_not_reported`, `gpu_idle_unknown`, `gpu_busy`, `node_cooldown` |
 | — | `ok`, `not_evaluated` (só no `explain`) |
+
+Para pedidos de seeds, o portão de início da etapa 1 retorna `expired` ao
+atingir not_after_utc, `start_time_unknown` sem relógio UTC válido e
+`invalid_seed_request` quando o vínculo imutável de pedido/nó/environment
+é inválido. Outro nó recebe `node_not_allowed`. Esse portão é repetido no
+claim e antes de iniciar/retomar contêiner; um treino em execução pode terminar.
 
 ### 7.2 Estagnação ("sem progresso")
 

@@ -259,7 +259,7 @@ $G anchor $N --pools-sha256 $P --code $CODE $Q --kind campaign --document-sha256
 
 - As seeds finais são as mesmas nas duas campanhas, e disjuntas das seeds de partição e de
   HPO.
-- Só o estágio 1 (`<s1>`, 50 jobs) é autorizado (Q13).
+- A campanha original autoriza só o estágio 1 (`<s1>`, 50 jobs; Q13). O estágio 2 exige o suplemento selado C9b descrito em docs/global-cli.md, seção "Later declared stage authorization".
 - Anote `Xa = git -C $CODE rev-parse HEAD` e o `commit` impresso pela âncora da campanha
   (`C_campaign (a)`). O recibo privado fica em `anchor-campaign-$KA.json`.
 - Os commits de configs (Xa, e depois Xh e Xb) precisam existir no checkout de cada worker,
@@ -523,3 +523,27 @@ Não permite afirmar:
 - utilidade clínica.
 
 O artigo **não** está completo nem pronto para quatro datasets.
+
+### C9b. Seeds 13 e 19 como sensibilidade (decisão de 29/10/2026)
+
+Eduardo decidiu executar o estágio 2 depois de ver os resultados primários do
+INbreast. A sequência exata está em
+[global-cli.md](global-cli.md#later-declared-stage-authorization-c9b-decision-2026-10-29):
+preparar somente final/stage-2, fazer o commit aditivo, authorize-stage,
+materialize-final com a autorização, anchor --kind stage_authorization,
+seed-final e audit-chronology. Repetir por campanha no respectivo checkout.
+
+Preservar o SHA da campanha, o MANIFEST/configs primários e o SAP selado.
+O documento registra decided_on=2026-10-29, decided_after_primary_results=true
+e esclarece que "training seed 1" do item 5 do SAP significa a primeira seed
+declarada (11). O horário real de selagem é separado da data da decisão.
+A identidade inclui todos os caminhos Git, inclusive tests e docs; somente os
+arquivos previstos no suplemento de configs podem ser adicionados.
+
+No worker de sensibilidade, manter campaign_sha256/campaign_commit e imagem,
+acrescentar stage_authorization_sha256 e usar checkout limpo no
+execution_code_commit. Restart/resume revalida esse vínculo antes de acessar
+o contêiner. Collect/report recebem a autorização e --scope stage1
+(primária, snapshot anterior à âncora, bytes preservados) ou --scope
+all_authorized (sensibilidade separada, fila atual). A auditoria completa
+continua obrigatória. Jobs inseridos antes da âncora invalidam a campanha.

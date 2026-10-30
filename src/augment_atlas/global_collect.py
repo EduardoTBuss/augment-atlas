@@ -50,15 +50,22 @@ def _fail(code, message):
     raise ValueError(f"{code}: {message}")
 
 
-def expected_final_jobs(campaign, records, pools, *, freeze, dataset_source, augmentation_presets, evidence=None):
+def expected_final_jobs(campaign, records, pools, *, freeze, dataset_source, augmentation_presets, evidence=None,
+                        stage_authorization=None, code_repo=None, scope="stage1"):
     """{job_id: (arm, fold, seed, cfg, view_doc, spec)} of the authorized cells of an audited campaign."""
     gc.audit_campaign(records, pools, campaign, expected_campaign_sha256=campaign.get("sha256"), freeze=freeze,
-                      dataset_source=dataset_source, augmentation_presets=augmentation_presets, evidence=evidence)
+                      dataset_source=dataset_source, augmentation_presets=augmentation_presets, evidence=evidence,
+                      stage_authorization=stage_authorization, code_repo=code_repo)
+    if scope not in ("stage1", "all_authorized", "stage") or (scope == "stage" and stage_authorization is None):
+        _fail("campaign_invalid", "invalid authorized collection scope")
+    seeds = list(campaign["matrix"]["authorized_seeds"])
+    if stage_authorization is not None and scope != "stage1":
+        seeds = (seeds if scope == "all_authorized" else []) + stage_authorization["seeds"]
     block = campaign["freeze"]
     configs = gj.build_final_configs(
         records, pools, expected_pools_sha256=campaign["pools_sha256"], dataset_source=dataset_source,
         freeze=freeze, freeze_kind=block["kind"], expected_freeze_sha256=block["sha256"],
-        augmentation_presets=augmentation_presets, seeds=campaign["matrix"]["authorized_seeds"], evidence=evidence,
+        augmentation_presets=augmentation_presets, seeds=seeds, evidence=evidence,
         expected_plan_sha256=block["plan_sha256"])
     directory = gj.config_dir(pools["dataset"]["id"], "final")
     views, expected = {}, {}
@@ -68,14 +75,26 @@ def expected_final_jobs(campaign, records, pools, *, freeze, dataset_source, aug
         if fold not in views:
             views[fold] = gj.derive_final_view_doc(records, pools, fold, expected_pools_sha256=campaign["pools_sha256"],
                                                    freeze_sha256=block["sha256"])
-        spec = gj.final_job_spec(cfg, views[fold], config_path=f"{directory}/{name}",
+        commit = campaign["runtime"]["code_commit"]
+        cell_directory = directory
+        if stage_authorization is not None and cfg["training"]["seed"] in stage_authorization["seeds"]:
+            from . import stage_authorization as sa
+            cell_directory = sa.directory(campaign, stage_authorization["stage"])
+            commit = stage_authorization["execution_code_commit"]
+        spec = gj.final_job_spec(cfg, views[fold], config_path=f"{cell_directory}/{name}",
                                  config_sha256=ge.config_sha256(cfg),
-                                 code_commit=campaign["runtime"]["code_commit"], campaign_sha256=campaign["sha256"])
+                                 code_commit=commit, campaign_sha256=campaign["sha256"])
+        if stage_authorization is not None and cfg["training"]["seed"] in stage_authorization["seeds"]:
+            binding = stage_authorization.get("seed_request")
+            if binding is not None:
+                from .fleet import with_requirements
+                spec = with_requirements(spec, binding["requirements"])
+                spec["environment_sha256"] = binding["environment"]["environment_sha256"]
         expected[spec["job_id"]] = (cfg["augmentation"]["arm"], fold, cfg["training"]["seed"], cfg, views[fold], spec)
     return expected
 
 
-def _read_success(out, cfg, view_doc, records, pools, record, settings, image_id):
+def _read_success(out, cfg, view_doc, records, pools, record, settings, image_id, environment_sha256=None):
     out = Path(out)
     if out.is_symlink() or not out.is_dir():
         _fail("global_artifacts_invalid", "attempt directory is missing")
@@ -93,6 +112,9 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings, image_id
         _fail("global_artifacts_invalid", "runtime.json does not record the read-only data root as /data")
     if provenance.get("image_id") != image_id:
         _fail("code_identity_mismatch", "a final attempt ran on another image than the one the campaign pins")
+    if environment_sha256 is not None and (type(provenance.get("environment")) is not dict
+            or gh.environment_sha256(image_id, provenance["environment"]) != environment_sha256):
+        _fail("code_identity_mismatch", "final attempt probe differs from its authorized node environment")
     if settings is not None:
         from . import runtime
         runtime.validate_global_completion(settings, out, record["spec"])
@@ -138,10 +160,17 @@ def _read_success(out, cfg, view_doc, records, pools, record, settings, image_id
 
 
 def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools, freeze, dataset_source,
-                          augmentation_presets, evidence=None, settings=None):
+                          augmentation_presets, evidence=None, settings=None,
+                          stage_authorization=None, code_repo=None, scope="stage1"):
     """Return (entries for ``build_report``, private collection manifest)."""
-    expected = expected_final_jobs(campaign, records, pools, freeze=freeze, dataset_source=dataset_source,
-                                   augmentation_presets=augmentation_presets, evidence=evidence)
+    all_expected = expected_final_jobs(campaign, records, pools, freeze=freeze, dataset_source=dataset_source,
+                                       augmentation_presets=augmentation_presets, evidence=evidence,
+                                       stage_authorization=stage_authorization, code_repo=code_repo,
+                                       scope="all_authorized" if stage_authorization is not None else "stage1")
+    if scope not in ("stage1", "all_authorized"):
+        _fail("collection_invalid", "scope must be stage1 or all_authorized")
+    expected = {key: value for key, value in all_expected.items()
+                if scope == "all_authorized" or value[2] in campaign["matrix"]["authorized_seeds"]}
     by_id = {}
     for record in queue_snapshot:
         gh._guard("collection_invalid", validate_record, record)
@@ -151,13 +180,16 @@ def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools
     for job_id, record in by_id.items():
         bound = record["spec"].get("global")
         if (record["spec"].get("phase") == "final" and type(bound) is dict
-                and bound.get("campaign_sha256") == campaign["sha256"] and job_id not in expected):
+                and bound.get("campaign_sha256") == campaign["sha256"] and job_id not in all_expected):
             _fail("collection_invalid", "the queue holds a final job of this campaign outside its authorized cells")
     entries, rows = [], []
     for job_id, (arm, fold, seed, cfg, view_doc, spec) in sorted(expected.items(), key=lambda item: item[1][:3]):
         record = by_id.get(job_id)
         state = None if record is None else record["state"]
         if record is not None:
+            if stage_authorization is not None:
+                from . import stage_authorization as sa
+                sa.job_binding(record["spec"], campaign, stage_authorization)
             for key, value in spec.items():
                 if key not in record["spec"] or canonical_hash(record["spec"][key]) != canonical_hash(value):
                     _fail("config_identity_mismatch", f"queue job {key} differs from the campaign's final config")
@@ -172,8 +204,12 @@ def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools
                  "predictions": None, "initial_state_sha256": None, "telemetry_summary": None}
         if state == "succeeded":
             out = Path(runs_root) / job_id / record["attempt_id"]
+            environment_pin = spec.get("environment_sha256")
+            if (stage_authorization is not None and stage_authorization.get("cross_environment")
+                    and seed in stage_authorization["seeds"]):
+                environment_pin = stage_authorization["runtime"]["environment_sha256"]
             artifact, initial, telemetry, shas = _read_success(out, cfg, view_doc, records, pools, record, settings,
-                                                               campaign["runtime"]["image_id"])
+                                                               campaign["runtime"]["image_id"], environment_pin)
             entry.update(status="succeeded", reason=None, predictions=artifact, initial_state_sha256=initial,
                          telemetry_summary=telemetry)
             rows.append({**row, "status": "succeeded", "reason": None, **shas})
@@ -191,4 +227,7 @@ def collect_final_entries(campaign, queue_snapshot, runs_root, *, records, pools
                          "pools_sha256": campaign["pools_sha256"], "freeze_sha256": campaign["freeze"]["sha256"],
                          "host_validation": "minimal" if settings is None else "full",
                          "authorized_cells": len(expected), "collected": len(entries), "rows": deepcopy(rows)})
+    if scope == "all_authorized":
+        manifest = gj._seal({**manifest, "scope": scope, "stage_authorization_sha256":
+                             None if stage_authorization is None else stage_authorization["sha256"]})
     return entries, manifest

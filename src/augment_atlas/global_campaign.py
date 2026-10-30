@@ -150,11 +150,21 @@ def build_anchor(kind, document, *, document_utc=None):
                   "campaign_sha256": document["sha256"], "code_commit": document["runtime"]["code_commit"],
                   "label": document["label"], "recipe_source": document["freeze"]["kind"],
                   "document_utc": document_utc or document["sealed_at_utc"]}
+    elif kind == "stage_authorization":
+        from . import stage_authorization as sa
+        if set(document) != sa.KEYS or gj._seal(document) != document:
+            _fail("anchor_invalid", "stage authorization must be sealed with the closed schema")
+        fields = {"pools_sha256": document["pools_sha256"], "freeze_sha256": document["freeze"]["sha256"],
+                  "campaign_sha256": document["campaign_sha256"], "code_commit": document["execution_code_commit"],
+                  "label": None, "recipe_source": document["freeze"]["kind"],
+                  "document_utc": document_utc or document["sealed_at_utc"]}
     else:
         _fail("anchor_invalid", "unknown anchor kind")
     anchor = {"schema_version": 1, "protocol": ANCHOR_PROTOCOL, "kind": kind,
               "dataset": {"id": document["dataset"]["id"], "version": document["dataset"]["version"]},
               "document_sha256": document["sha256"], "caveat": ANCHOR_CAVEAT, **fields}
+    if kind == "stage_authorization":
+        anchor["stage"] = document["stage"]
     anchor["sha256"] = canonical_hash(anchor)
     return validate_anchor(anchor)
 
@@ -420,7 +430,8 @@ def seal_campaign(records, pools, *, expected_pools_sha256, freeze, freeze_kind,
 
 
 def audit_campaign(records, pools, campaign, *, expected_campaign_sha256, freeze, dataset_source,
-                   augmentation_presets, evidence=None, expected_manifest_sha256=None, code_repo=None):
+                   augmentation_presets, evidence=None, expected_manifest_sha256=None, code_repo=None,
+                   stage_authorization=None):
     """Re-derive the campaign from its declared inputs; any difference is refused.
 
     ``code_repo`` (optional) re-derives the Q6 evidence from Git and requires it
@@ -466,6 +477,9 @@ def audit_campaign(records, pools, campaign, *, expected_campaign_sha256, freeze
                                        image_id=campaign["runtime"]["image_id"])
         if derived != campaign["code_identity"]:
             _fail("code_identity_mismatch", "Git-derived Q6 evidence differs from the sealed code_identity")
+    if stage_authorization is not None:
+        from . import stage_authorization as sa
+        sa.audit(stage_authorization, campaign, code_repo=code_repo)
     return {"structural_valid": True, "execution_verified": False, "scientific_eligible": False,
             "campaign_sha256": campaign["sha256"], "label": campaign["label"],
             "blockers": list(eligibility["blockers"]), "matrix": deepcopy(campaign["matrix"]),
@@ -546,7 +560,8 @@ def _stamp(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
 
 
-def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=None, head=None):
+def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=None, head=None,
+                     stage_authorization=None, code_repo=None):
     """Audit the order freeze -> campaign -> final jobs of ONE campaign on the ``queue`` branch (spec 7.2).
 
     ``queue`` is a ``GitQueue`` (local checkout + remote). Several campaigns
@@ -635,6 +650,16 @@ def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=N
     campaign_anchors = {anchor["campaign_sha256"]: (index, anchor) for index, anchor in anchors.values()
                         if anchor["kind"] == "campaign"}
     authorized = set(campaign["matrix"]["authorized_seeds"])
+    idx_stage = None
+    if stage_authorization is not None:
+        from . import stage_authorization as sa
+        sa.audit(stage_authorization, campaign, code_repo=code_repo)
+        stage_path = anchor_path(dataset_id, "stage_authorization", stage_authorization["sha256"])
+        if stage_path not in anchors:
+            _fail("campaign_anchor_missing", "stage authorization is not anchored")
+        idx_stage, stage_anchor = anchors[stage_path]
+        if idx_stage <= idx_campaign or stage_anchor != build_anchor("stage_authorization", stage_authorization):
+            _fail("campaign_invalid", "stage anchor must follow and bind this campaign")
     finals, others, hpo = [], 0, []
     for path, versions in sorted(job_versions.items()):
         record, latest = _job_record(first[versions[0][1]]), _job_record(first[versions[-1][1]])
@@ -660,10 +685,15 @@ def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=N
             if (bound.get("freeze_kind") != source or spec["recipe_hash"] != freeze_sha256
                     or (spec["dataset"], spec["dataset_version"]) != (dataset_id, dataset["version"])):
                 _fail("campaign_anchor_missing", f"final job {record['job_id'][:12]} is not bound to this freeze")
-            if spec["code_commit"] != campaign["runtime"]["code_commit"]:
-                _fail("code_identity_mismatch", f"final job {record['job_id'][:12]} code_commit differs from the campaign")
-            if spec["train_seed"] not in authorized:
-                _fail("campaign_invalid", f"final job {record['job_id'][:12]} seed is outside the authorized stage")
+            if stage_authorization is None:
+                if spec["code_commit"] != campaign["runtime"]["code_commit"]:
+                    _fail("code_identity_mismatch", "final job code_commit differs from the campaign")
+                if spec["train_seed"] not in authorized:
+                    _fail("campaign_invalid", "seed is outside the authorized stage")
+            else:
+                sa.job_binding(spec, campaign, stage_authorization, anchor_commit=commits[idx_stage][0])
+                if spec["train_seed"] in stage_authorization["seeds"] and created <= idx_stage:
+                    _fail("campaign_invalid", "later-stage job appears before or at its authorization anchor")
             finals.append((path, versions))
         elif source == "hpo_d":
             if created >= idx_freeze or any(index >= idx_freeze for index, _ in versions):
@@ -699,10 +729,19 @@ def audit_chronology(queue, campaign, *, freeze=None, recorded_campaign_commit=N
         # Git commit times have 1 s resolution; tolerate sub-second truncation.
         if a > b + 1:
             warnings.append(f"timestamp_inversion: {left} > {right} (host clocks; supporting evidence only)")
-    return {"protocol": CHRONOLOGY_PROTOCOL, "dataset": deepcopy(dataset), "pools_sha256": pools_sha256,
+    report = {"protocol": CHRONOLOGY_PROTOCOL, "dataset": deepcopy(dataset), "pools_sha256": pools_sha256,
             "recipe_source": source, "freeze_sha256": freeze_sha256, "campaign_sha256": campaign_sha256,
             "head": head, "C_freeze": c_freeze[0], "C_campaign": c_campaign[0], "commits": len(commits),
             "hpo_jobs": len(hpo), "final_jobs": len(finals), "other_campaign_final_jobs": others,
             "first_final_claim_utc": claims[0] if claims else None, "warnings": warnings,
             "structural_valid": True, "execution_verified": False, "scientific_eligible": False,
             "caveat": SELECTION_BIAS_CAVEAT}
+    if stage_authorization is not None:
+        # Primary snapshot is the parent of C_authorization. Its historic report bytes stay valid.
+        primary_head = commits[idx_stage - 1][0]
+        report["stage1_head"] = primary_head
+        report["stage1_chronology"] = audit_chronology(queue, campaign, freeze=freeze,
+            recorded_campaign_commit=recorded_campaign_commit, head=primary_head)
+        report["stage_authorization_sha256"] = stage_authorization["sha256"]
+        report["C_stage_authorization"] = commits[idx_stage][0]
+    return report
