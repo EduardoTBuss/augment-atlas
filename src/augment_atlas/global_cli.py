@@ -44,6 +44,7 @@ from . import global_hpo as gh
 from . import global_jobs as gj
 from . import global_report as gr
 from . import global_splits as gs
+from . import stage_authorization as sa
 from . import legacy_pools as lp
 from .contracts import ARMS, canonical_hash, file_hash
 from .data import load_records
@@ -190,6 +191,14 @@ def _committed_manifest(code, dataset):
     return _read(path, "committed final MANIFEST.json")
 
 
+def _stage(args, campaign):
+    pin = getattr(args, "stage_authorization_sha256", None)
+    if pin is None:
+        return None
+    document = _document(args, "stage-authorization", pin)
+    return sa.audit(document, campaign, code_repo=Path(args.code).resolve())
+
+
 def _campaign(args):
     """Campaign + its freeze/evidence/records; audited against the committed code checkout."""
     source, records, images, pools = _pools(args)
@@ -202,7 +211,7 @@ def _campaign(args):
     gc.audit_campaign(records, pools, campaign, expected_campaign_sha256=args.campaign_sha256, freeze=freeze,
                       dataset_source=source, augmentation_presets=presets, evidence=evidence,
                       expected_manifest_sha256=_committed_manifest(args.code, args.dataset).get("sha256"),
-                      code_repo=Path(args.code).resolve())
+                      code_repo=Path(args.code).resolve(), stage_authorization=_stage(args, campaign))
     return source, records, pools, campaign, freeze, evidence, presets
 
 
@@ -651,7 +660,40 @@ def cmd_seal_freeze(args):
                   "selected_candidate_id": winner, "candidates_defined": len(means)}, records)
 
 
+def cmd_authorize_stage(args):
+    _, records, _, campaign, _, _, _ = _campaign(args)
+    probe = _read(args.environment_probe, "environment probe")
+    environment_sha256 = gh.environment_sha256(args.image_id, probe)
+    commit = args.execution_code_commit or _clean_head(args.code)
+    document = sa.authorize_stage(campaign, stage=args.stage, execution_code_commit=commit,
+        code_repo=Path(args.code).resolve(), image_id=args.image_id,
+        environment_sha256=environment_sha256, cross_environment=args.cross_environment, decided_on=args.decided_on,
+        decided_after_primary_results=args.decided_after_primary_results == "true", rationale=args.rationale,
+        sealed_at_utc=_utc(args.sealed_at, "--sealed-at"))
+    path = _private(args, "stage-authorization", document["sha256"])
+    gd._publish(path, document, lambda value: sa.audit(value, campaign, code_repo=Path(args.code).resolve()))
+    return _emit({"stage_authorization_sha256": document["sha256"], "path": str(path),
+                  "stage": document["stage"], "seeds": document["seeds"], "execution_code_commit": commit}, records)
+
+
 def cmd_materialize_final(args):
+    if getattr(args, "stage", None) is not None:
+        if not args.campaign_sha256:
+            _fail("cli_input_invalid", "stage materialization requires --campaign-sha256")
+        supplied_freeze = (args.freeze_kind, args.freeze_sha256)
+        supplied_stages = _stages(args.stages)
+        _, records, _, campaign, _, _, _ = _campaign(args)
+        declared = [{"stage": s["stage"], "seeds": s["seeds"]} for s in campaign["execution_stages"]]
+        if supplied_freeze != (campaign["freeze"]["kind"], campaign["freeze"]["sha256"]) or supplied_stages != declared:
+            _fail("campaign_invalid", "materialization freeze/stages must match the original campaign")
+        document = _stage(args, campaign)
+        manifest = sa.materialize(campaign, args.stage, Path(args.code).resolve(), authorization=document)
+        return _emit({"manifest_sha256": manifest["sha256"], "configs": len(manifest["files"]),
+                      "directory": sa.directory(campaign, args.stage),
+                      "authorized_seeds": [] if document is None else document["seeds"],
+                      "next": "commit additions, authorize-stage, verify materialization, anchor, seed-final"}, records)
+    if getattr(args, "stage_authorization_sha256", None):
+        _fail("cli_input_invalid", "stage authorization materialization requires --stage")
     source, records, _, pools = _pools(args)
     freeze, evidence = _freeze(args, records, pools)
     _, matrix = gc._stages(_stages(args.stages), freeze["final_policy"]["seeds"])
@@ -714,6 +756,21 @@ def cmd_anchor(args):
             if evidence["sha256"] != document["selection_evidence_sha256"]:
                 _fail("collection_invalid", "this freeze was not sealed from the evidence of the current queue")
         anchor = gc.build_anchor("recipe_freeze", document)
+    elif args.kind == "stage_authorization":
+        if not args.image_id or not args.environment_probe:
+            _fail("cli_input_invalid", "stage authorization anchor requires --image-id and --environment-probe")
+        args.stage_authorization_sha256 = args.document_sha256
+        document = _document(args, "stage-authorization", args.document_sha256)
+        args.campaign_sha256 = document["campaign_sha256"]
+        _, records, pools, campaign, freeze, _, _ = _campaign(args)
+        _check_environment(args, document["runtime"])
+        # Existing primary jobs are allowed; invalid chronology remains a blocker.
+        already_anchored = any(a["kind"] == "stage_authorization" and a["document_sha256"] == document["sha256"]
+                               for a in _anchors(_queue(args), args.dataset))
+        gc.audit_chronology(_queue(args), campaign, freeze=freeze,
+                            stage_authorization=document if already_anchored else None,
+                            code_repo=Path(args.code).resolve())
+        anchor = gc.build_anchor("stage_authorization", document)
     else:
         args.campaign_sha256 = args.document_sha256
         _, records, pools, document, _, _, _ = _campaign(args)
@@ -728,8 +785,10 @@ def cmd_anchor(args):
 
 def cmd_seed_final(args):
     source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
-    if _clean_head(args.code) != campaign["runtime"]["code_commit"]:
-        _fail("code_identity_mismatch", "the code checkout HEAD is not the sealed campaign code_commit")
+    authorization = _stage(args, campaign)
+    required_commit = campaign["runtime"]["code_commit"] if authorization is None else authorization["execution_code_commit"]
+    if _clean_head(args.code) != required_commit:
+        _fail("code_identity_mismatch", "the code checkout HEAD is not the commit pinned for this stage")
     if pools["grouping"]["prior_exposure"] != "none_documented":
         # Decision 7: on an exposed dataset (INbreast) both exploratory campaigns are sealed and anchored
         # before the first final job of these pools.
@@ -738,11 +797,14 @@ def cmd_seed_final(args):
         if not {"external_fixed", "hpo_d"} <= sources:
             _fail("final_job_before_seal", "exposed dataset: anchor both campaigns (external_fixed, hpo_d) first")
     expected = gcol.expected_final_jobs(campaign, records, pools, freeze=freeze, dataset_source=source,
-                                        augmentation_presets=presets, evidence=evidence)
+                                        augmentation_presets=presets, evidence=evidence, stage_authorization=authorization,
+                                         code_repo=Path(args.code).resolve(), scope="stage1" if authorization is None else "stage")
     specs = [item[5] for _, item in sorted(expected.items(), key=lambda pair: pair[1][:3])]
-    jobs = _queue(args).seed_final(specs, campaign["sha256"])
+    jobs = _queue(args).seed_final(specs, campaign["sha256"],
+        **({} if authorization is None else {"stage_authorization": authorization, "campaign": campaign,
+                                             "code_repo": Path(args.code).resolve()}))
     return _emit({"campaign_sha256": campaign["sha256"], "jobs": len(jobs),
-                  "authorized_seeds": campaign["matrix"]["authorized_seeds"]}, records)
+                  "authorized_seeds": campaign["matrix"]["authorized_seeds"] if authorization is None else authorization["seeds"]}, records)
 
 
 def _recorded_commit(args):
@@ -755,7 +817,8 @@ def _recorded_commit(args):
 def cmd_audit_chronology(args):
     _, records, _, campaign, freeze, _, _ = _campaign(args)
     report = gc.audit_chronology(_queue(args), campaign, freeze=freeze,
-                                 recorded_campaign_commit=_recorded_commit(args))
+                                 recorded_campaign_commit=_recorded_commit(args),
+                                 stage_authorization=_stage(args, campaign), code_repo=Path(args.code).resolve())
     return _emit(report, records)
 
 
@@ -763,14 +826,24 @@ def cmd_report(args):
     source, records, pools, campaign, freeze, evidence, presets = _campaign(args)
     queue = _queue(args)
     settings = _validation(args)
-    entries, manifest = gcol.collect_final_entries(campaign, queue.list_jobs(), Path(args.runs).resolve(),
+    authorization = _stage(args, campaign)
+    scope = getattr(args, "scope", "stage1")
+    chronology = gc.audit_chronology(queue, campaign, freeze=freeze, recorded_campaign_commit=_recorded_commit(args),
+                                     stage_authorization=authorization, code_repo=Path(args.code).resolve())
+    snapshot = (list(queue._records(chronology["stage1_head"]).values())
+                if authorization is not None and scope == "stage1" else queue.list_jobs())
+    entries, manifest = gcol.collect_final_entries(campaign, snapshot, Path(args.runs).resolve(),
                                                    records=records, pools=pools, freeze=freeze,
                                                    dataset_source=source, augmentation_presets=presets,
-                                                   evidence=evidence, settings=settings)
+                                                   evidence=evidence, settings=settings, stage_authorization=authorization,
+                                                    code_repo=Path(args.code).resolve(), scope=scope)
     gd._publish(_private(args, "final-collection", manifest["sha256"]), manifest, lambda value: None)
-    chronology = gc.audit_chronology(queue, campaign, freeze=freeze, recorded_campaign_commit=_recorded_commit(args))
+    if args.command == "collect":
+        return _emit({"collection_sha256": manifest["sha256"], "authorized_cells": manifest["authorized_cells"],
+                      "collected": len(entries), "scope": scope}, records)
     common = dict(expected_campaign_sha256=campaign["sha256"], freeze=freeze, dataset_source=source,
-                  augmentation_presets=presets, evidence=evidence, chronology=chronology)
+                  augmentation_presets=presets, evidence=evidence, chronology=chronology, stage_authorization=authorization,
+                  code_repo=Path(args.code).resolve(), scope=scope)
     report = gr.build_report(campaign, entries, pools, records, **common)
     path = _private(args, "report", report["sha256"])
     gr.build_report(campaign, entries, pools, records, **common, output=path)
@@ -920,15 +993,30 @@ def _parser():
         s.add_argument("--freeze-sha256", required=True)
         s.add_argument("--freeze-kind", required=True, choices=sorted(FREEZE_PREFIX))
         s.add_argument("--stages", required=True, help="seeds per stage, e.g. '11;13,19' (stage 1 is authorized)")
+        if name == "materialize-final":
+            s.add_argument("--campaign-sha256")
+            s.add_argument("--stage", type=int)
+            s.add_argument("--stage-authorization-sha256")
         if name == "seal-campaign":
             queue(s)
             s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
             s.add_argument("--sealed-at", required=True)
             s.add_argument("--label", default="exploratory", choices=["exploratory", "confirmatory_candidate"])
             s.add_argument("--analysis-plan-sha256"); s.add_argument("--search-space-sha256")
+    s = command("authorize-stage", cmd_authorize_stage, "seal sensitivity-stage authorization without changing campaign")
+    code(s)
+    s.add_argument("--campaign-sha256", required=True)
+    s.add_argument("--stage", type=int, required=True)
+    s.add_argument("--cross-environment", action="store_true", help="declare a different probe environment; image remains pinned")
+    s.add_argument("--execution-code-commit", help="existing full commit containing only the stage additions (default: clean HEAD)")
+    s.add_argument("--image-id", required=True); s.add_argument("--environment-probe", required=True)
+    s.add_argument("--decided-on", required=True, help="actual decision date YYYY-MM-DD, without a time")
+    s.add_argument("--decided-after-primary-results", required=True, choices=["true", "false"])
+    s.add_argument("--rationale", required=True)
+    s.add_argument("--sealed-at", required=True, help="actual UTC time of sealing, distinct from the decision date")
     s = command("anchor", cmd_anchor, "publish a public hash anchor on the queue branch")
     code(s); queue(s)
-    s.add_argument("--kind", required=True, choices=["pools", "recipe_freeze", "campaign"])
+    s.add_argument("--kind", required=True, choices=["pools", "recipe_freeze", "campaign", "stage_authorization"])
     s.add_argument("--document-sha256", required=True)
     s.add_argument("--freeze-kind", choices=sorted(FREEZE_PREFIX), default="external_fixed")
     s.add_argument("--expected-manifest"); s.add_argument("--document-utc")
@@ -938,13 +1026,16 @@ def _parser():
     s.add_argument("--host-validation", choices=["full", "minimal"], default="full")
     for name, function, text in (("seed-final", cmd_seed_final, "seed the authorized final jobs"),
                                  ("audit-chronology", cmd_audit_chronology, "audit freeze -> campaign -> finals"),
-                                 ("report", cmd_report, "collect finished final jobs and build the private report")):
+                                 ("report", cmd_report, "collect finished final jobs and build the private report"),
+                                 ("collect", cmd_report, "collect final entries in the selected authorized scope")):
         s = command(name, function, text)
         code(s); queue(s)
         s.add_argument("--campaign-sha256", required=True)
+        s.add_argument("--stage-authorization-sha256")
         if name != "seed-final":
             s.add_argument("--recorded-commit", help="C_campaign recorded at sealing (default: the anchor receipt)")
-        if name == "report":
+        if name in ("report", "collect"):
+            s.add_argument("--scope", choices=["stage1", "all_authorized"], default="stage1")
             s.add_argument("--runs", required=True)
             s.add_argument("--settings", help="worker settings: full nine-artifact validation (default mode)")
             s.add_argument("--host-validation", choices=["full", "minimal"], default="full",

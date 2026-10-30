@@ -1,4 +1,4 @@
-"""Offline seed-request control plane. No Git mutation, network or training imports."""
+"""Seed-request control plane; scientific validation and publication belong to the adapter."""
 from __future__ import annotations
 
 import argparse
@@ -63,7 +63,7 @@ def _json(text):
 def validate_request(value):
     if type(value) is not dict:
         raise ValueError("request must be a JSON object")
-    missing, extra = _REQUIRED - value.keys(), value.keys() - _REQUIRED - {"note"}
+    missing, extra = _REQUIRED - value.keys(), value.keys() - _REQUIRED - {"note", "cross_environment"}
     if missing or extra:
         raise ValueError(f"request schema: missing {sorted(missing)}; unknown {sorted(extra)}")
     for key in ("request_id", "dataset"):
@@ -88,6 +88,8 @@ def validate_request(value):
     for key in ("requested_by", "note"):
         if key in value and (not isinstance(value[key], str) or not value[key].strip()):
             raise ValueError(f"{key}: expected nonempty text")
+    if "cross_environment" in value and type(value["cross_environment"]) is not bool:
+        raise ValueError("cross_environment: explicit boolean is required")
     if type(value["decided_after_results"]) is not bool:
         raise ValueError("decided_after_results: explicit boolean is required")
     if value["decided_after_results"]:
@@ -141,6 +143,7 @@ class AuthorizedStage:
     anchor_commit: str
     image_id: str
     job_specs: list[dict]
+    publication: str = "files"
 
 
 class StageAuthorizer(Protocol):
@@ -435,8 +438,16 @@ def _materialize(checkout, specs):
 
 def process_requests(control_checkout, queue_checkout, node_cards, state_dir, *, apply=False,
                      authorizer: StageAuthorizer | None = None, now=None, stop_at=DEFAULT_STOP_AT):
-    """Plan is read-only; apply locks state and journals before each side effect."""
+    """Plan never publishes; apply locks state and journals before each side effect."""
     clock = (lambda: _now(now)) if now is not None else (lambda: datetime.now(timezone.utc))
+
+    def error_text(error):
+        return authorizer.public_error(error) if hasattr(authorizer, "public_error") else str(error)
+
+    def snapshot():
+        if hasattr(authorizer, "read_queue"):
+            return authorizer.read_queue(Path(queue_checkout))
+        return read_queue(queue_checkout)
 
     def process():
         state = load_state(state_dir)
@@ -446,9 +457,17 @@ def process_requests(control_checkout, queue_checkout, node_cards, state_dir, *,
             return [{"request_id": "file", "dataset": "-", "seeds": [], "node_id": "-",
                      "status": "invalid", "actions": [], "error": str(error),
                      "progress": {"succeeded": 0, "total": 0, "expected": 0}}]
-        records, anchors = read_queue(queue_checkout)
+        records, anchors = snapshot()
         cards = read_cards(node_cards)
         rows = plan_requests(requests, records, anchors, cards, state, now=clock(), stop_at=stop_at)
+        if hasattr(authorizer, "validate_context"):
+            for request, row in zip(requests, rows):
+                if row["status"] == "invalid":
+                    continue
+                try:
+                    authorizer.validate_context(request=request, environment=row["environment"])
+                except (ValueError, OSError, RuntimeError, TypeError, KeyError) as error:
+                    row.update(status="invalid", actions=[], error=error_text(error))
         if not apply:
             return rows
         for request, row in zip(requests, rows):
@@ -477,28 +496,34 @@ def process_requests(control_checkout, queue_checkout, node_cards, state_dir, *,
                         queue_checkout=Path(queue_checkout))
                     specs = _stage_specs(stage, request, context, stop_at)
                     old.update(status="authorized", specs=specs, specs_sha256=digest(specs),
-                               stage_sha256=stage.stage_sha256, anchor_commit=stage.anchor_commit)
+                               stage_sha256=stage.stage_sha256, anchor_commit=stage.anchor_commit,
+                               publication=stage.publication)
                     _save(state_dir, state)
                 if digest(old["specs"]) != old["specs_sha256"]:
                     raise ValueError("authorized specs checksum mismatch")
                 if clock() >= utc(stop_at):
                     row.update(status="expired", actions=[])
                     continue
-                current_records, _ = read_queue(queue_checkout)
+                current_records, _ = snapshot()
                 selected, _ = _progress(request, current_records)
                 expected = {spec["job_id"]: spec for spec in old["specs"]}
                 if any(job["job_id"] not in expected or job["spec"] != expected[job["job_id"]] for job in selected):
                     raise ValueError("campaign seed already bound to different immutable specs")
-                _materialize(queue_checkout, old["specs"])
+                if old.get("publication") == "git" and not hasattr(authorizer, "seed_final"):
+                    raise ValueError("real StageAuthorizer required to resume durable queue publication")
+                if hasattr(authorizer, "seed_final"):
+                    authorizer.seed_final(request=request, specs=old["specs"], queue_checkout=Path(queue_checkout))
+                else:
+                    _materialize(queue_checkout, old["specs"])
                 old["status"] = "applied"
                 _save(state_dir, state)
-                current_records, _ = read_queue(queue_checkout)
+                current_records, _ = snapshot()
                 _, progress = _progress(request, current_records)
                 active = any(r["state"] in {"claimed", "running"} for r in current_records
                              if r["job_id"] in expected)
                 row.update(status="running" if active else "authorized", actions=[], progress=progress)
             except (ValueError, OSError, RuntimeError, TypeError, KeyError) as error:
-                row.update(status="invalid", actions=[], error=str(error))
+                row.update(status="invalid", actions=[], error=error_text(error))
         return rows
 
     if apply:
@@ -516,11 +541,17 @@ def main(argv=None, *, authorizer=None):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--stop-at", default=DEFAULT_STOP_AT)
     parser.add_argument("--now", help="UTC timestamp for an offline plan (not allowed with apply)")
-    parser.add_argument("--authorizer", help="trusted installed Python module:factory; no adapter is bundled")
+    parser.add_argument("--authorizer", help="trusted installed Python module:factory")
+    parser.add_argument("--authorizer-config", type=Path, help="local JSON configuration for the bundled RealStageAuthorizer")
     args = parser.parse_args(argv)
+    if args.authorizer and args.authorizer_config:
+        parser.error("choose --authorizer or --authorizer-config")
     if args.now and args.command == "apply":
         parser.error("--now is plan-only; apply always checks the real clock")
     try:
+        if args.authorizer_config:
+            from .seed_stage_authorizer import RealStageAuthorizer
+            authorizer = RealStageAuthorizer.from_file(args.authorizer_config)
         if args.authorizer and args.command == "apply":
             module, factory = args.authorizer.split(":", 1)
             authorizer = getattr(importlib.import_module(module), factory)()
@@ -529,7 +560,7 @@ def main(argv=None, *, authorizer=None):
                                 now=utc(args.now) if args.now else None, stop_at=args.stop_at)
         print(json.dumps(rows, indent=2, sort_keys=True))
         return 1 if any(r["status"] == "invalid" for r in rows) else 0
-    except (ValueError, OSError, RuntimeError, ImportError, AttributeError) as error:
+    except (ValueError, OSError, RuntimeError, ImportError, AttributeError, TypeError, KeyError) as error:
         parser.exit(1, f"seed requests: {error}\n")
 
 
@@ -546,4 +577,6 @@ def board_requests(control_checkout, records, anchors, node_cards, state_dir, *,
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Use the canonical module's receipt class when the bundled adapter imports it.
+    from .seed_requests import main as entry_main
+    raise SystemExit(entry_main())

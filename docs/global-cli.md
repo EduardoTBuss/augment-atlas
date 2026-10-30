@@ -266,3 +266,117 @@ documents, so changing it needs an explicit decision to update those tests.
 Workers run with `./scripts/worker.sh --phase hpo|final` (the CLI hook added for
 B1). `hpo` needs `settings.views`; `final` needs `settings.campaign_sha256` and
 `settings.campaign_commit`.
+
+## Later declared stage authorization (C9b, decision 2026-10-29)
+
+The original campaign continues to authorize stage 1 only. A separate, closed,
+sealed global-stage-authorization-v1 document authorizes the declared later
+stage. For stages '11;13,19', stage 2 is exactly [13,19], in that order.
+It pins the original campaign SHA, pools, freeze/plan, image, environment/probe,
+weights, analysis plan and stage-1 manifest without changing them. Its
+execution_code_commit is an existing descendant commit whose entire original
+Git tree is unchanged: every existing path/mode/object must match, including
+src, scripts, docker, pyproject.toml, tests and documentation. Only the exact
+new configs and MANIFEST under configs/global/<dataset>/final/stage-2/ may
+be added. No tests are excluded from this identity policy. Stage configs clone
+the sealed primary cells with only training.seed changed.
+
+The document records decided_on: "2026-10-29" (no decision time is invented),
+decided_after_primary_results: true and a rationale explicitly saying
+Eduardo decided after viewing the INbreast primary results. The separate
+sealed_at_utc records the actual time the authorization document is sealed.
+It explains that SAP item 5's "training seed 1" means the first seed declared
+(11); the sealed SAP itself is unchanged.
+
+Run the following for EACH campaign in its own original code checkout. The
+ORCHESTRATOR names the checkout containing C9b; its CLI package must be available in the operator/worker
+orchestrator environment; do not add orchestration changes to the campaign's
+pinned trainer tree. Reuse the existing source, queue, paths and hashes.
+Replace the operator variables below with their real values. No command here
+starts training.
+
+~~~bash
+# Existing operator values:
+# DATA_ROOT SOURCE DATASET POOLS CODE REMOTE QUEUE CAMPAIGN FREEZE KIND IMAGE PROBE RUNS SETTINGS ORCHESTRATOR
+# KIND = external_fixed or hpo_d.
+# CODE starts at the original campaign.runtime.code_commit with a clean tree.
+g() {
+  cmd="$1"; shift
+  PYTHONPATH="$ORCHESTRATOR/src" python -m augment_atlas.global_cli "$cmd" --data-root "$DATA_ROOT" --source "$SOURCE" \
+    --dataset "$DATASET" --pools-sha256 "$POOLS" --code "$CODE" "$@"
+}
+q() { g "$@" --remote "$REMOTE" --checkout "$QUEUE"; }
+
+# Preparation only: adds 100 configs + separate manifest; grants no execution.
+g materialize-final --freeze-sha256 "$FREEZE" --freeze-kind "$KIND" --stages '11;13,19' \
+  --campaign-sha256 "$CAMPAIGN" --stage 2
+# Operator creates this config-only commit; original campaign/MANIFEST stay intact.
+git -C "$CODE" add -- "configs/global/$DATASET/final/stage-2"
+git -C "$CODE" commit -m "Add declared stage 2 sensitivity configs"
+EXECUTION=$(git -C "$CODE" rev-parse HEAD)
+
+# Actual seal timestamp, distinct from the decision date.
+SEALED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+g authorize-stage --campaign-sha256 "$CAMPAIGN" --stage 2 \
+  --execution-code-commit "$EXECUTION" --image-id "$IMAGE" --environment-probe "$PROBE" \
+  --decided-on 2026-10-29 --decided-after-primary-results true \
+  --rationale 'Eduardo decided on 2026-10-29 after viewing the INbreast primary results; seeds 13 and 19 are predeclared sensitivity only. Primary training seed is 11.' \
+  --sealed-at "$SEALED_AT"
+# Set AUTH to the stage_authorization_sha256 printed above (private store outside CODE).
+# Requested flow: authorization -> idempotent materialization -> anchor -> stage-only jobs.
+g materialize-final --freeze-sha256 "$FREEZE" --freeze-kind "$KIND" --stages '11;13,19' \
+  --campaign-sha256 "$CAMPAIGN" --stage 2 --stage-authorization-sha256 "$AUTH"
+q anchor --kind stage_authorization --document-sha256 "$AUTH" \
+  --image-id "$IMAGE" --environment-probe "$PROBE"
+q seed-final --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH"
+q audit-chronology --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH"
+for scope in stage1 all_authorized; do
+  q collect --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH" \
+    --scope "$scope" --runs "$RUNS" --settings "$SETTINGS"
+  q report --campaign-sha256 "$CAMPAIGN" --stage-authorization-sha256 "$AUTH" \
+    --scope "$scope" --runs "$RUNS" --settings "$SETTINGS"
+done
+~~~
+
+The stage worker settings keep the original campaign_sha256 and
+campaign_commit, add stage_authorization_sha256: AUTH, and point code at
+a clean checkout of EXECUTION. Use exactly the original immutable image,
+probe environment, data, views, weights and runs root. Stage-1 workers still
+require the original campaign commit. The orchestrator validates the stage
+pin and Git identity before each claim and container creation; the queue CAS
+claim rechecks chronology against the exact parent HEAD.
+Restart/resume uses the same settings, job/attempt and pinned checkout.
+A new seed-final call is idempotent and creates only stage-2 jobs, never seed 11.
+
+After authorization, pass its hash to chronology, collection and report.
+Without a supplied authorization, the original refusals remain in force.
+A later-stage job created before or in the authorization anchor commit makes
+the campaign invalid; timestamp guesses cannot repair Git ancestry.
+
+The default --scope stage1 uses the primary queue snapshot immediately
+before the authorization anchor, including its chronology HEAD. This preserves
+the existing report and collection bytes even after sensitivity jobs/claims
+change the queue. It also freezes the primary snapshot: subsequent primary
+retries are not silently incorporated into that primary report. The complete
+current queue is still audited before selecting this snapshot. The separate
+--scope all_authorized report/collection includes all 150 authorized cells,
+uses current chronology, adds explicit sensitivity scope and authorization
+provenance, and aggregates folds then seeds. It does not replace the primary.
+Launch a sensitivity worker from the updated host orchestration checkout,
+while SETTINGS.code continues to name the separate, clean EXECUTION checkout:
+
+~~~bash
+"$ORCHESTRATOR/scripts/worker.sh" --settings "$SETTINGS" --phase final
+# After an interruption, use the same pins/settings and the established --resume procedure.
+~~~
+
+Current calls take one later-stage authorization document; authorizing several
+later stages simultaneously is outside this C9b flow.
+
+
+Seed requests can use the bundled RealStageAuthorizer; see [seed-requests.md](seed-requests.md).
+By default authorize-stage requires the campaign probe environment. An explicit
+--cross-environment declaration permits another probe environment while keeping
+the image identical. The authorization pins the supplied environment; anchor and
+worker checks use that pin. The all_authorized sensitivity report labels those
+seeds "different environment (declared)". The default stage1 report is unchanged.
