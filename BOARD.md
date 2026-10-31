@@ -1,14 +1,14 @@
 # Queue board
 
-Generated UTC: 2026-10-31T13:25:20.669588Z
+Generated UTC: 2026-10-31T13:40:31.812578Z
 
-Queue commit: <code>12c27648cf7623df9e41e00a0e9776a06dffe133</code>
+Queue commit: <code>c3fb9d54ff9127981a5e7aa202e063cbaa45f083</code>
 
 Total jobs: 531
 
 | pending | claimed | running | succeeded | failed | interrupted | cancelled |
 | --- | --- | --- | --- | --- | --- | --- |
-| 242 | 0 | 3 | 283 | 0 | 2 | 1 |
+| 241 | 0 | 3 | 284 | 0 | 2 | 1 |
 
 ## Campaign progress
 
@@ -25,8 +25,8 @@ Completed = succeeded / total. Claimed remains a separate queue state.
 | inbreast-private-smoke | local-pilot-subset-technical-v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | smoke | 3 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | hpo | 101 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 11 | 50 | 39 | 2 | 9 | 0 | 0 | 0 | 0 | 78.0% |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 13 | 50 | 9 | 1 | 40 | 0 | 0 | 0 | 0 | 18.0% |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 19 | 50 | 7 | 0 | 43 | 0 | 0 | 0 | 0 | 14.0% |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 13 | 50 | 10 | 0 | 40 | 0 | 0 | 0 | 0 | 20.0% |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 19 | 50 | 7 | 1 | 42 | 0 | 0 | 0 | 0 | 14.0% |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | hpo | 101 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | final | 11 | 50 | 0 | 0 | 50 | 0 | 0 | 0 | 0 | 0.0% |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | final | 13 | 50 | 0 | 0 | 50 | 0 | 0 | 0 | 0 | 0.0% |
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2bbe2298aac64a845119fc5965fd1b1abfb99d0960e6db47cd98231b4d039cb2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_light | 4 | 13 | qflex | 0 | 13/20 | 2026-10-31T12:49:49.694453Z | 2026-10-31T13:20:09.104187Z | 00:05:12 |
-| b616cecaed90133d2cc4878ca0a681284155817613d7a8c4ee5e66ae11f3553e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 0 | 11 | x299 | 0 | 14/20 | 2026-10-31T11:58:49.678082Z | 2026-10-31T13:24:31.176721Z | 00:00:50 |
-| b722c39f75fc728fedfcba1456428da8b7f09f82c07736cfa0c57eb99c314e2e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_light | 1 | 11 | x299 | 1 | 11/20 | 2026-10-31T12:12:41.478986Z | 2026-10-31T13:23:18.659976Z | 00:02:03 |
+| 2f693c92f5b9ffde73949f59a75728fbdaf1697c83e0f0cc2601459afefd5771 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 0 | 19 | qflex | 0 | 0/? | 2026-10-31T13:36:23.213909Z | 2026-10-31T13:36:35.978038Z | 00:03:56 |
+| b616cecaed90133d2cc4878ca0a681284155817613d7a8c4ee5e66ae11f3553e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 0 | 11 | x299 | 0 | 17/20 | 2026-10-31T11:58:49.678082Z | 2026-10-31T13:39:36.813719Z | 00:00:55 |
+| b722c39f75fc728fedfcba1456428da8b7f09f82c07736cfa0c57eb99c314e2e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_light | 1 | 11 | x299 | 1 | 14/20 | 2026-10-31T12:12:41.478986Z | 2026-10-31T13:38:23.623172Z | 00:02:09 |
 
 ## Recent failures / interruptions
 
@@ -78,7 +78,7 @@ Stale/unknown/future observations and claimed jobs add no capacity; running rema
 | inbreast | legacy-proposal-v1-converted | campaign:e91bfa11279d002676ac720299574d2769d39ad3a88434b5e0ce0ef10c053019 | 54 | 00:02:52 | 0 | 0 | 00:00:00 estimate |
 | inbreast-pilot-endurance | inbreast-existing-classification-integrity-20261016 | recipe:3a40d11636818200565d6b3fdea4d5a9f05bde216033d4c00f2698a12c4e93a3 | 1 | 00:01:40 | 0 | 0 | 00:00:00 estimate |
 | inbreast-private-smoke | local-pilot-subset-technical-v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | 1 | 00:00:38 | 0 | 0 | 00:00:00 estimate |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | 59 | 01:57:05 | 92 | 3 | 59:50:32 estimate |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | 60 | 01:57:05 | 91 | 3 | 59:11:11 estimate |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | 4 | 00:19:27 | 150 | 0 | unavailable estimate |
 | synthetic-recovery-1024 | v1 | recipe:9facdb72604e40535840a4dcc4da8c59c8cbe0a821085026aaeaed321ab6ad78 | 0 | unknown | 0 | 0 | 00:00:00 estimate |
 | synthetic-tiny | v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | 2 | 00:00:38 | 0 | 0 | 00:00:00 estimate |
