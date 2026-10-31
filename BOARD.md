@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-10-31T08:21:28.703186Z
+Generated UTC: 2026-10-31T08:36:41.572759Z
 
-Queue commit: <code>9aff14be230941a77332948e4b7a4a97ba95a6b5</code>
+Queue commit: <code>09f576627a0316a8c2637542805bae0ea5974664</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1efb5698e1e590e98903fea24b1e19fe81cd9314664b55fccaf48b582330eda4 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 3 | 13 | qflex | 0 | 2/20 | 2026-10-31T08:11:38.048319Z | 2026-10-31T08:16:51.451562Z | 00:04:38 |
-| a7acddb979628e1d58f56bedec70050026a279d5b48015504697401aec3d021c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 4 | 11 | x299 | 0 | 3/20 | 2026-10-31T07:58:32.342687Z | 2026-10-31T08:18:57.326057Z | 00:02:32 |
-| a9705c9111ddec26ade4941db57c9bee56a046b07e7093a6a062e341de0a80d5 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 1 | 11 | x299 | 1 | 1/20 | 2026-10-31T08:09:06.674843Z | 2026-10-31T08:19:30.243652Z | 00:01:59 |
+| 1efb5698e1e590e98903fea24b1e19fe81cd9314664b55fccaf48b582330eda4 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 3 | 13 | qflex | 0 | 8/20 | 2026-10-31T08:11:38.048319Z | 2026-10-31T08:31:56.041910Z | 00:04:46 |
+| a7acddb979628e1d58f56bedec70050026a279d5b48015504697401aec3d021c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 4 | 11 | x299 | 0 | 5/20 | 2026-10-31T07:58:32.342687Z | 2026-10-31T08:34:01.874177Z | 00:02:40 |
+| a9705c9111ddec26ade4941db57c9bee56a046b07e7093a6a062e341de0a80d5 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 1 | 11 | x299 | 1 | 4/20 | 2026-10-31T08:09:06.674843Z | 2026-10-31T08:34:33.440982Z | 00:02:09 |
 
 ## Recent failures / interruptions
 
