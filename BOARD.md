@@ -1,6 +1,6 @@
 # Queue board
 
-Generated UTC: 2026-10-31T02:16:42.807334Z
+Generated UTC: 2026-10-31T02:16:53.798183Z
 
 Queue commit: <code>b53bded54b9b8f333558a531e6ae9f0ddff55cca</code>
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0808d89ab70f76fce496745f17121cfd7aa687b4aaeba4f9741879e2c5bb2019 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | none | 4 | 13 | qflex | 0 | 4/20 | 2026-10-31T02:01:16.219620Z | 2026-10-31T02:11:41.819138Z | 00:05:01 |
-| 92b9fbe06aee50ae4dfca1a27412bad684a24e2faf200b9734984325442a5b3d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 3 | 11 | x299 | 0 | 2/20 | 2026-10-31T02:00:26.397896Z | 2026-10-31T02:15:54.138689Z | 00:00:49 |
-| 97cd297f92871c5a4df8d90fed5980e6bf609c98225faca21026d0c7e497be08 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 3 | 11 | x299 | 1 | 1/20 | 2026-10-31T02:01:49.086166Z | 2026-10-31T02:12:10.483411Z | 00:04:33 |
+| 0808d89ab70f76fce496745f17121cfd7aa687b4aaeba4f9741879e2c5bb2019 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | none | 4 | 13 | qflex | 0 | 4/20 | 2026-10-31T02:01:16.219620Z | 2026-10-31T02:11:41.819138Z | 00:05:12 |
+| 92b9fbe06aee50ae4dfca1a27412bad684a24e2faf200b9734984325442a5b3d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 3 | 11 | x299 | 0 | 2/20 | 2026-10-31T02:00:26.397896Z | 2026-10-31T02:15:54.138689Z | 00:01:00 |
+| 97cd297f92871c5a4df8d90fed5980e6bf609c98225faca21026d0c7e497be08 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 3 | 11 | x299 | 1 | 1/20 | 2026-10-31T02:01:49.086166Z | 2026-10-31T02:12:10.483411Z | 00:04:44 |
 
 ## Recent failures / interruptions
 
