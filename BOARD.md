@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-10-31T14:26:07.531220Z
+Generated UTC: 2026-10-31T14:41:18.868684Z
 
-Queue commit: <code>236bac655b29d44eb469a81f7dc0edda71ab7d42</code>
+Queue commit: <code>ea5f39f14eb3f981c46087f9035f6e815277875c</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 3571baef750bd15c77c38fab5bbfe8145cd8d465d976fa24a1adeadefa17e4de | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 2 | 13 | qflex | 0 | 0/? | 2026-10-31T14:22:18.838535Z | 2026-10-31T14:22:30.659721Z | 00:03:37 |
-| b78c596e92cd0affab09a6fcbbcf99b89fef6f72cb70f03a49001e5aaf773f02 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 0 | 11 | x299 | 0 | 4/20 | 2026-10-31T13:59:38.802453Z | 2026-10-31T14:25:02.024608Z | 00:01:06 |
-| b91ce7558ce2e9bf7796b682998e228f918b6ab5ef3a6bc62cfe2e4d8a43b0aa | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 4 | 11 | x299 | 1 | 1/20 | 2026-10-31T14:15:18.847729Z | 2026-10-31T14:25:40.603521Z | 00:00:27 |
+| 3571baef750bd15c77c38fab5bbfe8145cd8d465d976fa24a1adeadefa17e4de | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 2 | 13 | qflex | 0 | 6/20 | 2026-10-31T14:22:18.838535Z | 2026-10-31T14:37:33.936237Z | 00:03:45 |
+| b78c596e92cd0affab09a6fcbbcf99b89fef6f72cb70f03a49001e5aaf773f02 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 0 | 11 | x299 | 0 | 6/20 | 2026-10-31T13:59:38.802453Z | 2026-10-31T14:40:04.603653Z | 00:01:15 |
+| b91ce7558ce2e9bf7796b682998e228f918b6ab5ef3a6bc62cfe2e4d8a43b0aa | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 4 | 11 | x299 | 1 | 4/20 | 2026-10-31T14:15:18.847729Z | 2026-10-31T14:40:43.731741Z | 00:00:36 |
 
 ## Recent failures / interruptions
 
