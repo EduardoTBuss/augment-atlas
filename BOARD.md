@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-10-31T07:35:53.173503Z
+Generated UTC: 2026-10-31T07:51:04.450970Z
 
-Queue commit: <code>3e980ceeb307e4a669f13d021697320ffb8617d3</code>
+Queue commit: <code>a73b9b1d5134a5cdd78daeffbcc75ba41527168d</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1dd78f6e55479709854dcdba4d781d63da7dcbf758503594a3a628a56be87227 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 0 | 13 | qflex | 0 | 2/20 | 2026-10-31T07:25:22.046360Z | 2026-10-31T07:30:54.847189Z | 00:04:59 |
-| 9d7b57fd72d1ef6c58ca80eb21e361c62ca39c706a01d4dd2a7992bb2872d62f | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 3 | 11 | x299 | 0 | 16/20 | 2026-10-31T05:59:33.330824Z | 2026-10-31T07:35:15.579151Z | 00:00:38 |
-| a5f87a45b92b536b8637246754f50bf566734e4e77685267802d8aa433cee73c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 2 | 11 | x299 | 1 | 14/20 | 2026-10-31T06:06:29.625480Z | 2026-10-31T07:31:58.469085Z | 00:03:55 |
+| 1dd78f6e55479709854dcdba4d781d63da7dcbf758503594a3a628a56be87227 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 0 | 13 | qflex | 0 | 9/20 | 2026-10-31T07:25:22.046360Z | 2026-10-31T07:45:58.445737Z | 00:05:07 |
+| 9d7b57fd72d1ef6c58ca80eb21e361c62ca39c706a01d4dd2a7992bb2872d62f | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 3 | 11 | x299 | 0 | 19/20 | 2026-10-31T05:59:33.330824Z | 2026-10-31T07:50:20.705883Z | 00:00:44 |
+| a5f87a45b92b536b8637246754f50bf566734e4e77685267802d8aa433cee73c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 2 | 11 | x299 | 1 | 16/20 | 2026-10-31T06:06:29.625480Z | 2026-10-31T07:47:00.862725Z | 00:04:04 |
 
 ## Recent failures / interruptions
 
