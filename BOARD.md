@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-10-31T12:54:58.385482Z
+Generated UTC: 2026-10-31T13:10:09.441460Z
 
-Queue commit: <code>e4e606cf27163c3302cc5a1ccfe586791b574ae2</code>
+Queue commit: <code>fdaf4c236fed36a7e5df59a09c56e35371940cc6</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2bbe2298aac64a845119fc5965fd1b1abfb99d0960e6db47cd98231b4d039cb2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_light | 4 | 13 | qflex | 0 | 0/? | 2026-10-31T12:49:49.694453Z | 2026-10-31T12:50:02.276837Z | 00:04:57 |
-| b616cecaed90133d2cc4878ca0a681284155817613d7a8c4ee5e66ae11f3553e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 0 | 11 | x299 | 0 | 9/20 | 2026-10-31T11:58:49.678082Z | 2026-10-31T12:54:21.696582Z | 00:00:37 |
-| b722c39f75fc728fedfcba1456428da8b7f09f82c07736cfa0c57eb99c314e2e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_light | 1 | 11 | x299 | 1 | 6/20 | 2026-10-31T12:12:41.478986Z | 2026-10-31T12:53:11.375967Z | 00:01:48 |
+| 2bbe2298aac64a845119fc5965fd1b1abfb99d0960e6db47cd98231b4d039cb2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_light | 4 | 13 | qflex | 0 | 6/20 | 2026-10-31T12:49:49.694453Z | 2026-10-31T13:05:04.861654Z | 00:05:05 |
+| b616cecaed90133d2cc4878ca0a681284155817613d7a8c4ee5e66ae11f3553e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 0 | 11 | x299 | 0 | 11/20 | 2026-10-31T11:58:49.678082Z | 2026-10-31T13:09:26.164252Z | 00:00:44 |
+| b722c39f75fc728fedfcba1456428da8b7f09f82c07736cfa0c57eb99c314e2e | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_light | 1 | 11 | x299 | 1 | 9/20 | 2026-10-31T12:12:41.478986Z | 2026-10-31T13:08:13.974864Z | 00:01:56 |
 
 ## Recent failures / interruptions
 
