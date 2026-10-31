@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-10-31T09:22:16.984423Z
+Generated UTC: 2026-10-31T09:37:28.232370Z
 
-Queue commit: <code>f5f54f673f28aeb9562c91d36c60485193695ce1</code>
+Queue commit: <code>49da6d4b3bee8f2b25cb151011b28639bea4e79f</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1fee920881bac1a8e498ae80580723af10538de6ca15b52a2014be30e5e58d5c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 1 | 13 | qflex | 0 | 8/20 | 2026-10-31T08:57:47.416957Z | 2026-10-31T09:18:04.961893Z | 00:04:13 |
-| a7acddb979628e1d58f56bedec70050026a279d5b48015504697401aec3d021c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 4 | 11 | x299 | 0 | 13/20 | 2026-10-31T07:58:32.342687Z | 2026-10-31T09:19:12.502183Z | 00:03:05 |
-| a9705c9111ddec26ade4941db57c9bee56a046b07e7093a6a062e341de0a80d5 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 1 | 11 | x299 | 1 | 11/20 | 2026-10-31T08:09:06.674843Z | 2026-10-31T09:19:46.970482Z | 00:02:31 |
+| 1fee920881bac1a8e498ae80580723af10538de6ca15b52a2014be30e5e58d5c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 1 | 13 | qflex | 0 | 15/20 | 2026-10-31T08:57:47.416957Z | 2026-10-31T09:33:08.638893Z | 00:04:20 |
+| a7acddb979628e1d58f56bedec70050026a279d5b48015504697401aec3d021c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 4 | 11 | x299 | 0 | 16/20 | 2026-10-31T07:58:32.342687Z | 2026-10-31T09:34:15.766426Z | 00:03:13 |
+| a9705c9111ddec26ade4941db57c9bee56a046b07e7093a6a062e341de0a80d5 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_light | 1 | 11 | x299 | 1 | 14/20 | 2026-10-31T08:09:06.674843Z | 2026-10-31T09:34:50.613584Z | 00:02:38 |
 
 ## Recent failures / interruptions
 
