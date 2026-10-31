@@ -1,14 +1,14 @@
 # Queue board
 
-Generated UTC: 2026-10-31T15:57:16.987503Z
+Generated UTC: 2026-10-31T16:12:28.189062Z
 
-Queue commit: <code>37ba6b65cedc82f1e7e4500de2fd109e4cb2b1a4</code>
+Queue commit: <code>58730a2613a188e64c9190d3ed64ece5ecd66513</code>
 
 Total jobs: 531
 
 | pending | claimed | running | succeeded | failed | interrupted | cancelled |
 | --- | --- | --- | --- | --- | --- | --- |
-| 236 | 0 | 3 | 289 | 0 | 2 | 1 |
+| 235 | 0 | 2 | 290 | 1 | 2 | 1 |
 
 ## Campaign progress
 
@@ -24,7 +24,7 @@ Completed = succeeded / total. Claimed remains a separate queue state.
 | inbreast-pilot-endurance | inbreast-existing-classification-integrity-20261016 | recipe:3a40d11636818200565d6b3fdea4d5a9f05bde216033d4c00f2698a12c4e93a3 | smoke | 3 | 2 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 50.0% |
 | inbreast-private-smoke | local-pilot-subset-technical-v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | smoke | 3 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | hpo | 101 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 11 | 50 | 41 | 2 | 7 | 0 | 0 | 0 | 0 | 82.0% |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 11 | 50 | 42 | 1 | 6 | 1 | 0 | 0 | 0 | 84.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 13 | 50 | 11 | 0 | 39 | 0 | 0 | 0 | 0 | 22.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 19 | 50 | 9 | 1 | 40 | 0 | 0 | 0 | 0 | 18.0% |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | hpo | 101 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
@@ -42,9 +42,8 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 3784daaa3f62c587c5549489fea30e7020511f94a050db467fedd18a225e4f68 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 2 | 19 | qflex | 0 | 0/? | 2026-10-31T15:55:01.832549Z | 2026-10-31T15:55:14.261324Z | 00:02:03 |
-| b78c596e92cd0affab09a6fcbbcf99b89fef6f72cb70f03a49001e5aaf773f02 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 0 | 11 | x299 | 0 | 19/20 | 2026-10-31T13:59:38.802453Z | 2026-10-31T15:55:27.379390Z | 00:01:50 |
-| b91ce7558ce2e9bf7796b682998e228f918b6ab5ef3a6bc62cfe2e4d8a43b0aa | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 4 | 11 | x299 | 1 | 16/20 | 2026-10-31T14:15:18.847729Z | 2026-10-31T15:55:58.246829Z | 00:01:19 |
+| 3784daaa3f62c587c5549489fea30e7020511f94a050db467fedd18a225e4f68 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 2 | 19 | qflex | 0 | 6/20 | 2026-10-31T15:55:01.832549Z | 2026-10-31T16:10:16.243295Z | 00:02:12 |
+| b91ce7558ce2e9bf7796b682998e228f918b6ab5ef3a6bc62cfe2e4d8a43b0aa | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 4 | 11 | x299 | 1 | 19/20 | 2026-10-31T14:15:18.847729Z | 2026-10-31T16:11:02.001851Z | 00:01:27 |
 
 ## Recent failures / interruptions
 
@@ -52,6 +51,7 @@ Latest 20 failure/interruption events, including prior attempts; observation tim
 
 | Job | Dataset | Campaign | State | Observed UTC | Reason |
 | --- | --- | --- | --- | --- | --- |
+| be13bff240b628b050c51eb77a3c2716777450fd0ce9647b78972dfea02a92b3 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | failed | 2026-10-31T16:11:59.933127Z | unspecified |
 | 913b46f2a16a39ce8ec4869812df4467868ac9c83f215c1c6017071fc5cdf262 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | failed | 2026-10-31T01:57:29.833112Z | unspecified |
 | 928161978417793d6566d56aad8b11045638175309d77995a0ae0cbce341e045 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | failed | 2026-10-31T01:57:29.526504Z | unspecified |
 | 913b46f2a16a39ce8ec4869812df4467868ac9c83f215c1c6017071fc5cdf262 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | failed | 2026-10-30T22:33:03.046067Z | unspecified |
@@ -78,7 +78,7 @@ Stale/unknown/future observations and claimed jobs add no capacity; running rema
 | inbreast | legacy-proposal-v1-converted | campaign:e91bfa11279d002676ac720299574d2769d39ad3a88434b5e0ce0ef10c053019 | 54 | 00:02:52 | 0 | 0 | 00:00:00 estimate |
 | inbreast-pilot-endurance | inbreast-existing-classification-integrity-20261016 | recipe:3a40d11636818200565d6b3fdea4d5a9f05bde216033d4c00f2698a12c4e93a3 | 1 | 00:01:40 | 0 | 0 | 00:00:00 estimate |
 | inbreast-private-smoke | local-pilot-subset-technical-v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | 1 | 00:00:38 | 0 | 0 | 00:00:00 estimate |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | 65 | 01:57:04 | 86 | 3 | 55:55:46 estimate |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | 66 | 01:57:05 | 85 | 2 | 82:55:33 estimate |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | 4 | 00:19:27 | 150 | 0 | unavailable estimate |
 | synthetic-recovery-1024 | v1 | recipe:9facdb72604e40535840a4dcc4da8c59c8cbe0a821085026aaeaed321ab6ad78 | 0 | unknown | 0 | 0 | 00:00:00 estimate |
 | synthetic-tiny | v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | 2 | 00:00:38 | 0 | 0 | 00:00:00 estimate |
