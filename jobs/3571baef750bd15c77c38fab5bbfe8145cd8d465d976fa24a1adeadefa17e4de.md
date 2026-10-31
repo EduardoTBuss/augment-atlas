@@ -1,8 +1,10 @@
 # Job 3571baef750bd15c77c38fab5bbfe8145cd8d465d976fa24a1adeadefa17e4de
 
-State: **claimed** | phase: final | fold: 2 | train seed: 13 | arm: basic_gamma_light
+State: **running** | phase: final | fold: 2 | train seed: 13 | arm: basic_gamma_light
 
-Attempt: e542add790e94d52bb1e18a487162ac3 | owner: {'server': 'qflex', 'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1'} | last observation UTC: 2026-10-31T14:21:57.752557+00:00 | sequence: 1
+Attempt: e542add790e94d52bb1e18a487162ac3 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-10-31T14:22:18.838535+00:00 | sequence: 2
+
+Epoch: 0/? | progress observed UTC: 2026-10-31T14:22:18.838535+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -21,6 +23,17 @@ Attempt: e542add790e94d52bb1e18a487162ac3 | owner: {'server': 'qflex', 'gpu': '0
       "seq": 1,
       "state": "claimed",
       "token": "87754bc5a2ac479ba064a26e12df58fb"
+    },
+    {
+      "at": "2026-10-31T14:22:23.513248+00:00",
+      "attempt_id": "e542add790e94d52bb1e18a487162ac3",
+      "epoch": 0,
+      "event_id": "baa4dedf5e01484ea303b6bc142533d2",
+      "kind": "update",
+      "observed_at_utc": "2026-10-31T14:22:18.838535+00:00",
+      "payload_hash": "e555923fd005c9aa90efe7034016ad2dfbc4f4aa9bb3bae902aff5eb5171ee55",
+      "seq": 2,
+      "state": "running"
     }
   ],
   "job_id": "3571baef750bd15c77c38fab5bbfe8145cd8d465d976fa24a1adeadefa17e4de",
@@ -30,7 +43,7 @@ Attempt: e542add790e94d52bb1e18a487162ac3 | owner: {'server': 'qflex', 'gpu': '0
     "server": "qflex"
   },
   "schema_version": 1,
-  "seq": 1,
+  "seq": 2,
   "spec": {
     "arm": "basic_gamma_light",
     "code_commit": "b005e8414ef8badf6c2a05a2cd957b107fa01180",
@@ -59,8 +72,8 @@ Attempt: e542add790e94d52bb1e18a487162ac3 | owner: {'server': 'qflex', 'gpu': '0
     "split_hash": "4ab8ec550bfd093da728033a4bfb8f78f60a6aa9271cce1ae64ef75001933bd1",
     "train_seed": 13
   },
-  "state": "claimed",
+  "state": "running",
   "token": "87754bc5a2ac479ba064a26e12df58fb",
-  "version": 1
+  "version": 2
 }
 ```
