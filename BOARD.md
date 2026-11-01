@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-11-01T15:30:59.132943Z
+Generated UTC: 2026-11-01T15:46:10.413979Z
 
-Queue commit: <code>859990c2ecfc4c36e14c171431cf50dae37177e7</code>
+Queue commit: <code>c5f8a9849702a77e39d6d28804afd9a528939485</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 8b53f583bdedb4dd09f4212e160847aba9968c65167ba3b833b10da85a61d96d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 2 | 13 | qflex | 0 | 11/20 | 2026-11-01T15:04:06.698115Z | 2026-11-01T15:29:23.128642Z | 00:01:37 |
-| b91ce7558ce2e9bf7796b682998e228f918b6ab5ef3a6bc62cfe2e4d8a43b0aa | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 4 | 11 | x299 | 0 | 15/20 | 2026-11-01T13:57:38.829925Z | 2026-11-01T15:28:18.185525Z | 00:02:41 |
-| be13bff240b628b050c51eb77a3c2716777450fd0ce9647b78972dfea02a92b3 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 2 | 11 | x299 | 1 | 14/20 | 2026-11-01T14:00:31.621920Z | 2026-11-01T15:26:10.155090Z | 00:04:49 |
+| 8b53f583bdedb4dd09f4212e160847aba9968c65167ba3b833b10da85a61d96d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 2 | 13 | qflex | 0 | 17/20 | 2026-11-01T15:04:06.698115Z | 2026-11-01T15:44:24.053603Z | 00:01:47 |
+| b91ce7558ce2e9bf7796b682998e228f918b6ab5ef3a6bc62cfe2e4d8a43b0aa | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_heavy | 4 | 11 | x299 | 0 | 17/20 | 2026-11-01T13:57:38.829925Z | 2026-11-01T15:43:21.237408Z | 00:02:50 |
+| be13bff240b628b050c51eb77a3c2716777450fd0ce9647b78972dfea02a92b3 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | gamma_light | 2 | 11 | x299 | 1 | 16/20 | 2026-11-01T14:00:31.621920Z | 2026-11-01T15:41:13.520236Z | 00:04:57 |
 
 ## Recent failures / interruptions
 
