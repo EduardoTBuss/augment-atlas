@@ -1,10 +1,10 @@
 # Job 8d9ad4009a559e7e661bd324edb52efb9deef54b1ea3facda4fad944bc12ec21
 
-State: **running** | phase: final | fold: 4 | train seed: 19 | arm: none
+State: **succeeded** | phase: final | fold: 4 | train seed: 19 | arm: none
 
-Attempt: d4d357f2ee074edcbd6063743af22fc1 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-11-01T16:30:54.901856+00:00 | sequence: 11
+Attempt: d4d357f2ee074edcbd6063743af22fc1 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-11-01T16:35:50.133145+00:00 | sequence: 12
 
-Epoch: 17/20 | progress observed UTC: 2026-11-01T16:30:54.901856+00:00
+Epoch: 20/20 | progress observed UTC: 2026-11-01T16:35:50.133145+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -148,6 +148,21 @@ Epoch: 17/20 | progress observed UTC: 2026-11-01T16:30:54.901856+00:00
       "samples_processed": 469183,
       "seq": 11,
       "state": "running"
+    },
+    {
+      "artifact_count": 9,
+      "at": "2026-11-01T16:35:54.863893+00:00",
+      "attempt_id": "d4d357f2ee074edcbd6063743af22fc1",
+      "completed_sha256": "609dad4a02475f3fab9cfcb60be537a91fb2494f896bf7783521c24fdf676502",
+      "epoch": 20,
+      "epochs": 20,
+      "event_id": "2d032f02eb1040a1ba40ce2ebd2374ce",
+      "kind": "update",
+      "observed_at_utc": "2026-11-01T16:35:50.133145+00:00",
+      "payload_hash": "5fa9fc8a7c0dc7c4c635f82364763d79ed785cbf2487578f69ba66c6fc2c4ab4",
+      "samples_processed": 551980,
+      "seq": 12,
+      "state": "succeeded"
     }
   ],
   "job_id": "8d9ad4009a559e7e661bd324edb52efb9deef54b1ea3facda4fad944bc12ec21",
@@ -157,7 +172,7 @@ Epoch: 17/20 | progress observed UTC: 2026-11-01T16:30:54.901856+00:00
     "server": "qflex"
   },
   "schema_version": 1,
-  "seq": 11,
+  "seq": 12,
   "spec": {
     "arm": "none",
     "code_commit": "b005e8414ef8badf6c2a05a2cd957b107fa01180",
@@ -186,8 +201,8 @@ Epoch: 17/20 | progress observed UTC: 2026-11-01T16:30:54.901856+00:00
     "split_hash": "fee401e5b9cc634a37b41986e7b42612a08ee97120eae9ad657beb6f92ee7891",
     "train_seed": 19
   },
-  "state": "running",
+  "state": "succeeded",
   "token": "8f9fbb12557b46538960448608e6f195",
-  "version": 11
+  "version": 12
 }
 ```
