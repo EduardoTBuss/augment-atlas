@@ -1,14 +1,14 @@
 # Queue board
 
-Generated UTC: 2026-11-01T03:21:17.119997Z
+Generated UTC: 2026-11-01T03:36:28.507074Z
 
-Queue commit: <code>e5923f352b54c4ac574b8ac0415797f583e3fbb9</code>
+Queue commit: <code>d00fefc95f51f1fc410bb99aa91b7dc14f12e5f6</code>
 
 Total jobs: 531
 
 | pending | claimed | running | succeeded | failed | interrupted | cancelled |
 | --- | --- | --- | --- | --- | --- | --- |
-| 221 | 0 | 1 | 304 | 2 | 2 | 1 |
+| 220 | 0 | 1 | 305 | 2 | 2 | 1 |
 
 ## Campaign progress
 
@@ -25,7 +25,7 @@ Completed = succeeded / total. Claimed remains a separate queue state.
 | inbreast-private-smoke | local-pilot-subset-technical-v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | smoke | 3 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | hpo | 101 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 11 | 50 | 42 | 0 | 6 | 2 | 0 | 0 | 0 | 84.0% |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 13 | 50 | 18 | 1 | 31 | 0 | 0 | 0 | 0 | 36.0% |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 13 | 50 | 19 | 1 | 30 | 0 | 0 | 0 | 0 | 38.0% |
 | isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | final | 19 | 50 | 16 | 0 | 34 | 0 | 0 | 0 | 0 | 32.0% |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | hpo | 101 | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0% |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | final | 11 | 50 | 0 | 0 | 50 | 0 | 0 | 0 | 0 | 0.0% |
@@ -42,7 +42,7 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 5a7e21c422cf407158a1e42c07856df56aae632778ef60ab4f2f7997b1ef8991 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_heavy | 1 | 13 | qflex | 0 | 15/20 | 2026-11-01T02:43:32.070153Z | 2026-11-01T03:18:52.175014Z | 00:02:25 |
+| 5f339d02cd7dbbd051fa2cccd102f65dc07887d848963971a5aea31290b9f8cb | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_light | 0 | 13 | qflex | 0 | 2/20 | 2026-11-01T03:29:57.726525Z | 2026-11-01T03:35:12.407151Z | 00:01:17 |
 
 ## Recent failures / interruptions
 
@@ -78,7 +78,7 @@ Stale/unknown/future observations and claimed jobs add no capacity; running rema
 | inbreast | legacy-proposal-v1-converted | campaign:e91bfa11279d002676ac720299574d2769d39ad3a88434b5e0ce0ef10c053019 | 54 | 00:02:52 | 0 | 0 | 00:00:00 estimate |
 | inbreast-pilot-endurance | inbreast-existing-classification-integrity-20261016 | recipe:3a40d11636818200565d6b3fdea4d5a9f05bde216033d4c00f2698a12c4e93a3 | 1 | 00:01:40 | 0 | 0 | 00:00:00 estimate |
 | inbreast-private-smoke | local-pilot-subset-technical-v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | 1 | 00:00:38 | 0 | 0 | 00:00:00 estimate |
-| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | 80 | 01:54:19 | 71 | 1 | 135:15:46 estimate |
+| isic2020 | isic2020-derived-512-v1 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | 81 | 01:54:13 | 70 | 1 | 133:15:04 estimate |
 | rsna2018 | rsna2018-derived-512-v1 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | 4 | 00:19:27 | 150 | 0 | unavailable estimate |
 | synthetic-recovery-1024 | v1 | recipe:9facdb72604e40535840a4dcc4da8c59c8cbe0a821085026aaeaed321ab6ad78 | 0 | unknown | 0 | 0 | 00:00:00 estimate |
 | synthetic-tiny | v1 | recipe:283423038b9d7630a864d249cdc0137d643729a7a37d7d35905059a1ed88399f | 2 | 00:00:38 | 0 | 0 | 00:00:00 estimate |
