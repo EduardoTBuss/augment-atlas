@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-11-02T07:28:35.191390Z
+Generated UTC: 2026-11-02T07:43:49.124063Z
 
-Queue commit: <code>9cc7d45968dea29b4f845411551af4bc662a059f</code>
+Queue commit: <code>525aae8011721ca924b7256b6170ac725fd46686</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| bc3b1a62db67c168d1d062f596bd3e99d666cc90fac0558306e5af4d92cfcaf9 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_heavy | 3 | 19 | qflex | 0 | 4/20 | 2026-11-02T07:14:34.953558Z | 2026-11-02T07:24:48.195895Z | 00:03:47 |
-| d9cffc2bd111871f7ab2d98ad5768fced34f8c9e039237eb12d3450d46160ec2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_heavy | 4 | 11 | x299 | 1 | 0/20 | 2026-11-02T07:20:31.701075Z | 2026-11-02T07:25:53.045930Z | 00:02:43 |
-| dbfe60ff1ec634d813030270c9fae9db7935bed69a82478abb5ea2fcb1dea12d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 3 | 11 | x299 | 0 | 0/? | 2026-11-02T07:23:14.981756Z | 2026-11-02T07:23:35.160809Z | 00:05:01 |
+| bc3b1a62db67c168d1d062f596bd3e99d666cc90fac0558306e5af4d92cfcaf9 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_heavy | 3 | 19 | qflex | 0 | 11/20 | 2026-11-02T07:14:34.953558Z | 2026-11-02T07:39:49.442606Z | 00:04:00 |
+| d9cffc2bd111871f7ab2d98ad5768fced34f8c9e039237eb12d3450d46160ec2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_heavy | 4 | 11 | x299 | 1 | 3/20 | 2026-11-02T07:20:31.701075Z | 2026-11-02T07:40:55.804488Z | 00:02:54 |
+| dbfe60ff1ec634d813030270c9fae9db7935bed69a82478abb5ea2fcb1dea12d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 3 | 11 | x299 | 0 | 2/20 | 2026-11-02T07:23:14.981756Z | 2026-11-02T07:38:36.210576Z | 00:05:13 |
 
 ## Recent failures / interruptions
 
