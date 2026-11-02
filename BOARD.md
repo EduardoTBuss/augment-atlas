@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-11-02T08:59:45.597303Z
+Generated UTC: 2026-11-02T09:14:56.972253Z
 
-Queue commit: <code>c2fb5aa069cafaad1ebbfb39d7b9c3153f2883da</code>
+Queue commit: <code>0ac88017ed5b62c29754bc201f813b19f40205f3</code>
 
 Total jobs: 531
 
@@ -42,9 +42,9 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| c42533fad8376a0ad85b5f04c64f491d8017c0e12306fccda4474101c38f219c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_light | 0 | 13 | qflex | 0 | 4/20 | 2026-11-02T08:47:38.271254Z | 2026-11-02T08:57:53.276918Z | 00:01:53 |
-| d9cffc2bd111871f7ab2d98ad5768fced34f8c9e039237eb12d3450d46160ec2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_heavy | 4 | 11 | x299 | 1 | 16/20 | 2026-11-02T07:20:31.701075Z | 2026-11-02T08:56:14.190028Z | 00:03:32 |
-| dbfe60ff1ec634d813030270c9fae9db7935bed69a82478abb5ea2fcb1dea12d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 3 | 11 | x299 | 0 | 16/20 | 2026-11-02T07:23:14.981756Z | 2026-11-02T08:58:55.193129Z | 00:00:51 |
+| c42533fad8376a0ad85b5f04c64f491d8017c0e12306fccda4474101c38f219c | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_clahe_light | 0 | 13 | qflex | 0 | 11/20 | 2026-11-02T08:47:38.271254Z | 2026-11-02T09:12:56.358780Z | 00:02:01 |
+| d9cffc2bd111871f7ab2d98ad5768fced34f8c9e039237eb12d3450d46160ec2 | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic_gamma_heavy | 4 | 11 | x299 | 1 | 18/20 | 2026-11-02T07:20:31.701075Z | 2026-11-02T09:11:17.939902Z | 00:03:40 |
+| dbfe60ff1ec634d813030270c9fae9db7935bed69a82478abb5ea2fcb1dea12d | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | basic | 3 | 11 | x299 | 0 | 19/20 | 2026-11-02T07:23:14.981756Z | 2026-11-02T09:13:57.852386Z | 00:01:00 |
 
 ## Recent failures / interruptions
 
