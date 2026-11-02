@@ -2,9 +2,9 @@
 
 State: **running** | phase: final | fold: 4 | train seed: 11 | arm: clahe_light
 
-Attempt: 95156a32c79a412c9b2d01ea9847defc | owner: {'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea', 'server': 'x299'} | last observation UTC: 2026-11-02T06:33:23.868000+00:00 | sequence: 17
+Attempt: 95156a32c79a412c9b2d01ea9847defc | owner: {'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea', 'server': 'x299'} | last observation UTC: 2026-11-02T06:38:24.260083+00:00 | sequence: 18
 
-Epoch: 11/20 | progress observed UTC: 2026-11-02T06:33:23.868000+00:00
+Epoch: 12/20 | progress observed UTC: 2026-11-02T06:38:24.260083+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -226,6 +226,19 @@ Epoch: 11/20 | progress observed UTC: 2026-11-02T06:33:23.868000+00:00
       "samples_processed": 303589,
       "seq": 17,
       "state": "running"
+    },
+    {
+      "at": "2026-11-02T06:38:55.156219+00:00",
+      "attempt_id": "95156a32c79a412c9b2d01ea9847defc",
+      "epoch": 12,
+      "epochs": 20,
+      "event_id": "58331279780d49119f20f7899cddf830",
+      "kind": "update",
+      "observed_at_utc": "2026-11-02T06:38:24.260083+00:00",
+      "payload_hash": "72ea2e1adc44efa78ba94e445a02dba836dac95bd1e9e4596deca003d5b49f89",
+      "samples_processed": 331188,
+      "seq": 18,
+      "state": "running"
     }
   ],
   "job_id": "d4d994a5944d9aed13b60eacfee8b0baf71aff9fb7bdaef56bd7a95f3b3f4cf8",
@@ -235,7 +248,7 @@ Epoch: 11/20 | progress observed UTC: 2026-11-02T06:33:23.868000+00:00
     "server": "x299"
   },
   "schema_version": 1,
-  "seq": 17,
+  "seq": 18,
   "spec": {
     "arm": "clahe_light",
     "code_commit": "775704ff7ff38b418e653adc4b09a324dacfc913",
@@ -266,6 +279,6 @@ Epoch: 11/20 | progress observed UTC: 2026-11-02T06:33:23.868000+00:00
   },
   "state": "running",
   "token": "6f82e9bac6454bf88704a9ebbf9f5ce8",
-  "version": 17
+  "version": 18
 }
 ```
