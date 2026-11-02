@@ -1,10 +1,10 @@
 # Job d4d994a5944d9aed13b60eacfee8b0baf71aff9fb7bdaef56bd7a95f3b3f4cf8
 
-State: **running** | phase: final | fold: 4 | train seed: 11 | arm: clahe_light
+State: **succeeded** | phase: final | fold: 4 | train seed: 11 | arm: clahe_light
 
-Attempt: 95156a32c79a412c9b2d01ea9847defc | owner: {'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea', 'server': 'x299'} | last observation UTC: 2026-11-02T07:18:29.724506+00:00 | sequence: 26
+Attempt: 95156a32c79a412c9b2d01ea9847defc | owner: {'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea', 'server': 'x299'} | last observation UTC: 2026-11-02T07:21:00.702484+00:00 | sequence: 27
 
-Epoch: 19/20 | progress observed UTC: 2026-11-02T07:18:29.724506+00:00
+Epoch: 20/20 | progress observed UTC: 2026-11-02T07:21:00.702484+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -343,6 +343,21 @@ Epoch: 19/20 | progress observed UTC: 2026-11-02T07:18:29.724506+00:00
       "samples_processed": 524381,
       "seq": 26,
       "state": "running"
+    },
+    {
+      "artifact_count": 9,
+      "at": "2026-11-02T07:21:11.380053+00:00",
+      "attempt_id": "95156a32c79a412c9b2d01ea9847defc",
+      "completed_sha256": "11e6816ac1da3a7c63583056ff2aa4523b7ae2a5582fe80889ca883139e68db8",
+      "epoch": 20,
+      "epochs": 20,
+      "event_id": "40a00252fc8f46ad9c3474feb5dd3079",
+      "kind": "update",
+      "observed_at_utc": "2026-11-02T07:21:00.702484+00:00",
+      "payload_hash": "1ab616e8a7f982c4d9eceb6fc58b2d518bb1bff3bb0a586d8fc38cbcb8c3708d",
+      "samples_processed": 551980,
+      "seq": 27,
+      "state": "succeeded"
     }
   ],
   "job_id": "d4d994a5944d9aed13b60eacfee8b0baf71aff9fb7bdaef56bd7a95f3b3f4cf8",
@@ -352,7 +367,7 @@ Epoch: 19/20 | progress observed UTC: 2026-11-02T07:18:29.724506+00:00
     "server": "x299"
   },
   "schema_version": 1,
-  "seq": 26,
+  "seq": 27,
   "spec": {
     "arm": "clahe_light",
     "code_commit": "775704ff7ff38b418e653adc4b09a324dacfc913",
@@ -381,8 +396,8 @@ Epoch: 19/20 | progress observed UTC: 2026-11-02T07:18:29.724506+00:00
     "split_hash": "fee401e5b9cc634a37b41986e7b42612a08ee97120eae9ad657beb6f92ee7891",
     "train_seed": 11
   },
-  "state": "running",
+  "state": "succeeded",
   "token": "6f82e9bac6454bf88704a9ebbf9f5ce8",
-  "version": 26
+  "version": 27
 }
 ```
