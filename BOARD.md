@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-11-02T14:18:54.473050Z
+Generated UTC: 2026-11-02T14:34:06.075972Z
 
-Queue commit: <code>c1e73effdc071cf052d14c5982dfb3041616222e</code>
+Queue commit: <code>71428698965ef3236db14a8ac0a446cef8b9bc94</code>
 
 Total jobs: 531
 
@@ -42,7 +42,7 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| d3cf0cc18111d241efaac93b77fd4730d4357cce283b674a47ed5d3100bb8f3f | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 0 | 13 | qflex | 0 | 0/? | 2026-11-02T14:18:23.176780Z | 2026-11-02T14:18:34.977935Z | 00:00:20 |
+| d3cf0cc18111d241efaac93b77fd4730d4357cce283b674a47ed5d3100bb8f3f | isic2020 | campaign:d5f515f7c13fa36aeb025a58b476c9b9e506088f5ca82f8687e92c90db786333 | clahe_heavy | 0 | 13 | qflex | 0 | 6/20 | 2026-11-02T14:18:23.176780Z | 2026-11-02T14:33:36.165174Z | 00:00:30 |
 
 ## Recent failures / interruptions
 
