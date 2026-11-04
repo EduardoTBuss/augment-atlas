@@ -1,8 +1,10 @@
 # Job e74ac58eabd81881549d2cd1be5147ba9bfaec618d417b36b70dfbebcedbc2e7
 
-State: **claimed** | phase: final | fold: 1 | train seed: 11 | arm: basic_gamma_heavy
+State: **running** | phase: final | fold: 1 | train seed: 11 | arm: basic_gamma_heavy
 
-Attempt: 01ef10d10fec415fa113f90a4c100bd2 | owner: {'server': 'x299', 'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea'} | last observation UTC: 2026-11-04T15:10:29.078906+00:00 | sequence: 1
+Attempt: 01ef10d10fec415fa113f90a4c100bd2 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea', 'server': 'x299'} | last observation UTC: 2026-11-04T15:11:11.274162+00:00 | sequence: 2
+
+Epoch: 0/? | progress observed UTC: 2026-11-04T15:11:11.274162+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -21,6 +23,17 @@ Attempt: 01ef10d10fec415fa113f90a4c100bd2 | owner: {'server': 'x299', 'gpu': '0'
       "seq": 1,
       "state": "claimed",
       "token": "d4319dd937ef461bb12e6e0fd7ce3e8f"
+    },
+    {
+      "at": "2026-11-04T15:11:21.653945+00:00",
+      "attempt_id": "01ef10d10fec415fa113f90a4c100bd2",
+      "epoch": 0,
+      "event_id": "1ad116864df843de91d870b0a909cdbf",
+      "kind": "update",
+      "observed_at_utc": "2026-11-04T15:11:11.274162+00:00",
+      "payload_hash": "e3d5f19c838f2e2d2453ce03a1ee675188893cb159d7181c0a8aab581c683fab",
+      "seq": 2,
+      "state": "running"
     }
   ],
   "job_id": "e74ac58eabd81881549d2cd1be5147ba9bfaec618d417b36b70dfbebcedbc2e7",
@@ -30,7 +43,7 @@ Attempt: 01ef10d10fec415fa113f90a4c100bd2 | owner: {'server': 'x299', 'gpu': '0'
     "server": "x299"
   },
   "schema_version": 1,
-  "seq": 1,
+  "seq": 2,
   "spec": {
     "arm": "basic_gamma_heavy",
     "code_commit": "d89fbe87239e32b6412c1103aa21123072aac03a",
@@ -59,8 +72,8 @@ Attempt: 01ef10d10fec415fa113f90a4c100bd2 | owner: {'server': 'x299', 'gpu': '0'
     "split_hash": "400ba8d70eda9d6c8f295d34431dbc75e236e568ec880010190ce46a03a7acfe",
     "train_seed": 11
   },
-  "state": "claimed",
+  "state": "running",
   "token": "d4319dd937ef461bb12e6e0fd7ce3e8f",
-  "version": 1
+  "version": 2
 }
 ```
