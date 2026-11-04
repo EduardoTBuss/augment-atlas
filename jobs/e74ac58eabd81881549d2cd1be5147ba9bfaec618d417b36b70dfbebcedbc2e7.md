@@ -1,18 +1,36 @@
 # Job e74ac58eabd81881549d2cd1be5147ba9bfaec618d417b36b70dfbebcedbc2e7
 
-State: **pending** | phase: final | fold: 1 | train seed: 11 | arm: basic_gamma_heavy
+State: **claimed** | phase: final | fold: 1 | train seed: 11 | arm: basic_gamma_heavy
 
-Attempt: None | owner: {} | last observation UTC: none | sequence: 0
+Attempt: 01ef10d10fec415fa113f90a4c100bd2 | owner: {'server': 'x299', 'gpu': '0', 'gpu_uuid': 'GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea'} | last observation UTC: 2026-11-04T15:10:29.078906+00:00 | sequence: 1
 
 <!-- augment-atlas-record-v1 -->
 ```json
 {
-  "attempt_id": null,
-  "history": [],
+  "attempt_id": "01ef10d10fec415fa113f90a4c100bd2",
+  "history": [
+    {
+      "at": "2026-11-04T15:10:29.078906+00:00",
+      "attempt_id": "01ef10d10fec415fa113f90a4c100bd2",
+      "kind": "claim",
+      "owner": {
+        "gpu": "0",
+        "gpu_uuid": "GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea",
+        "server": "x299"
+      },
+      "seq": 1,
+      "state": "claimed",
+      "token": "d4319dd937ef461bb12e6e0fd7ce3e8f"
+    }
+  ],
   "job_id": "e74ac58eabd81881549d2cd1be5147ba9bfaec618d417b36b70dfbebcedbc2e7",
-  "owner": null,
+  "owner": {
+    "gpu": "0",
+    "gpu_uuid": "GPU-add635a3-5ecf-0c1c-2f3e-113c84c5f4ea",
+    "server": "x299"
+  },
   "schema_version": 1,
-  "seq": 0,
+  "seq": 1,
   "spec": {
     "arm": "basic_gamma_heavy",
     "code_commit": "d89fbe87239e32b6412c1103aa21123072aac03a",
@@ -41,8 +59,8 @@ Attempt: None | owner: {} | last observation UTC: none | sequence: 0
     "split_hash": "400ba8d70eda9d6c8f295d34431dbc75e236e568ec880010190ce46a03a7acfe",
     "train_seed": 11
   },
-  "state": "pending",
-  "token": null,
-  "version": 0
+  "state": "claimed",
+  "token": "d4319dd937ef461bb12e6e0fd7ce3e8f",
+  "version": 1
 }
 ```
