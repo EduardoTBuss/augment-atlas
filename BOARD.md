@@ -1,8 +1,8 @@
 # Queue board
 
-Generated UTC: 2026-11-06T14:09:51.843492Z
+Generated UTC: 2026-11-06T14:25:04.537221Z
 
-Queue commit: <code>1f90859780c696917ef34f62c80761560142ca41</code>
+Queue commit: <code>b00a385bc0d978b4a0affb897bf347979223d75c</code>
 
 Total jobs: 531
 
@@ -42,7 +42,7 @@ Stale = observation older than 30 min; unknown/future observations are flagged. 
 
 | Job | Dataset | Campaign | Arm | Fold | Seed | Server | GPU | Epoch | Started UTC | Last observation UTC | Observation age (hh:mm:ss) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| d80f204c2f0bd879f4157ecd0e5e4046391a28c0fc78e46da31469314d4e9df9 | rsna2018 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | gamma_heavy | 2 | 13 | qflex | 0 | 0/? | 2026-11-06T14:06:15.367788Z | 2026-11-06T14:06:27.330284Z | 00:03:25 |
+| d80f204c2f0bd879f4157ecd0e5e4046391a28c0fc78e46da31469314d4e9df9 | rsna2018 | campaign:3a463fa6953277f0bc1c1b19f1e836c0b2a2a67c1ab628229084a0cb799c105d | gamma_heavy | 2 | 13 | qflex | 0 | 7/20 | 2026-11-06T14:06:15.367788Z | 2026-11-06T14:21:31.489638Z | 00:03:34 |
 
 ## Recent failures / interruptions
 
