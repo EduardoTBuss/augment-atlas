@@ -1,8 +1,10 @@
 # Job fbdfabe8a56e703100a7b47ddcdbcc9eb6d8eb57bcb89bc0f887dca63a71d2bb
 
-State: **claimed** | phase: final | fold: 4 | train seed: 19 | arm: none
+State: **running** | phase: final | fold: 4 | train seed: 19 | arm: none
 
-Attempt: ad62a69af7a24954a3d83b29e2cdb504 | owner: {'server': 'qflex', 'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1'} | last observation UTC: 2026-11-06T23:26:21.162788+00:00 | sequence: 1
+Attempt: ad62a69af7a24954a3d83b29e2cdb504 | owner: {'gpu': '0', 'gpu_uuid': 'GPU-d98acf69-eea9-96f1-4f5e-d5af8e7190d1', 'server': 'qflex'} | last observation UTC: 2026-11-06T23:26:42.508463+00:00 | sequence: 2
+
+Epoch: 0/? | progress observed UTC: 2026-11-06T23:26:42.508463+00:00
 
 <!-- augment-atlas-record-v1 -->
 ```json
@@ -21,6 +23,17 @@ Attempt: ad62a69af7a24954a3d83b29e2cdb504 | owner: {'server': 'qflex', 'gpu': '0
       "seq": 1,
       "state": "claimed",
       "token": "180f06eeb53d45579c85c3cae3014964"
+    },
+    {
+      "at": "2026-11-06T23:26:47.571292+00:00",
+      "attempt_id": "ad62a69af7a24954a3d83b29e2cdb504",
+      "epoch": 0,
+      "event_id": "c1069faddab645f289fbef0056af16ac",
+      "kind": "update",
+      "observed_at_utc": "2026-11-06T23:26:42.508463+00:00",
+      "payload_hash": "8139fd2ed90e4881fe4d55504e9546a045f9bef359636b368fdde0ffd2414de8",
+      "seq": 2,
+      "state": "running"
     }
   ],
   "job_id": "fbdfabe8a56e703100a7b47ddcdbcc9eb6d8eb57bcb89bc0f887dca63a71d2bb",
@@ -30,7 +43,7 @@ Attempt: ad62a69af7a24954a3d83b29e2cdb504 | owner: {'server': 'qflex', 'gpu': '0
     "server": "qflex"
   },
   "schema_version": 1,
-  "seq": 1,
+  "seq": 2,
   "spec": {
     "arm": "none",
     "code_commit": "f58b8d4b29b332d915e19d6bca2bec30cd651aa1",
@@ -59,8 +72,8 @@ Attempt: ad62a69af7a24954a3d83b29e2cdb504 | owner: {'server': 'qflex', 'gpu': '0
     "split_hash": "5d13188584622317cc96786a0f330078d51d22e058ec2553a64e0f5dc3da316b",
     "train_seed": 19
   },
-  "state": "claimed",
+  "state": "running",
   "token": "180f06eeb53d45579c85c3cae3014964",
-  "version": 1
+  "version": 2
 }
 ```
