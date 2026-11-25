@@ -5,7 +5,7 @@ recomendações (decisões Q1–Q13 na seção 12). Nenhum job, servidor, dado o
 freeze real foi criado ou executado por este documento; a fatia S0 (seção 9) é
 só código offline.** Ela descreve
 o que construir e como encaixar no código existente; a implementação cabe a
-outros agentes, em fatias revisáveis (seção 9). Tudo continua
+outras frentes, em fatias revisáveis (seção 9). Tudo continua
 `scientific_status="provisional"`; `execution_verified` e `scientific_eligible`
 permanecem **sempre `false`** em todas as fatias aqui descritas.
 
@@ -88,7 +88,7 @@ campo fechado `caveats` do selo de campanha (seção 6.9) exige o identificador
 | L10 | `final_policy` exige exatamente 3 seeds | Piloto executa só a seed[0] (estágio 1) e o relatório declara a matriz incompleta; não alterar v1 |
 | L11 | O auditor de pools não verifica se a seed de avaliação difere das seeds de desenvolvimento/seleção | Verificação nova no selo de campanha (sem mudar hashes v1) |
 | L12 | `_task` rejeita `multilabel` | Protocolo v2 separado (seção 7.5); v1 escalar imutável |
-| L13 | ~~Pools INbreast 387 vs manifesto endurance 1.024~~ **Resolvido 19/10 (maestro):** 1.024 (616/204/204) é o soak SINTÉTICO `synthetic-endurance-1024` (`configs/smoke/endurance-v1/synthetic/none.json`, `docs/endurance-test.md` §2); o INbreast endurance usa o manifesto de 387 imagens (248/62/77). Ainda exigir `records_sha256` igual ao dos pools auditados | — |
+| L13 | ~~Pools INbreast 387 vs manifesto endurance 1.024~~ **Resolvido 19/10:** 1.024 (616/204/204) é o soak SINTÉTICO `synthetic-endurance-1024` (`configs/smoke/endurance-v1/synthetic/none.json`, `docs/endurance-test.md` §2); o INbreast endurance usa o manifesto de 387 imagens (248/62/77). Ainda exigir `records_sha256` igual ao dos pools auditados | — |
 
 ---
 
@@ -1260,7 +1260,7 @@ pools, antes do HPO. Consequência: mudar a política ⇒ pools novos ⇒ todo o
 pipeline novo (é o comportamento desejado).
 
 **ADR-11 — Módulos novos em vez de editar `evaluation.py`/`cli.py`.**
-Contexto: arquivos legados de 3 partições, em edição por outro agente. Decisão:
+Contexto: arquivos legados de 3 partições, em edição em outra frente. Decisão:
 `global_evaluation.py` e `global_cli.py`, com ganchos mínimos. Consequência:
 menos conflito de merge; alguma duplicação pequena de validação.
 

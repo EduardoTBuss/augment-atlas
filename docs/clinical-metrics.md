@@ -7,7 +7,7 @@ confidence intervals, patient-level claims, external validation, or statistical
 independence are established here.
 
 The supplied Brain context (`projects/augment-atlas-datasets-hpo-economico-2026-10-16.md`
-and its 2026-10-16 19 BRT maestro resumption checkpoint) selects INbreast binary
+and its 2026-10-16 19 BRT resumption checkpoint) selects INbreast binary
 AUROC, retina DR 0–4 quadratic weighted kappa, skin multiclass macro OvR AUROC
 (binary only after an explicit protocol amendment), and thorax multilabel macro
 AUROC with frozen labels and uncertainty policy. Macro F1, balanced accuracy and

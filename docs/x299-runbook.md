@@ -17,7 +17,7 @@ ficam fora do repositório público.
 Referências: [`cloud-context.md`](cloud-context.md) (estado e decisões),
 [`global-cli.md`](global-cli.md) (comandos), [`isic-acquisition.md`](isic-acquisition.md)
 (ferramenta ISIC), [`global-next-integration.md`](global-next-integration.md) §10 (piloto),
-[`endurance-test.md`](endurance-test.md) (guardião e limites), `README.md` (worker, AVX2).
+[`endurance-test.md`](endurance-test.md) (guardião e limites), `docs/infrastructure.md` (worker, AVX2).
 
 ---
 

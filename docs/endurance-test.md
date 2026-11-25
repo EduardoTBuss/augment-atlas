@@ -11,7 +11,7 @@ temperature or disk limits.
 
 Only the existing INbreast data are presently available. The newly discussed
 clinical datasets have not been acquired and have access/storage prerequisites.
-Codex therefore chose the user's alternative of a small complete battery: **one
+We therefore chose the user's alternative of a small complete battery: **one
 clinical dataset plus synthetic load**, not two clinical datasets. This choice
 must be recorded in Brain for Eduardo's review.
 
@@ -116,4 +116,4 @@ Raw clinical data, image/group lists, logs, private settings and model checkpoin
 stay on private storage. Public reporting is limited to aggregate technical
 status and non-identifying provenance. A final Brain checkpoint must distinguish
 planned, running, passed, interrupted and skipped work, with evidence paths and
-the choices made by Codex for Eduardo to review.
+the provisional choices for Eduardo to review.

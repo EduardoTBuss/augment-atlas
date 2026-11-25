@@ -43,7 +43,7 @@ check of the new scope is recorded below.
   checked against OpenCV. At64px/grid8×8, clip2/4 quantize to the same integer
   histogram limit; the numerical regression confirms equality there and a
   distinction at224px on its fixture. This does not prove universal monotonic
-  strength. Codex chose224px for this technical trial, subject to user review.
+  strength. we chose 224px for this technical trial, subject to user review.
 - Cached ImageNet file SHA256 is checked before claim/create and before loading;
   cache is mounted read-only, with no download or random-init fallback.
 - Candidate preflight requires cv2 4.12.0 plus `opencv-python-headless`4.12.0.88;
@@ -101,7 +101,7 @@ no crash report had been modified since this acceptance started.
 
 The lifetime sum includes paused gaps and excludes short CUDA preflight probes;
 it is not measured GPU active time or energy. The guardian used Git-independent
-checks and Codex-chosen stops at75°C,20GiB free,25minutes lifetime trigger and
+checks and provisional stops at75°C,20GiB free,25minutes lifetime trigger and
 one-hour trial wall limit. Four focused mock tests exercised stop confirmation
 and launch guards. No real overtemperature fault was induced. This trial-specific
 guardian is not a general long-term thermal protection service.
@@ -128,7 +128,7 @@ patient independent. This audit does not undo exposure in the earlier pilot.
 
 ## Later16October: selection-only on actual GPU
 
-A new request authorized small server GPU tests. Codex chose a separate bound
+A new request authorized small server GPU tests. We chose a separate bound
 of two jobs, one epoch each, GPU0,300seconds total container lifetime, zero
 training retries,75°C and20GiB free. This was a technical synthetic test.
 

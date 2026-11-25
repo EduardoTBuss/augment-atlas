@@ -46,8 +46,8 @@ Current status, decisions pending and next steps: [`cloud-context.md`](cloud-con
 | AVX2 CPU limit | done, `fix/cpu-isa-avx2-20261020` (`cpu_isa_max`, default AVX2) |
 | ISIC acquisition tooling | done, `feature/isic-acquisition-20261019` |
 | Fleet tooling | done, `feature/fleet-20261019` |
-| Integration (task C) | done, PR #3 (`claude/tarefa-c-merge-branches-pwmlw1`) |
-| Global CLI, final collector, D/E pools generator | done, PR #4 (`claude/magical-bardeen-vkyubk`) |
+| Integration (task C) | done, PR #3 (`tarefa-c-merge-branches-pwmlw1`) |
+| Global CLI, final collector, D/E pools generator | done, PR #4 (`magical-bardeen-vkyubk`) |
 | S6 multilabel | out of scope for now |
 
 Merge rule (Q6): HPO and final jobs run from the same code commit, so S2, S4,

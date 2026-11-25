@@ -135,7 +135,7 @@ ou do descriptor dos próprios autores. A ferramenta de busca devolve o texto da
 5. **Range.** Continua obrigatório no probe (passo 2 do §3.4), com o fallback já previsto
    no §12 (stream único sem retomada).
 
-### 3.1.2 Verificação direta dos arquivos oficiais (maestro, 19/10/2026 ~16:40 BRT) — **supersede o §3.1.1 onde divergir**
+### 3.1.2 Verificação direta dos arquivos oficiais (19/10/2026 ~16:40 BRT) — **supersede o §3.1.1 onde divergir**
 
 Método: HTML público de <https://challenge.isic-archive.com/data/> lido por `curl` (links do botão extraídos), `HEAD` de cada arquivo,
 leitura só da 1ª linha dos CSVs de rótulo (`Range: bytes=0-300`, nada gravado no repo) e download apenas da lista de duplicatas

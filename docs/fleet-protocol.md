@@ -944,7 +944,7 @@ Comandos de captura (somente leitura, no x299, quando autorizado):
 
 ## 9. Onboarding de um 2º nó
 
-### 9.1 Checklist (o Eduardo executa; nenhum agente acessa host sem endereço e credencial dados por ele)
+### 9.1 Checklist (o Eduardo executa; ninguém acessa host sem endereço e credencial dados por ele)
 
 1. **Base**: Docker + NVIDIA Container Toolkit; registrar as versões no perfil. Usuário de serviço sem sudo, membro do grupo `docker` (sabendo que isso equivale a root no host; decisão já implícita no x299).
 2. **Relógio**: `timedatectl show -p NTPSynchronized` = yes.

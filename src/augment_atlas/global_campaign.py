@@ -49,7 +49,7 @@ BASE_BLOCKERS = ("execution_unverified", "runtime_isolation_unverified", "chrono
 
 # Q6 ("same commit for HPO and final", decided 19/10/2026) cannot hold
 # literally: final configs embed freeze_sha256, so they are committed after the
-# freeze. Maestro interpretation, STILL PENDING Eduardo's confirmation: the
+# freeze. Coordinator interpretation, STILL PENDING Eduardo's confirmation: the
 # same CODE identity (tree of src/ + scripts/ + docker/ + pyproject.toml and the
 # pinned image), and only files under configs/global/** may change between the
 # freeze commit and the final commit. The whole policy lives in

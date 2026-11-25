@@ -1,121 +1,108 @@
 # AugmentAtlas
 
-Usable prototype for a **technical smoke test**, coordinating Docker ResNet-50
-classification jobs through a Git branch. Scientific status: **provisional**.
-The worker accepts an explicit `--phase smoke|hpo|final`. Global `hpo`/`final`
-jobs are prepared and seeded only through the audited global CLI
-([`docs/global-cli.md`](docs/global-cli.md), server procedure in
-[`docs/x299-runbook.md`](docs/x299-runbook.md)). No scientific HPO or parameter
-optimization has been performed.
+Code for the paper **"How Stable Are Gamma and CLAHE Effects in Medical Image
+Classification?"** (submitted to ESANN 2027).
 
-One GPU worker reads pending compatible jobs, creates a normal fast-forward Git
-reservation, confirms its attempt token remotely, and starts a detached container.
-Each job is a readable Markdown file containing validated JSON on the `queue`
-branch. Code stays in a separate clean checkout pinned to
-the job's commit. Progress defaults to hourly; transitions publish immediately.
-Network outages keep the child training and a durable ordered event spool local.
+We trained a ResNet-50 **450 times**: three public datasets × ten augmentation
+policies × five group-disjoint test folds × three training settings. Each
+treated policy adds light or heavy gamma correction or CLAHE to a basic
+augmentation (horizontal flip, brightness and contrast), and is compared with
+that basic policy trained on the same split, initialization and sample order.
 
-## Quick start
+| Dataset | Task | Images / groups |
+|---|---|---|
+| INbreast (mammography) | BI-RADS 4a–6 vs 1–2 | 387 / 103 |
+| ISIC 2020 (dermoscopy) | melanoma vs other lesions | 32,693 / 2,056 |
+| RSNA 2018 (chest radiographs) | lung opacity vs normal / other | 29,678 / 12,232 |
 
-Host: Linux, Python 3.11+, Git with read/write access to the queue remote, Docker,
-NVIDIA Container Toolkit and a compatible driver. Host coordination has no Python
-dependencies. The container needs PyTorch, torchvision, NumPy, Pillow and scikit-image.
-Use the Dockerfile or a compatible existing image; the worker resolves the actual
-image ID and executes a CUDA forward/backward preflight. A tag alone proves nothing.
+## Main findings
 
-```bash
-export PYTHONPATH="$PWD/src"
-python3 -m unittest discover -s tests -v
-./scripts/worker.sh --help
+- Subtracting the matched basic AUROC reduced dispersion across doses, folds and
+  settings on RSNA, but increased it on INbreast and ISIC.
+- On ISIC, both transform families looked beneficial at the primary seed
+  (Holm *p* < 0.001) because one basic fit collapsed to a constant score;
+  without that fold, neither mean is positive.
+- On INbreast, both gamma doses were negative at the primary seed, while their
+  means across the three settings differed in sign.
 
-# Keep code checked out at this exact committed revision. Private data/runs/state
-# belong outside it. Copy and edit settings privately for the current host.
-cp configs/worker.example.json /srv/atlas-private/worker.json
+## Exact code used
 
-# Add one synthetic job, explicitly. This does not generate a campaign matrix.
-python3 -m augment_atlas.cli seed --phase smoke \
-  --config "$PWD/configs/smoke/synthetic.json" --code "$PWD" \
-  --data /srv/atlas-data --checkout /srv/atlas-state/admin \
-  --remote git@github.com:OWNER/augment-atlas.git \
-  --image-id "$(docker image inspect --format '{{.Id}}' "$IMAGE")"
-# With --image-id the seed also writes spec.requirements (fleet v1, docs/fleet-protocol.md 3.2),
-# kept outside the job_id; without it (and no other fleet flag) the legacy spec is seeded. Read-only diagnosis of why a worker would (not) claim:
-# python3 -m augment_atlas.cli fleet explain --worker facts.json --profile node_profile.json \
-#   --card card.json --latest latest.json --jobs-dir jobs/
+The tag [`esann2027`](https://github.com/EduardoTBuss/augment-atlas/tree/esann2027)
+is the code that produced the reported runs. `train.py`, `augment.py` and
+`analysis_sap_v1.py` are identical on every campaign branch. The analysis plan
+was sealed on 2026-10-28 (tag `sap-v1-sealed-20261028`, [plan](docs/analysis-plan-sap-v1-sealed.md),
+[amendment A1](docs/analysis-plan-sap-v1-amendment-20261030.md)). Commit hashes
+recorded before 2026-11-25 are mapped in [docs/commit-hash-map.md](docs/commit-hash-map.md).
 
-./scripts/worker.sh --settings /srv/atlas-private/worker.json --phase smoke --once
-```
+## Setup
 
-Two workers need separate queue checkouts and the **same host lock directory**.
-The default lock directory is `/tmp/augment-atlas-gpu-locks`, keyed by GPU UUID.
-Do not run other training on the selected GPU. Training containers use no network,
-no privileges, dropped capabilities, read-only code/data mounts and a writable
-attempt output. Git credentials stay on the host. Use a service or tmux to keep
-the foreground worker running after SSH disconnects.
+| Item | Value |
+|---|---|
+| Model | ResNet-50, ImageNet-1K V2 weights, frozen BatchNorm statistics, 224 px input |
+| Training | AdamW, batch 16, cosine decay, 20 epochs, last-epoch evaluation |
+| Policies | none, basic, gamma U(0.8, 1.2) / U(0.67, 1.5), CLAHE clip 2 / 4 (8×8 tiles), each alone or after basic; added transforms with p = 0.3 |
+| Settings | seed 11 on 2× GTX TITAN X; seeds 13 and 19 on one RTX A4500 |
+| Runtime | PyTorch 2.5.1, CUDA 12.4, FP32, deterministic algorithms |
+| Analysis | image-level AUROC per fit; paired group bootstrap (10,000 resamples) within folds; Holm over the two primary family contrasts per dataset |
 
-Training containers cap CPU kernels at AVX2 by default (`ATEN_CPU_CAPABILITY`,
-`MKL_ENABLE_INSTRUCTIONS`, `ONEDNN_MAX_CPU_ISA`/`DNNL_MAX_CPU_ISA`, OpenBLAS,
-NumPy and OpenCV variables): on 13 and 20 October the x299 host (i9-7900X) reset
-15-30 s into torch CPU work with AVX-512 kernels, and ran stably with them off.
-A settings file without `cpu_isa_max` gets this cap; `"cpu_isa_max": "native"`
-opts a node out, any other value fails preflight. `runtime.json` records the value.
+## Repository layout
 
-Send SIGTERM to the worker to request a checkpoint at the end of the current epoch.
-After confirming the container stopped, resume with the same settings and explicit
-`--resume`. The same attempt, token, directory and checkpoint are preserved.
-A manual queue retry is a different operation: it returns a failed, cancelled or interrupted
-job to pending and the next claim starts a fresh attempt from scratch
-(`docs/queue.md`; for global HPO jobs `docs/x299-runbook.md` C2.1). It is not `--resume`.
-If the coordinator died while the container is alive, starting the worker again
-reattaches to the recorded container. Missing local journals or disappeared
-containers require operator inspection. An old heartbeat never reallocates a job.
-Do not remove the private journal, queue clone or container before reconciliation.
+| Path | Content |
+|---|---|
+| `src/augment_atlas/train.py`, `augment.py` | training loop and the ten augmentation policies |
+| `src/augment_atlas/acquisition/` | ISIC 2020 and RSNA 2018 acquisition and group-disjoint splits |
+| `src/augment_atlas/legacy_pools.py` | INbreast: conversion of the fixed pilot pools and folds |
+| `src/augment_atlas/global_*.py`, `queue.py`, `cli.py` | campaign planning, Git job queue, GPU workers, collection and reports |
+| `src/augment_atlas/analysis_sap_v1.py` | sealed analysis: paired contrasts, bootstrap intervals, Holm |
+| `src/augment_atlas/paper_results.py` | tables and panels from the analysis outputs |
+| `docker/`, `scripts/`, `configs/` | container image, worker and campaign scripts, configuration examples |
+| `docs/` | protocol, analysis plan and operations ([index](docs/README.md)) |
+| `tests/` | unit and integration tests (synthetic data only) |
 
-## Scope and evidence
+## Reproducing
 
-See [acceptance](docs/acceptance.md) for executed checks and current limitations;
-the report distinguishes mocks, local real Git and remote Docker/CUDA evidence.
-[Candidate-v2 acceptance](docs/acceptance-v2.md) tracks the separate 16 October
-extension. [Queue recovery](docs/queue.md), [datasets](docs/datasets.md),
-[telemetry](docs/telemetry.md), [provenance](docs/provenance.md), and
-[scientific design](docs/scientific-design.md) describe the contracts.
-The [dataset and augmentation survey](docs/dataset-research.md) records primary
-sources and current discussion preferences without fixing a final protocol.
+1. **Environment.** Linux, Python 3.11+, Docker with the NVIDIA Container
+   Toolkit; build the image from `docker/`. Run the tests:
+   `PYTHONPATH=src python3 -m unittest discover -s tests -v`.
+2. **Data.** Images are not redistributed. Obtain
+   [INbreast](https://doi.org/10.1016/j.acra.2011.09.014) from its authors,
+   [ISIC 2020](https://doi.org/10.34970/2020-ds01) (CC BY-NC 4.0) and the
+   [RSNA Pneumonia Detection Challenge 2018](https://www.kaggle.com/c/rsna-pneumonia-detection-challenge)
+   data, then build the group-disjoint pools
+   ([ISIC](docs/isic-acquisition.md), [RSNA](docs/rsna2018-acquisition.md),
+   [data contracts](docs/datasets.md)).
+3. **Training campaign.** Plan, seed and run the jobs with the global CLI and
+   the queue workers ([global CLI](docs/global-cli.md),
+   [infrastructure](docs/infrastructure.md),
+   [campaign operations](docs/campaign-operations.md)).
+4. **Analysis.** Collect the predictions and run the sealed analysis
+   ([analysis](docs/analysis-sap-v1.md), [paper tables](docs/paper-results.md)):
 
-Only ResNet-50 is implemented. Synthetic examples use random initialization and
-tiny images to verify operation. The direct trainer supports cached ImageNet weights;
-the worker can mount a prepared host Torch cache read-only, requiring the
-full configured ImageNet checksum before claiming a pretrained job.
-The ten demonstration augmentation policies are not optimized article parameters.
-Four isolated gamma/CLAHE arms extend the original six without changing their
-algorithms or ranges. See the [protocol proposal](docs/protocol-draft.md).
-Separate `configs/smoke/candidate-v2/` examples use the provisional parameters
-accepted for 16 October: fixed-domain gamma, OpenCV CLAHE, named operation RNG
-and resize before augmentation. They use cached ImageNet weights and 224px;
-the legacy examples remain unchanged.
-Real data and effective patient/group split lists remain private on each server.
-Images are not duplicated by fold, seed or arm. Group-hash partitions are technical
-60/20/20 holdouts, **not** the future five-fold protocol. Learned preprocessing
-statistics must come only from training; current normalization uses fixed constants.
+   ```bash
+   PYTHONPATH=src python3 -m augment_atlas.analysis_sap_v1 \
+     --predictions <dir-or-csv> --dataset <id> --out <dir> --seed 20261028 --B 10000
+   ```
 
-The latest preference is one HPO per dataset without augmentation, using
-development patients excluded from every final test; see the
-[dataset/protocol update](docs/dataset-protocol-update.md). A
-`selection-only` evaluation scope prepares its objective without test inference;
-see [dataset contracts](docs/datasets.md). Its current within-fold contract
-does not yet implement the new global-development search. No scientific search has run.
-Final datasets/labels/access, HPO search space and budget, endpoints, augmentation ranges,
-evaluation and statistical analysis remain decisions for a later reviewed protocol.
-INbreast has already been examined in the earlier pilot. Changing seeds or folds
-does not restore independence. The ten-arm proposal would require 600 final runs;
-that campaign has not started.
-No energy or emissions claim follows from operational telemetry.
+Not included: images, trained weights and per-image predictions. The
+paper-specific aggregation behind Tables 2–3 and Figure 1 (sum-of-squares
+shares and the fold-by-setting grid) is not yet in this repository.
 
-The [bounded endurance test](docs/endurance-test.md) defines a separate
-five-to-six-hour technical battery with existing INbreast data and synthetic
-load, checkpoints and Git communication exercises. Its configurations require
-the private orchestrator and independent resource guardian; the document does
-not establish that the timed run has completed.
+## Branches
 
-This package uses a new selected history. Earlier pilot results are not results of
-this protocol. MIT attribution is retained in [provenance](docs/provenance.md).
+| Branch | Content |
+|---|---|
+| `main` | code and documentation |
+| `campaign/*` | per-dataset campaign code and records |
+| `queue` | job queue state written by the workers |
+| `board` | automatically generated progress board |
+
+Some design and operations notes in `docs/` are in Portuguese.
+
+## Citation
+
+See [CITATION.cff](CITATION.cff). The paper is under review; this section will
+be updated with the proceedings reference.
+
+## License
+
+MIT ([LICENSE](LICENSE)); third-party attribution in [docs/provenance.md](docs/provenance.md).

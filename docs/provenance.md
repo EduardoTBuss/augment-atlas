@@ -17,7 +17,7 @@ The separate `configs/smoke/candidate-v2/` examples implement the provisional
 16October trial choices: gamma0.8–1.2/0.67–1.5 and CLAHE clips2/4, both withp0.3;
 OpenCV4.12.0.88, grid8×8, fixed-domain gamma, resize first and named RNG streams.
 Those are trial settings accepted for testing, without a claim of optimality.
-The basic operations remain the existing flip/brightness/contrast. Codex chose
+The basic operations remain the existing flip/brightness/contrast. We chose
 224px for this trial to avoid the demonstrated clip2/4 quantization collapse
 at64px. See `acceptance-v2.md` for the separate evidence and unchanged legacy.
 

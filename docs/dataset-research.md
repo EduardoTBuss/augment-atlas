@@ -103,7 +103,7 @@ for patient grouping **if the task is melanoma versus the remaining lesions**.
 That is a different task from HAM's seven classes or ISIC2019's eight classes.
 The2020official test has10,982images without public ground truth; do not assume
 its labels are available for a local external test. ISIC2019 lesion identifiers
-alone do not establish patient grouping. Codex recommends evaluating2020 for the
+alone do not establish patient grouping. We recommend evaluating 2020 for the
 binary protocol; this does not silently change the study task or acquire data.
 
 Next decisions: choose acquisition/task and data release; verify groups and

@@ -8,7 +8,7 @@ faixas, HPO, orçamento ou a campanha científica. Os exemplos executáveis segu
 Decisões posteriores de Eduardo em16/10: HPO interno por fold sem augmentation;
 parâmetros candidatos abaixo mantidos para os testes de hoje; até8h de engenharia
 e até10jobs de2épocas, umaGPU, teto30min de treinamento. Escolhas técnicas
-provisórias feitas pelo Codex estão identificadas para revisão do projeto.
+provisórias estão identificadas para revisão do projeto.
 A campanha600 e os releases/tarefas finais não foram iniciados.
 
 Atualização posterior de16/10: Eduardo substituiu HPO interno por fold por
@@ -122,7 +122,7 @@ essa exposição. Garantir ausência de vazamento não desfaz exploração anter
 
 ## Parâmetros candidatos: proposta, não configuração científica aprovada
 
-A proposta restritiva discutida com Claude pode servir de ponto de partida:
+A proposta restritiva discutida anteriormente pode servir de ponto de partida:
 
 - Básico: flip H `p=0.5`, sem flip V; rotação ±15°, escala 0.8–1.2,
   translação ±10%, brilho/contraste ±0.2, sem hue/saturação. Esses valores não
@@ -149,7 +149,7 @@ Não alterar silenciosamente os seis braços legados ou reinterpretar seus score
 Primeiro, validar os dez braços na candidata separada: uma GPU, uma seed, um
 split técnico, até dez jobs, duas épocas por job, batch2. A resolução recomendada
 para este ensaio é224px: em64px/grid8×8 os clips2/4 podem colapsar ao mesmo limite
-inteiro de histograma. Essa escolha é do Codex para revisão posterior; não fixa
+inteiro de histograma. Essa escolha é provisória, para revisão posterior; não fixa
 a resolução científica final. Teto aprovado de30minutos de
 containers de treinamento, zero retry automático, sem testes científicos
 protegidos/HPO. Dados sintéticos ou subset privado já usado como smoke; nunca

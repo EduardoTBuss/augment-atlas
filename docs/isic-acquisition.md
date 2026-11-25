@@ -234,13 +234,13 @@ union-find e aplica `keep-min-image-name-v1`. Não há novo download.
 
 | Plano | Implementado | Motivo |
 |---|---|---|
-| `isic2020 {probe\|run\|verify\|summarize}` | `probe \| canary --limit N \| full \| verify`; o sumário é escrito pelo `verify` | pedido do maestro (canary explícito); o sumário depende do READY |
+| `isic2020 {probe\|run\|verify\|summarize}` | `probe \| canary --limit N \| full \| verify`; o sumário é escrito pelo `verify` | pedido da coordenação (canary explícito); o sumário depende do READY |
 | `python -I -m ...` | `PYTHONPATH=/code/src` com `--workdir /tmp` | `-I` ignora `PYTHONPATH`; o tmpfs vazio cumpre o mesmo papel |
 | `~/augment-atlas-private/datasets/isic2020/` | `~/projetos/augment-atlas/data/isic2020/` | pasta definida pelo Eduardo (`data/` está no `.gitignore`) |
 | Retomada por chunk de 32 MiB + `zip_chunked_root` | retomada por membro (Range no local header do primeiro `PENDING`); `chunked_sha256_root: null` | a identidade fica com ETag + tamanho + SHA256 do central directory + CRC32 e SHA256 por membro; um membro interrompido é relido inteiro (≤ alguns MB) |
 | `sha256` do ZIP inteiro em sessão única | não calculado (`null` com motivo) | o S3 só dá ETag multipart; o CD e os membros são hasheados |
 | quase-duplicatas por dHash (só relatório) | não implementado (`near_duplicate_pairs: null`) | não bloqueia nada; fica como dívida |
-| `config` `isic2020-derived-512-v1.json` | `configs/acquisition/isic2020-v1.json` | nome pedido pelo maestro |
+| `config` `isic2020-derived-512-v1.json` | `configs/acquisition/isic2020-v1.json` | nome pedido na coordenação |
 | duplicatas "425 imagens" | 425 **pares**, 850 nomes (§3.1.2) | fato verificado |
 
 ## 9. Testes

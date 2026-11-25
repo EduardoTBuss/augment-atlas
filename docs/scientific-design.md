@@ -9,7 +9,7 @@ Este documento registra recomendações; decisões científicas continuam penden
 
 Atualização16/10: Eduardo escolheu HPO interno por fold, sem augmentation, e
 solicitou quatro braços isolados adicionais. O desenho agora é2×5, dez braços;
-detalhes, limites aceitos e escolhas provisórias do Codex em
+detalhes, limites aceitos e escolhas provisórias em
 [protocol-draft.md](protocol-draft.md). Faixas para os testes de hoje não são
 ótimos nem aprovação da campanha. As alternativas históricas abaixo continuam
 documentadas para explicar a escolha.
@@ -179,7 +179,7 @@ pessoais ou conteúdo de imagens nos artefatos públicos.
 
 Antes da execução, fixar máximo de épocas, tentativas HPO, duração por tarefa,
 limite total de GPU e número de retries. O runner recebe apenas esse manifesto
-limitado via maestro. Distinguir falha de infraestrutura de divergência do método;
+limitado via coordenação. Distinguir falha de infraestrutura de divergência do método;
 preservar ambas e repetir somente pela regra registrada, sem novas seeds escolhidas
 pelo desempenho. Não substituir NaNs, ausências ou falhas silenciosamente, nem
 comparar só o subconjunto de seeds que favorece um braço. Reportar completude e

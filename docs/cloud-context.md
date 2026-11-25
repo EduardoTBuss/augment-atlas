@@ -1,7 +1,7 @@
 # Contexto do trabalho na nuvem — estado em 23/10/2026 (correção dos achados da revisão dos PRs #3 e #4)
 
-Este arquivo existe para que qualquer IA, local ou na nuvem, saiba o que já foi feito, o que
-está pendente e qual é o próximo passo sem reler toda a conversa. Leia junto com:
+Este arquivo existe para que quem retomar o trabalho, local ou na nuvem, saiba o que já foi feito, o que
+está pendente e qual é o próximo passo sem reler todo o histórico. Leia junto com:
 - [`cloud-handoff.md`](cloud-handoff.md): regras duras;
 - [`x299-runbook.md`](x299-runbook.md): procedimento do servidor;
 - [`global-cli.md`](global-cli.md): referência dos comandos.
@@ -51,8 +51,8 @@ PhysioNet. Ficam fora o caminho ordinal (mBRSET) e o multilabel (CheXpert).
 
 | PR | Branch | Base | Conteúdo | Estado |
 |---|---|---|---|---|
-| EduardoTBuss/augment-atlas#3 | `claude/tarefa-c-merge-branches-pwmlw1` | `main` | Integração (tarefa C): as 5 branches de feature numa árvore só | draft, sem conflito |
-| EduardoTBuss/augment-atlas#4 | `claude/magical-bardeen-vkyubk` | branch do #3 | Sentinel F2, CLI global, coletor final, gerador de pools, B1/HPO, emendas ISIC, runbook, este arquivo | draft, sem conflito |
+| EduardoTBuss/augment-atlas#3 | `tarefa-c-merge-branches-pwmlw1` | `main` | Integração (tarefa C): as 5 branches de feature numa árvore só | draft, sem conflito |
+| EduardoTBuss/augment-atlas#4 | `magical-bardeen-vkyubk` | branch do #3 | Sentinel F2, CLI global, coletor final, gerador de pools, B1/HPO, emendas ISIC, runbook, este arquivo | draft, sem conflito |
 | EduardoTBuss/augment-atlas#1, #2 | `wip/s4-telemetry-20261021`, `feature/global-protocol-20261016` | `main` | Já contidos no #3 | abertos |
 
 Ordem de merge: **#3, depois #4**. Depois do merge do #3, os PRs #1 e #2 podem ser
@@ -216,8 +216,8 @@ o #3 é a base do #4):
 
 | PR | Branch | Head |
 |---|---|---|
-| #3 | `claude/tarefa-c-merge-branches-pwmlw1` | `34627c4d2ce71ba236d4e94338320670eb44d34d` |
-| #4 | `claude/magical-bardeen-vkyubk` | `c537b3c68bbde469f615eee5f56a15f15557e16f` |
+| #3 | `tarefa-c-merge-branches-pwmlw1` | `34627c4d2ce71ba236d4e94338320670eb44d34d` |
+| #4 | `magical-bardeen-vkyubk` | `c537b3c68bbde469f615eee5f56a15f15557e16f` |
 
 **Lacuna de rastreabilidade (a preencher pelo Eduardo).** O anexo do handoff de revisão não
 chegou a esta sessão: não está na conversa, no repositório, nos comentários nem nas revisões dos
@@ -225,7 +225,7 @@ PRs. O contrato foi o texto da tarefa. Por isso **os SHAs que o revisor de orige
 nome desse revisor não estão registrados aqui**; só os heads atuais acima, confirmados. Quem
 tiver o handoff deve acrescentar essas duas linhas. Nada foi inferido.
 
-**Onde estão os commits.** Em `claude/nifty-feynman-x7g9hi`, criada a partir do head do #4
+**Onde estão os commits.** Em `nifty-feynman-x7g9hi`, criada a partir do head do #4
 (`c537b3c`). **Os branches dos PRs não foram alterados** e nada foi enviado para eles: a sessão
 só tinha autorização para empurrar esta branch. Para entrar no PR #4 basta mergear (ou
 avançar) esta branch nele. O commit do F2 mexe só em arquivos que já existem no #3 e foi
@@ -285,8 +285,8 @@ testes do runtime e do HPO passando (174 testes); ele pode ser levado ao #3 e de
 
 #### 4.3.2 Revisão independente desta sessão
 
-- **Reviewer:** subagente de contexto novo, somente leitura, sem acesso a este raciocínio
-  (agente `general-purpose` da própria sessão; não é o revisor de origem do handoff).
+- **Reviewer:** revisão independente, somente leitura, sem acesso a este raciocínio
+  (não é o revisor de origem do handoff).
 - **Escopo:** os 4 commits `c2ff5b3`, `4b590cb`, `22fe609` e `1dabfd8` (`git diff c537b3c..HEAD`).
 - **Perguntas (Q1–Q9):**
   - F1 (Q1–Q3): o attempt não aprovado com scores é sempre `collection_invalid`, antes de

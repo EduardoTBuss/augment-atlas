@@ -4,12 +4,12 @@ Direção aprovada: INbreast, retinopatia diabética, dermoscopia e raio-X do t�
 dez braços, ResNet50, agrupamento por paciente e as métricas discutidas. Esta
 atualização substitui a preferência anterior por HPO dentro de cada fold:
 **uma busca sem augmentation por dataset, receita compartilhada pelos dez braços**.
-Releases/tarefas abaixo são recomendações documentais do Codex para revisão.
+Releases/tarefas abaixo são recomendações documentais para revisão.
 Nenhuma nova base foi adquirida ou busca científica executada.
 
 ## Bases recomendadas e alternativas
 
-| Modalidade | Recomendação do Codex | Alternativas e motivo da escolha |
+| Modalidade | Recomendação | Alternativas e motivo da escolha |
 |---|---|---|
 | Retina | **mBRSET1.0**,5.164imagens/1.291pacientes, campo `patient`, DR ordinal0–4 | BRSET1.0.2:16.266/8.524, `patient_id`. EyePACS é referência maior com prefixo de sujeito documentado; APTOS/IDRiD mantêm uso recente, mas seu vínculo paciente não foi confirmado |
 | Pele dermoscópica | **ISIC2020**,33.126imagens/2.056pacientes, `patient_id`, melanoma versus demais | É tarefa binária, diferente de HAM7classes/ISIC2019oito. Esses releases não têm vínculo paciente confirmado na documentação consultada. A escolha binária deve constar como emenda, sem herdar silenciosamente o endpoint multiclasse |
@@ -53,7 +53,7 @@ consistência, duplicatas e namespace; não preencher faltantes com IDs de image
 
 ## Uma busca por base sem usar o teste na seleção
 
-Escolha metodológica recomendada pelo Codex, apoiada pela revisão estatística:
+Escolha metodológica recomendada, apoiada pela revisão estatística:
 
 1. Separar uma vez grupos de desenvolvimento `D`≈20% e avaliação `E`≈80%.
    Persistir listas e hashes, sem escolher seeds por score. Todas as visitas,
