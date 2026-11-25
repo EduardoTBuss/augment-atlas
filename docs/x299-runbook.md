@@ -259,7 +259,7 @@ $G anchor $N --pools-sha256 $P --code $CODE $Q --kind campaign --document-sha256
 
 - As seeds finais são as mesmas nas duas campanhas, e disjuntas das seeds de partição e de
   HPO.
-- Só o estágio 1 (`<s1>`, 50 jobs) é autorizado (Q13).
+- A campanha original autoriza só o estágio 1 (`<s1>`, 50 jobs; Q13). O estágio 2 exige o suplemento selado C9b descrito em docs/global-cli.md, seção "Later declared stage authorization".
 - Anote `Xa = git -C $CODE rev-parse HEAD` e o `commit` impresso pela âncora da campanha
   (`C_campaign (a)`). O recibo privado fica em `anchor-campaign-$KA.json`.
 - Os commits de configs (Xa, e depois Xh e Xb) precisam existir no checkout de cada worker,
@@ -523,3 +523,117 @@ Não permite afirmar:
 - utilidade clínica.
 
 O artigo **não** está completo nem pronto para quatro datasets.
+
+### C9b. Seeds 13 e 19 como sensibilidade (decisão de 29/10/2026)
+
+Eduardo decidiu executar o estágio 2 depois de ver os resultados primários do
+INbreast. A sequência exata está em
+[global-cli.md](global-cli.md#later-declared-stage-authorization-c9b-decision-2026-10-29):
+preparar somente final/stage-2, fazer o commit aditivo, authorize-stage,
+materialize-final com a autorização, anchor --kind stage_authorization,
+seed-final e audit-chronology. Repetir por campanha no respectivo checkout.
+
+Preservar o SHA da campanha, o MANIFEST/configs primários e o SAP selado.
+O documento registra decided_on=2026-10-29, decided_after_primary_results=true
+e esclarece que "training seed 1" do item 5 do SAP significa a primeira seed
+declarada (11). O horário real de selagem é separado da data da decisão.
+A identidade inclui todos os caminhos Git, inclusive tests e docs; somente os
+arquivos previstos no suplemento de configs podem ser adicionados.
+
+No worker de sensibilidade, manter campaign_sha256/campaign_commit e imagem,
+acrescentar stage_authorization_sha256 e usar checkout limpo no
+execution_code_commit. Restart/resume revalida esse vínculo antes de acessar
+o contêiner. Collect/report recebem a autorização e --scope stage1
+(primária, snapshot anterior à âncora, bytes preservados) ou --scope
+all_authorized (sensibilidade separada, fila atual). A auditoria completa
+continua obrigatória. Jobs inseridos antes da âncora invalidam a campanha.
+
+**Ordem obrigatória após a revisão R1 (fila git compartilhada):**
+
+- Publicar autorizações de estágio somente depois que todo worker primário
+  terminou; os workers do estágio 2 precisam rodar o orquestrador novo. Os
+  workers da linhagem 835c70e rejeitam a fila (`anchor_invalid`) assim que
+  existe uma âncora `stage_authorization` e param no próximo claim.
+- `anchor --kind stage_authorization` e o RealStageAuthorizer recusam com
+  `primary_workers_active: <job IDs>` enquanto houver job final primário de
+  QUALQUER dataset ou campanha em pending, claimed, running ou interrupted.
+  Jobs de estágio 2 de uma autorização já ancorada não bloqueiam.
+- `authorize-stage` exige `--remote/--checkout` e recusa com
+  `stage1_incomplete` até que todas as células do estágio 1 (seed 11, todos os
+  braços x folds) estejam `succeeded` (item 5 do SAP).
+- Depois da primeira âncora de estágio, todo worker da fila deve usar o
+  orquestrador novo; retry ou seed-final primário depois disso também derruba
+  workers antigos.
+- Decisão tomada depois de ver resultados (caso INbreast): usar a rota manual
+  `authorize-stage --decided-after-primary-results true`. A rota de pedidos de
+  seeds (X5) continua recusando `decided_after_results: true`.
+
+**Liberação declarada do gate (D9, execução paralela de estágios em outro nó):**
+
+- `anchor --kind stage_authorization --declare-all-workers-upgraded "<texto>"` publica a
+  autorização de UMA campanha enquanto jobs primários de OUTRAS campanhas ainda estão ativos.
+  Sem a exceção A1 abaixo, jobs primários da própria campanha autorizada bloqueiam,
+  e o `authorize-stage` continua exigindo o estágio 1 dela completo.
+- Antes de usar: todo worker que lê a fila precisa rodar um orquestrador que entenda a âncora
+  `stage_authorization`, incluindo drivers primários, relatórios e coletores. O operador confere
+  isso e escreve no texto da declaração quem foi reiniciado, em qual commit e quando.
+- A saída traz `warning.code = primary_workers_released`, com os jobs liberados. Um registro
+  selado (`primary-workers-release-<sha>.json`) fica no armazenamento privado do data root,
+  nunca na âncora pública. A rota de pedidos de seeds (X5) não tem essa liberação.
+
+**Limitações conhecidas após a re-revisão R2 (risco residual aceito para esta rodada):**
+
+As regras R1/R2 acima são o comportamento padrão. A exceção manual A1 abaixo
+permite primários ativos da própria campanha somente com as duas declarações.
+
+- Os gates acima estão nas entradas de produção (CLI `authorize-stage`,
+  `anchor`, `seed-final` e claim/retomada do worker). As funções-base da
+  biblioteca (`GitQueue.publish_anchor`, `GitQueue.seed_final` e `claim` sem
+  campanha/contexto) continuam sem esses gates, porque testes já existentes
+  dependem desse comportamento. Não chamar essas funções diretamente na
+  operação.
+- A rota de pedidos de seeds (X5 / RealStageAuthorizer) não exige estágio 1
+  completo. Não usar essa rota para estágios de sensibilidade enquanto essa
+  exigência não existir; usar somente a rota manual `authorize-stage`.
+- Compensação operacional obrigatória, antes de publicar e depois de cada
+  `seed-final` de estágio: `audit-chronology` com `--stage-authorization-sha256`
+  e conferência de que a fila tem exatamente as células primárias `succeeded`
+  esperadas e exatamente as células do estágio autorizado, nenhuma outra.
+
+**A1 — estágio 2 em paralelo ao estágio 1 da mesma campanha (30/10/2026):**
+
+Procedimento completo e comandos em
+[global-cli.md](global-cli.md#parallel-stage-1-and-stage-2-sap-amendment-a1-2026-10-30).
+Depois da preparação aditiva dos configs, respeitar esta ordem:
+
+1. Entre jobs, reiniciar os workers de **seed 11 da campanha** no orquestrador
+   novo com suporte A1. Conferir todos os leitores da fila compartilhada.
+   Workers antigos param ao encontrar a âncora de tipo desconhecido do próprio
+   dataset. Manter o checkout do treinador no commit original da campanha e sem
+   pin de estágio. Disponibilizar o documento privado da autorização e os objetos
+   Git do execution commit para a auditoria, sem alterar a árvore primária.
+2. Usar `authorize-stage --allow-incomplete-stage1 "SAP v1 amendment A1: <motivo>"`
+   e publicar com `anchor --kind stage_authorization --declare-all-workers-upgraded "<quem foi reiniciado, commit e quando>"`.
+   As duas declarações são obrigatórias para liberar jobs ativos da própria
+   campanha. A primeira fica em registro privado selado `stage1-overlap-<authorization-sha>.json`;
+   a segunda mantém o registro D9 e a lista dos jobs liberados. Não apagar esses
+   registros. Declarar `--cross-environment` para o outro nó, com probe próprio
+   e a mesma imagem; executar todo o estágio posterior nesse único nó. Registrar
+   a data real da decisão e a observação interina no rationale quando aplicável.
+3. Fazer `seed-final` com `--stage-authorization-sha256` e `audit-chronology`.
+   Workers de sensibilidade usam esse pin e o execution commit; os de seed 11
+   continuam no commit original. O orquestrador primário audita a autorização
+   ancorada dos jobs posteriores sem receber permissão para executá-los.
+4. Para a primária final, usar collect/report com `--scope stage1_current`.
+   Inclui somente seed 11 no HEAD atual auditado, inclusive células concluídas
+   depois da autorização. Recusa células ausentes, pending, claimed, running ou
+   interrupted; falhas/cancelamentos finais continuam resultados explícitos.
+   `--scope stage1` preserva os bytes e o snapshot anterior à âncora, que pode
+   estar parcial sob A1 e não serve para a primária final desse caso.
+5. Para a sensibilidade separada, usar `--scope all_authorized`. Seeds 13/19 não
+   entram na primária. O SAP selado e `analysis_sap_v1.py` não mudam.
+
+Sem a declaração A1 no authorize-stage, continua `stage1_incomplete`. Sem a
+declaração de upgrade na publicação, continua `primary_workers_active` enquanto
+houver primários ativos. D9 isolado libera somente outras campanhas. A rota X5
+não recebe a exceção A1. A auditoria completa da fila continua obrigatória.
