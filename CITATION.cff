@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use this code, please cite the paper below."
+message: "If you use this software, please cite it as below."
 title: "AugmentAtlas"
 type: software
 license: MIT
@@ -7,24 +7,3 @@ repository-code: "https://github.com/EduardoTBuss/augment-atlas"
 authors:
   - given-names: "Eduardo Timm"
     family-names: "Buss"
-preferred-citation:
-  type: conference-paper
-  title: "How Stable Are Gamma and CLAHE Effects in Medical Image Classification?"
-  authors:
-    - given-names: "Eduardo Timm"
-      family-names: "Buss"
-    - given-names: "Guilherme Dallmann"
-      family-names: "Lima"
-    - given-names: "Diogo Pereira"
-      family-names: "Ribeiro"
-    - given-names: "Cecília"
-      family-names: "Botelho"
-    - given-names: "Ulisses Brisolara"
-      family-names: "Corrêa"
-    - given-names: "Larissa Astrogildo"
-      name-particle: "de"
-      family-names: "Freitas"
-    - given-names: "Renata Hax"
-      family-names: "Reiser"
-  collection-title: "ESANN 2027 (submitted)"
-  year: 2027
