@@ -1,13 +1,17 @@
 # AugmentAtlas
 
-Code for the paper **"How Stable Are Gamma and CLAHE Effects in Medical Image
-Classification?"** (submitted to ESANN 2027).
+AugmentAtlas is a reproducible pipeline for evaluating photometric data
+augmentation in medical image classification with paired comparisons. It
+measures how stable the effect of gamma correction and contrast-limited
+adaptive histogram equalization (CLAHE) is across doses, test folds, seeds and
+hardware.
 
-We trained a ResNet-50 **450 times**: three public datasets × ten augmentation
-policies × five group-disjoint test folds × three training settings. Each
-treated policy adds light or heavy gamma correction or CLAHE to a basic
-augmentation (horizontal flip, brightness and contrast), and is compared with
-that basic policy trained on the same split, initialization and sample order.
+The study grid trains a ResNet-50 **450 times**: three public datasets × ten
+augmentation policies × five group-disjoint test folds × three training
+settings. Each treated policy adds light or heavy gamma correction or CLAHE to
+a basic augmentation (horizontal flip, brightness and contrast), and is compared
+with that basic policy trained on the same split, initialization and sample
+order.
 
 | Dataset | Task | Images / groups |
 |---|---|---|
@@ -15,22 +19,12 @@ that basic policy trained on the same split, initialization and sample order.
 | ISIC 2020 (dermoscopy) | melanoma vs other lesions | 32,693 / 2,056 |
 | RSNA 2018 (chest radiographs) | lung opacity vs normal / other | 29,678 / 12,232 |
 
-## Main findings
+## Code version
 
-- Subtracting the matched basic AUROC reduced dispersion across doses, folds and
-  settings on RSNA, but increased it on INbreast and ISIC.
-- On ISIC, both transform families looked beneficial at the primary seed
-  (Holm *p* < 0.001) because one basic fit collapsed to a constant score;
-  without that fold, neither mean is positive.
-- On INbreast, both gamma doses were negative at the primary seed, while their
-  means across the three settings differed in sign.
-
-## Exact code used
-
-The tag [`esann2027`](https://github.com/EduardoTBuss/augment-atlas/tree/esann2027)
-is the code that produced the reported runs. `train.py`, `augment.py` and
-`analysis_sap_v1.py` are identical on every campaign branch. The analysis plan
-was sealed on 2026-10-28 (tag `sap-v1-sealed-20261028`, [plan](docs/analysis-plan-sap-v1-sealed.md),
+`train.py`, `augment.py` and `analysis_sap_v1.py` are identical on every
+campaign branch, so all 450 runs used the same training, augmentation and
+analysis code. The analysis plan was sealed on 2026-10-28 (tag
+`sap-v1-sealed-20261028`, [plan](docs/analysis-plan-sap-v1-sealed.md),
 [amendment A1](docs/analysis-plan-sap-v1-amendment-20261030.md)). Commit hashes
 recorded before 2026-11-25 are mapped in [docs/commit-hash-map.md](docs/commit-hash-map.md).
 
@@ -76,16 +70,17 @@ recorded before 2026-11-25 are mapped in [docs/commit-hash-map.md](docs/commit-h
    [infrastructure](docs/infrastructure.md),
    [campaign operations](docs/campaign-operations.md)).
 4. **Analysis.** Collect the predictions and run the sealed analysis
-   ([analysis](docs/analysis-sap-v1.md), [paper tables](docs/paper-results.md)):
+   ([analysis](docs/analysis-sap-v1.md), [result tables](docs/paper-results.md)):
 
    ```bash
    PYTHONPATH=src python3 -m augment_atlas.analysis_sap_v1 \
      --predictions <dir-or-csv> --dataset <id> --out <dir> --seed 20261028 --B 10000
    ```
 
-Not included: images, trained weights and per-image predictions. The
-paper-specific aggregation behind Tables 2–3 and Figure 1 (sum-of-squares
-shares and the fold-by-setting grid) is not yet in this repository.
+Not included: images, trained weights and per-image predictions. See
+[Reproducing the aggregate results](docs/reproducing-results.md) to regenerate
+the sum-of-squares shares, the fold-by-setting grid of paired effects, and the
+result tables.
 
 ## Branches
 
@@ -100,8 +95,7 @@ Some design and operations notes in `docs/` are in Portuguese.
 
 ## Citation
 
-See [CITATION.cff](CITATION.cff). The paper is under review; this section will
-be updated with the proceedings reference.
+See [CITATION.cff](CITATION.cff).
 
 ## License
 
