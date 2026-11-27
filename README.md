@@ -77,9 +77,10 @@ recorded before 2026-11-25 are mapped in [docs/commit-hash-map.md](docs/commit-h
      --predictions <dir-or-csv> --dataset <id> --out <dir> --seed 20261028 --B 10000
    ```
 
-Not included: images, trained weights and per-image predictions. The
-aggregation that computes the sum-of-squares shares and the fold-by-setting
-grid of paired effects is not yet in this repository.
+Not included: images, trained weights and per-image predictions. See
+[Reproducing the aggregate results](docs/reproducing-results.md) to regenerate
+the sum-of-squares shares, the fold-by-setting grid of paired effects, and the
+result tables.
 
 ## Branches
 
